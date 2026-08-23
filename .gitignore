@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+bot/.env
+bot/data/
+*.db
+*.db-wal
+*.db-shm
+.DS_Store

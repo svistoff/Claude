@@ -1,0 +1,22 @@
+[Unit]
+Description=Telegram repost bot (aiogram 3, AI rewrite)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Замените на своего пользователя/группу и реальный путь установки
+User=botuser
+Group=botuser
+WorkingDirectory=/opt/repost-bot
+EnvironmentFile=/opt/repost-bot/bot/.env
+ExecStart=/opt/repost-bot/venv/bin/python -m bot.bot
+Restart=on-failure
+RestartSec=5
+
+# Небольшое ужесточение окружения (по желанию)
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
