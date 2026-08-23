@@ -63,7 +63,9 @@ bot/
 ├── .env.example
 └── requirements.txt
 deploy/
-└── telegram-repost-bot.service
+├── supervisor/
+│   └── telegram-repost-bot.conf   # основной способ деплоя
+└── telegram-repost-bot.service    # альтернатива через systemd
 ```
 
 ## Установка и первый запуск
@@ -101,41 +103,57 @@ python -m bot.bot
 1. Напишите боту `/prompt <ваш системный промт>` — задать промт переписывания.
 2. Перешлите боту тестовый пост (текст, альбом, видео и т.д.) и проверьте,
    что он появился в канале "На выкладку" с новым текстом.
-3. `Ctrl+C` для остановки интерактивного запуска перед переходом на systemd.
+3. `Ctrl+C` для остановки интерактивного запуска перед переходом на Supervisor.
 
-## Деплой на VPS через systemd
+## Деплой на VPS через Supervisor
 
 ```bash
-sudo cp deploy/telegram-repost-bot.service /etc/systemd/system/
-sudo nano /etc/systemd/system/telegram-repost-bot.service
+# Если Supervisor ещё не установлен
+sudo apt update && sudo apt install -y supervisor
+
+sudo cp deploy/supervisor/telegram-repost-bot.conf /etc/supervisor/conf.d/
+sudo nano /etc/supervisor/conf.d/telegram-repost-bot.conf
 ```
 
 Проверьте и поправьте под свой сервер:
-- `User=` / `Group=` — системный пользователь, под которым будет работать бот
-  (создайте отдельного: `sudo useradd -r -s /usr/sbin/nologin botuser`, затем
-  `sudo chown -R botuser:botuser /opt/repost-bot`)
-- `WorkingDirectory=` и путь в `ExecStart=` — если репозиторий лежит не в
-  `/opt/repost-bot`, поправьте оба пути
+- `directory=` и путь в `command=` — если репозиторий лежит не в
+  `/opt/repost-bot`, поправьте оба пути (виртуальное окружение должно лежать
+  внутри той же папки, `venv/bin/python`)
+- `user=` — под каким пользователем запускать (по умолчанию `root`, как и
+  остальные ваши боты; при желании укажите отдельного пользователя)
 
 ```bash
-# Включить и запустить
-sudo systemctl daemon-reload
-sudo systemctl enable telegram-repost-bot
-sudo systemctl start telegram-repost-bot
+# Подхватить новую программу и запустить
+sudo supervisorctl reread
+sudo supervisorctl update
+sudo supervisorctl start telegram-repost-bot
 
 # Проверить статус
-sudo systemctl status telegram-repost-bot
+sudo supervisorctl status telegram-repost-bot
 
 # Смотреть логи в реальном времени
-sudo journalctl -u telegram-repost-bot -f
+tail -f /var/log/telegram-repost-bot.out.log
+tail -f /var/log/telegram-repost-bot.err.log
 
 # Перезапуск после обновления кода / .env
-sudo systemctl restart telegram-repost-bot
+sudo supervisorctl restart telegram-repost-bot
 ```
+
+Переменные окружения бот читает напрямую из `bot/.env` (по абсолютному пути
+рядом с `config.py`), поэтому прокидывать их через `environment=` в конфиге
+Supervisor не нужно — достаточно, чтобы файл `.env` лежал на месте.
 
 Бот сам создаёт файл SQLite (`bot/data/bot.db` по умолчанию, путь можно
 переопределить через `DB_PATH` в `.env`) и таблицы при первом старте —
 никакой отдельной миграции запускать не нужно.
+
+### Альтернатива: деплой через systemd
+
+Если по какой-то причине Supervisor не подходит, в `deploy/telegram-repost-bot.service`
+есть unit-файл для systemd — команды `systemctl enable/start/status/restart`
+и `journalctl -u telegram-repost-bot -f` вместо `supervisorctl`/`tail`. Не
+запускайте одновременно и через systemd, и через Supervisor — два экземпляра
+бота будут конфликтовать за Telegram long polling и дублировать публикации.
 
 ## Команды бота
 
