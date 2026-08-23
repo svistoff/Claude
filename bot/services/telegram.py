@@ -15,8 +15,11 @@ from aiogram.types import (
 
 from bot.config import config
 from bot.database.models import Job
+from bot.services.formatting import format_ai_text
 
 logger = logging.getLogger(__name__)
+
+_PARSE_MODE = "HTML"
 
 # Типы, которые Telegram допускает объединять в альбом (media group)
 _ALBUM_MEDIA_TYPES = {"photo", "video", "document", "audio"}
@@ -30,14 +33,19 @@ _INPUT_MEDIA_CLS = {
 
 
 async def publish_job(bot: Bot, job: Job, text: str | None) -> list[int]:
-    """Публикует задание в TARGET_CHANNEL_ID. Возвращает список id опубликованных сообщений."""
+    """Публикует задание в TARGET_CHANNEL_ID. Возвращает список id опубликованных сообщений.
+
+    `text` — это уже переписанный AI текст (или None, если исходного текста не было).
+    Заголовок/подзаголовок в нём оформляются жирным/курсивом автоматически (см. formatting.py).
+    """
     chat_id = config.target_channel_id
     attachments = job.attachments
+    text = format_ai_text(text) if text else None
 
     if not attachments:
         if not text:
             raise RuntimeError("Нет ни текста, ни вложений для публикации")
-        msg = await bot.send_message(chat_id, text)
+        msg = await bot.send_message(chat_id, text, parse_mode=_PARSE_MODE)
         return [msg.message_id]
 
     if len(attachments) == 1:
@@ -61,7 +69,7 @@ async def _publish_single(bot: Bot, chat_id: str, attachment: dict[str, Any], te
         msg = await bot.send_sticker(chat_id, file_id)
         ids.append(msg.message_id)
         if text:
-            text_msg = await bot.send_message(chat_id, text)
+            text_msg = await bot.send_message(chat_id, text, parse_mode=_PARSE_MODE)
             ids.append(text_msg.message_id)
         return ids
 
@@ -79,7 +87,7 @@ async def _publish_single(bot: Bot, chat_id: str, attachment: dict[str, Any], te
         msg = await bot.send_video_note(chat_id, file_id)
         ids.append(msg.message_id)
         if text:
-            text_msg = await bot.send_message(chat_id, text)
+            text_msg = await bot.send_message(chat_id, text, parse_mode=_PARSE_MODE)
             ids.append(text_msg.message_id)
         return ids
 
@@ -87,7 +95,7 @@ async def _publish_single(bot: Bot, chat_id: str, attachment: dict[str, Any], te
     if send_func is None:
         raise RuntimeError(f"Неизвестный тип вложения: {a_type}")
 
-    msg: Message = await send_func(chat_id, file_id, caption=text)
+    msg: Message = await send_func(chat_id, file_id, caption=text, parse_mode=_PARSE_MODE if text else None)
     ids.append(msg.message_id)
     return ids
 
@@ -97,7 +105,7 @@ async def _publish_album(bot: Bot, chat_id: str, attachments: list[dict[str, Any
     for idx, a in enumerate(attachments):
         cls = _INPUT_MEDIA_CLS[a["type"]]
         caption = text if idx == 0 else None
-        media.append(cls(media=a["file_id"], caption=caption))
+        media.append(cls(media=a["file_id"], caption=caption, parse_mode=_PARSE_MODE if caption else None))
 
     messages = await bot.send_media_group(chat_id, media)
     return [m.message_id for m in messages]
@@ -109,6 +117,6 @@ async def _publish_mixed(bot: Bot, chat_id: str, attachments: list[dict[str, Any
         sub_ids = await _publish_single(bot, chat_id, a, None)
         ids.extend(sub_ids)
     if text:
-        msg = await bot.send_message(chat_id, text)
+        msg = await bot.send_message(chat_id, text, parse_mode=_PARSE_MODE)
         ids.append(msg.message_id)
     return ids
