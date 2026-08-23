@@ -28,6 +28,25 @@ _STATUS_LABELS = {
 }
 
 
+_WELCOME_TEXT = (
+    "👋 Привет! Я переписываю пересланные посты через AI и публикую их в канал.\n\n"
+    "Как пользоваться:\n"
+    "1. Перешли мне пост (текст, фото, альбом, видео, документ — что угодно)\n"
+    "2. Я поставлю его в очередь, перепишу текст через AI и опубликую в целевой канал\n\n"
+    "Команды:\n"
+    "/prompt — показать текущий системный промт для AI\n"
+    "/prompt <текст> — задать новый промт\n"
+    "/status — сводка по очереди\n"
+    "/retry — повторно поставить в очередь задания с ошибками\n"
+    "/errors — последние ошибки"
+)
+
+
+@router.message(Command("start", "help"))
+async def cmd_start(message: Message) -> None:
+    await message.reply(_WELCOME_TEXT)
+
+
 @router.message(Command("status"))
 async def cmd_status(message: Message) -> None:
     stats = await queue_service.get_stats()
