@@ -36,10 +36,25 @@ def _get_str(name: str, default: str | None = None, required: bool = False) -> s
     return val
 
 
+def _get_int_list(name: str, required: bool = False) -> tuple[int, ...]:
+    """Парсит один ID или несколько через запятую: '123' или '123,456,789'."""
+    val = os.getenv(name)
+    if val is None or val.strip() == "":
+        if required:
+            raise RuntimeError(f"Переменная окружения {name} обязательна")
+        return ()
+    try:
+        return tuple(int(part.strip()) for part in val.split(",") if part.strip())
+    except ValueError as exc:
+        raise RuntimeError(
+            f"Переменная окружения {name} должна содержать числовые Telegram ID через запятую, получено: {val!r}"
+        ) from exc
+
+
 @dataclass(frozen=True)
 class Config:
     bot_token: str
-    allowed_user_id: int
+    allowed_user_ids: tuple[int, ...]
     target_channel_id: str  # ID (например -100123..) либо @username
     openai_api_key: str
     openai_model: str
@@ -56,7 +71,7 @@ class Config:
 def load_config() -> Config:
     return Config(
         bot_token=_get_str("BOT_TOKEN", required=True),
-        allowed_user_id=_get_int("ALLOWED_USER_ID", required=True),
+        allowed_user_ids=_get_int_list("ALLOWED_USER_ID", required=True),
         target_channel_id=_get_str("TARGET_CHANNEL_ID", required=True),
         openai_api_key=_get_str("OPENAI_API_KEY", required=True),
         openai_model=_get_str("OPENAI_MODEL", default="gpt-4o-mini"),

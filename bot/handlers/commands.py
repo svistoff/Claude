@@ -15,7 +15,7 @@ from bot.services import settings
 logger = logging.getLogger(__name__)
 
 router = Router(name="commands")
-router.message.filter(F.from_user.id == config.allowed_user_id)
+router.message.filter(F.from_user.id.in_(config.allowed_user_ids))
 
 _STATUS_LABELS = {
     JobStatus.RECEIVED: "получено",

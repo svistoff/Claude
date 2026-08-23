@@ -52,7 +52,7 @@ def _is_not_command(message: Message) -> bool:
 
 
 @router.message(
-    F.from_user.id == config.allowed_user_id,
+    F.from_user.id.in_(config.allowed_user_ids),
     F.content_type.in_({
         "text", "photo", "video", "animation", "document", "audio", "voice", "video_note", "sticker",
     }),
