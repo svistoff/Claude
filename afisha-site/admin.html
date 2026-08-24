@@ -141,8 +141,14 @@
     const proxify=u=>typeof u==='string'?u.replace('https://hbmdpqnseywphwgxsnlg.supabase.co',CFG.url):u;
     const catName=id=>{const c=S.categories.find(x=>x.id===id);return c?c.name:'';};
     const venName=id=>{const v=S.venues.find(x=>x.id===id);return v?v.name:'';};
+    const hourWord=t=>{
+      if(!t)return '';
+      const h=parseInt(String(t).slice(0,2),10), m100=h%100, m10=h%10;
+      const word=(m100>=11&&m100<=14)?'часов':m10===1?'час':(m10>=2&&m10<=4)?'часа':'часов';
+      return `${h} ${word}`;
+    };
     function schedText(ev){
-      const t=ev.start_time?String(ev.start_time).slice(0,5):'';
+      const t=hourWord(ev.start_time);
       if(ev.schedule_type==='range'&&ev.ends_on) return `${fmtDay(ev.starts_on)} – ${fmtDay(ev.ends_on)}${t?', '+t:''}`;
       if(ev.schedule_type==='weekly'){const d=(ev.weekdays||[]).map(w=>WD[w]).filter(Boolean).join(', ');return `по ${d||'?'}${t?', '+t:''}${ev.ends_on?' · до '+fmtDay(ev.ends_on):''}`;}
       return `${fmtDay(ev.starts_on)}${t?', '+t:''}`;
