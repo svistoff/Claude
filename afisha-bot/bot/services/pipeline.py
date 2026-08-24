@@ -73,10 +73,10 @@ async def process_submission(bot: Bot, user_id: int, parts: list[dict[str, Any]]
     if not fields.get("starts_on") or fields.get("date_confidence") == "low":
         warnings.append("дату не распознал / распознал неуверенно — проверь в афише")
 
-    cover_url = cover_path = None
+    cover_url = None
     if photo:
         buf = await bot.download(photo["file_id"])
-        cover_url, cover_path = await supabase_client.upload_file(
+        cover_url, _ = await supabase_client.upload_file(
             "event-posters", f"submissions/{photo['file_id']}.jpg", buf.read(), "image/jpeg",
         )
 
@@ -108,7 +108,6 @@ async def process_submission(bot: Bot, user_id: int, parts: list[dict[str, Any]]
         "end_time": fields.get("end_time"),
         "weekdays": fields.get("weekdays"),
         "cover_image_url": cover_url,
-        "cover_image_path": cover_path,
         "video_url": video_url,
         "status": "pending",
         "submitter_name": "afisha-bot",
