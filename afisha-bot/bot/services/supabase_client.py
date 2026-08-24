@@ -12,6 +12,14 @@ from bot.config import config
 
 logger = logging.getLogger(__name__)
 
+
+def _check(resp: httpx.Response) -> None:
+    """Как raise_for_status(), но с телом ответа в сообщении — иначе причину
+    4xx/5xx от PostgREST/Storage не видно в логах, только код статуса."""
+    if resp.status_code >= 400:
+        raise RuntimeError(f"Supabase {resp.request.method} {resp.request.url} -> {resp.status_code}: {resp.text}")
+
+
 _REST_HEADERS = {
     "apikey": config.supabase_service_key,
     "Authorization": f"Bearer {config.supabase_service_key}",
@@ -37,7 +45,7 @@ async def upload_file(bucket: str, path: str, data: bytes, content_type: str) ->
     }
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(url, headers=headers, content=data)
-    resp.raise_for_status()
+    _check(resp)
     public_url = f"{config.supabase_url}/storage/v1/object/public/{bucket}/{path}"
     return proxify(public_url), path
 
@@ -47,7 +55,7 @@ async def insert_event_submission(payload: dict) -> dict:
     headers = {**_REST_HEADERS, "Prefer": "return=representation"}
     async with httpx.AsyncClient(timeout=15) as client:
         resp = await client.post(url, headers=headers, json=payload)
-    resp.raise_for_status()
+    _check(resp)
     rows = resp.json()
     return rows[0] if rows else {}
 
@@ -57,7 +65,7 @@ async def count_pending_submissions() -> int:
     headers = {**_REST_HEADERS, "Prefer": "count=exact"}
     async with httpx.AsyncClient(timeout=15) as client:
         resp = await client.get(url, headers=headers)
-    resp.raise_for_status()
+    _check(resp)
     content_range = resp.headers.get("content-range", "")
     if "/" in content_range:
         total = content_range.split("/")[-1]
@@ -71,7 +79,7 @@ async def insert_event_video(payload: dict) -> dict:
     headers = {**_REST_HEADERS, "Prefer": "return=representation"}
     async with httpx.AsyncClient(timeout=15) as client:
         resp = await client.post(url, headers=headers, json=payload)
-    resp.raise_for_status()
+    _check(resp)
     rows = resp.json()
     return rows[0] if rows else {}
 
@@ -80,7 +88,7 @@ async def get_video_by_token(token: str) -> dict | None:
     url = f"{config.supabase_url}/rest/v1/event_videos?token=eq.{token}&select=id,file_id,deleted&limit=1"
     async with httpx.AsyncClient(timeout=10) as client:
         resp = await client.get(url, headers=_REST_HEADERS)
-    resp.raise_for_status()
+    _check(resp)
     rows = resp.json()
     return rows[0] if rows else None
 
@@ -97,7 +105,7 @@ async def get_videos_to_cleanup(event_cutoff: date, fallback_cutoff: date) -> li
     url = f"{config.supabase_url}/rest/v1/event_videos?{filt}"
     async with httpx.AsyncClient(timeout=15) as client:
         resp = await client.get(url, headers=_REST_HEADERS)
-    resp.raise_for_status()
+    _check(resp)
     return resp.json()
 
 
@@ -105,4 +113,4 @@ async def mark_video_deleted(video_id: str) -> None:
     url = f"{config.supabase_url}/rest/v1/event_videos?id=eq.{video_id}"
     async with httpx.AsyncClient(timeout=10) as client:
         resp = await client.patch(url, headers=_REST_HEADERS, json={"deleted": True})
-    resp.raise_for_status()
+    _check(resp)
