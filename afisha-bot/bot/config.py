@@ -92,7 +92,7 @@ def load_config() -> Config:
         supabase_service_key=_get_str("SUPABASE_SERVICE_KEY", required=True),
         media_base_url=_get_str("MEDIA_BASE_URL", required=True).rstrip("/"),
         video_public_base=_get_str("VIDEO_PUBLIC_BASE", required=True).rstrip("/"),
-        video_proxy_port=_get_int("VIDEO_PROXY_PORT", default=8091),
+        video_proxy_port=_get_int("VIDEO_PROXY_PORT", default=8092),
         max_video_mb=_get_int("MAX_VIDEO_MB", default=20),
         event_grace_days=_get_int("EVENT_GRACE_DAYS", default=3),
         fallback_ttl_days=_get_int("FALLBACK_TTL_DAYS", default=30),
