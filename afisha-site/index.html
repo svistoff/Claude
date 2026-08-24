@@ -370,8 +370,12 @@
         }
       }
 
+      // Показываем только категории, в которых прямо сейчас есть хотя бы одно предстоящее событие.
+      const catsToday=new Date(); catsToday.setHours(0,0,0,0);
+      const activeCatSlugs=new Set(S.events.filter(ev=>nextDate(ev,catsToday)).map(ev=>ev.categories?.slug).filter(Boolean));
       const chips=`<button class="chip ${!S.cat?'on':''}" data-cat="">Все</button>`+
-        S.categories.map(c=>`<button class="chip ${S.cat===c.slug?'on':''}" data-cat="${esc(c.slug)}">${esc(c.name)}</button>`).join('');
+        S.categories.filter(c=>activeCatSlugs.has(c.slug))
+          .map(c=>`<button class="chip ${S.cat===c.slug?'on':''}" data-cat="${esc(c.slug)}">${esc(c.name)}</button>`).join('');
       const venueOpts=`<option value="">Все площадки</option>`+
         S.venues.map(v=>`<option value="${esc(v.slug)}" ${S.venue===v.slug?'selected':''}>${esc(v.name)}</option>`).join('');
 

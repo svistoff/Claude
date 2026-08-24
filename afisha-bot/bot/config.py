@@ -70,6 +70,7 @@ class Config:
 
     admin_url: str
     album_window_seconds: float
+    max_concurrent_submissions: int
     tz_offset_hours: int
     log_level: str
 
@@ -98,6 +99,7 @@ def load_config() -> Config:
         fallback_ttl_days=_get_int("FALLBACK_TTL_DAYS", default=30),
         admin_url=_get_str("ADMIN_URL", default="https://afisha.ekb-guide.ru/admin.html"),
         album_window_seconds=_get_float("ALBUM_WINDOW_SECONDS", default=3.0),
+        max_concurrent_submissions=_get_int("MAX_CONCURRENT_SUBMISSIONS", default=3),
         tz_offset_hours=_parse_tz_offset(_get_str("TZ_OFFSET", default="+05:00")),
         log_level=_get_str("LOG_LEVEL", default="INFO"),
     )

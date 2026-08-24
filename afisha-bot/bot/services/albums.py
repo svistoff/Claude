@@ -16,6 +16,12 @@ from bot.services import pipeline
 
 logger = logging.getLogger(__name__)
 
+# Ограничивает число одновременно обрабатываемых заявок (AI + заливка видео в
+# канал-хранилище + запись в Supabase) — при массовой пересылке анонсов пачкой
+# защищает от антифлуда Telegram на канале-хранилище и всплеска запросов к OpenAI.
+# Лишние заявки просто ждут своей очереди в памяти, ничего не теряется.
+_processing_semaphore = asyncio.Semaphore(config.max_concurrent_submissions)
+
 
 @dataclass
 class _PendingAlbum:
@@ -69,9 +75,10 @@ class AlbumBuffer:
         await self._finalize(pending.bot, pending.chat_id, pending.user_id, pending.parts)
 
     async def _finalize(self, bot: Bot, chat_id: int, user_id: int, parts: list[dict[str, Any]]) -> None:
-        try:
-            reply = await pipeline.process_submission(bot, user_id, parts)
-        except Exception:
-            logger.exception("Ошибка обработки анонса от пользователя %s", user_id)
-            reply = "⚠️ Не получилось обработать анонс, попробуйте ещё раз."
+        async with _processing_semaphore:
+            try:
+                reply = await pipeline.process_submission(bot, user_id, parts)
+            except Exception:
+                logger.exception("Ошибка обработки анонса от пользователя %s", user_id)
+                reply = "⚠️ Не получилось обработать анонс, попробуйте ещё раз."
         await bot.send_message(chat_id, reply)
