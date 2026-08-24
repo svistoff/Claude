@@ -105,7 +105,6 @@ async def process_submission(bot: Bot, user_id: int, parts: list[dict[str, Any]]
         "starts_on": fields.get("starts_on"),
         "ends_on": fields.get("ends_on"),
         "start_time": fields.get("start_time"),
-        "end_time": fields.get("end_time"),
         "weekdays": fields.get("weekdays"),
         "cover_image_url": cover_url,
         "video_url": video_url,
