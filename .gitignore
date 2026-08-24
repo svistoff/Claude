@@ -4,6 +4,7 @@ __pycache__/
 venv/
 bot/.env
 bot/data/
+afisha-bot/bot/.env
 *.db
 *.db-wal
 *.db-shm

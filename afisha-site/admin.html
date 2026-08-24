@@ -1,0 +1,556 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Админка · Афиша ЕКБ ГИД</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Onest:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#FBFAF7;--surface:#fff;--surface-2:#F3F0E9;--ink:#16151A;--muted:#6B6A73;
+    --line:#E7E3DA;--accent:#E5133C;--accent-ink:#B00E30;--ok:#1a7f4b;--radius:14px;
+    --shadow:0 6px 24px rgba(22,21,26,.07);--shadow-lg:0 18px 50px rgba(22,21,26,.18);
+    --display:'Montserrat',sans-serif;--body:'Onest',system-ui,sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:var(--body);background:var(--paper);color:var(--ink);}
+  a{color:var(--accent);}
+  button{font:inherit;cursor:pointer;}
+  input,select,textarea{font:inherit;width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);}
+  textarea{resize:vertical;min-height:80px;}
+  label{display:block;font-weight:600;font-size:13px;margin:0 0 5px;}
+  .req label::after{content:' *';color:var(--accent);}
+  .hint{color:var(--muted);font-size:12px;margin-top:4px;font-weight:400;}
+
+  /* login */
+  .login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
+  .login-card{width:min(400px,100%);background:var(--surface);border:1px solid var(--line);border-radius:20px;box-shadow:var(--shadow);padding:30px;}
+  .login-card h1{font-family:var(--display);font-weight:800;font-size:26px;margin:0 0 4px;}
+  .login-card p{color:var(--muted);margin:0 0 22px;font-size:14px;}
+  .field{margin-bottom:14px;}
+  .btn{background:var(--ink);color:#fff;border:0;border-radius:999px;padding:12px 20px;font-weight:700;}
+  .btn:hover{background:#000;}
+  .btn.accent{background:var(--accent);} .btn.accent:hover{background:var(--accent-ink);}
+  .btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line);}
+  .btn.ghost:hover{border-color:var(--ink);}
+  .btn.sm{padding:7px 13px;font-size:13px;font-weight:600;}
+  .btn.danger{background:transparent;color:var(--accent);border:1px solid #f0c6ce;}
+  .btn.danger:hover{background:var(--accent);color:#fff;}
+  .btn:disabled{opacity:.5;cursor:default;}
+  .msg{margin-top:12px;font-size:14px;} .msg.err{color:var(--accent-ink);} .msg.ok{color:var(--ok);}
+
+  /* app */
+  .app{display:none;}
+  .top{position:sticky;top:0;z-index:30;background:var(--paper);border-bottom:1px solid var(--line);}
+  .top-in{max-width:1100px;margin:0 auto;padding:12px 20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;}
+  .logo{font-family:var(--display);font-weight:800;font-size:18px;}
+  .tabs{display:flex;gap:4px;flex-wrap:wrap;flex:1;}
+  .tabs button{border:0;background:transparent;color:var(--muted);padding:8px 14px;border-radius:999px;font-weight:600;}
+  .tabs button.on{background:var(--ink);color:#fff;}
+  .who{color:var(--muted);font-size:13px;}
+  .wrap{max-width:1100px;margin:0 auto;padding:22px 20px 60px;}
+  .head-row{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;}
+  .head-row h2{font-family:var(--display);font-weight:700;font-size:22px;margin:0;}
+
+  .list{display:flex;flex-direction:column;gap:10px;}
+  .row{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px;display:flex;align-items:center;gap:14px;box-shadow:var(--shadow);}
+  .row .thumb{width:74px;height:52px;border-radius:8px;object-fit:cover;background:var(--surface-2);flex:0 0 auto;}
+  .row .grow{flex:1;min-width:0;}
+  .row .grow b{display:block;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .row .grow small{color:var(--muted);}
+  .row .acts{display:flex;gap:6px;flex:0 0 auto;}
+  .badge{display:inline-block;font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;}
+  .badge.pub{background:#e2f5ea;color:var(--ok);} .badge.draft{background:var(--surface-2);color:var(--muted);}
+  .badge.cat{background:#fde7ec;color:var(--accent-ink);}
+  .stat{font-size:13px;color:var(--muted);white-space:nowrap;} .stat b{color:var(--ink);}
+  .empty{background:var(--surface);border:1px dashed var(--line);border-radius:var(--radius);padding:30px;text-align:center;color:var(--muted);}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  .loading-full{padding:60px;text-align:center;color:var(--muted);}
+
+  /* modal */
+  .back{position:fixed;inset:0;background:rgba(16,15,20,.55);display:none;align-items:flex-start;justify-content:center;padding:24px 16px;z-index:100;overflow:auto;}
+  .back.open{display:flex;}
+  .modal{width:min(640px,100%);background:var(--surface);border-radius:20px;box-shadow:var(--shadow-lg);margin:auto;}
+  .modal-h{display:flex;justify-content:space-between;align-items:center;padding:18px 22px;border-bottom:1px solid var(--line);}
+  .modal-h h3{font-family:var(--display);font-weight:700;font-size:19px;margin:0;}
+  .x{width:38px;height:38px;border-radius:50%;border:1px solid var(--line);background:var(--surface);font-size:16px;}
+  .modal-b{padding:20px 22px;}
+  .modal-f{padding:16px 22px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:10px;position:sticky;bottom:0;background:var(--surface);border-radius:0 0 20px 20px;}
+  .seg{display:flex;gap:6px;background:var(--surface-2);border-radius:10px;padding:4px;margin-bottom:6px;}
+  .seg button{flex:1;border:0;background:transparent;padding:8px;border-radius:7px;font-weight:600;color:var(--muted);}
+  .seg button.on{background:var(--surface);color:var(--ink);box-shadow:var(--shadow);}
+  .wd{display:flex;gap:6px;flex-wrap:wrap;}
+  .wd label{display:flex;align-items:center;gap:5px;font-weight:500;border:1px solid var(--line);border-radius:8px;padding:6px 10px;margin:0;cursor:pointer;}
+  .wd input{width:auto;}
+  .up-prev{margin-top:8px;} .up-prev img,.up-prev video{max-height:120px;border-radius:8px;border:1px solid var(--line);}
+  .row-2{display:flex;gap:12px;} .row-2>div{flex:1;}
+  @media(max-width:640px){ .grid2,.row-2{grid-template-columns:1fr;flex-direction:column;} }
+</style>
+</head>
+<body>
+  <!-- ЛОГИН -->
+  <div class="login" id="loginScreen">
+    <div class="login-card">
+      <h1>Афиша ЕКБ ГИД</h1>
+      <p>Панель управления анонсами</p>
+      <div class="field req"><label>Email</label><input id="email" type="email" autocomplete="username" value="info@ekb-guide.ru"></div>
+      <div class="field req"><label>Пароль</label><input id="pass" type="password" autocomplete="current-password"></div>
+      <button class="btn accent" id="loginBtn" style="width:100%">Войти</button>
+      <div class="msg" id="loginMsg"></div>
+    </div>
+  </div>
+
+  <!-- ПРИЛОЖЕНИЕ -->
+  <div class="app" id="app">
+    <div class="top"><div class="top-in">
+      <span class="logo">Афиша · админка</span>
+      <div class="tabs" id="tabs">
+        <button data-tab="events" class="on">События</button>
+        <button data-tab="venues">Площадки</button>
+        <button data-tab="categories">Категории</button>
+        <button data-tab="banners">Баннеры</button>
+        <button data-tab="subs">Предложенное <span id="subCount"></span></button>
+      </div>
+      <span class="who" id="who"></span>
+      <button class="btn ghost sm" id="logoutBtn">Выйти</button>
+    </div></div>
+    <div class="wrap" id="view"><div class="loading-full">Загрузка…</div></div>
+  </div>
+
+  <div class="back" id="modal"></div>
+
+  <script src="./supabase.js"></script>
+  <script>
+  (function(){
+    const CFG={
+      url:'https://sb.ekb-guide.ru',
+      key:'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhibWRwcW5zZXl3cGh3Z3hzbmxnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3MjE1NzYsImV4cCI6MjA5NTI5NzU3Nn0.wLuTKZ-uhCQ69iEm6gyJrsgaP0NgVL-PBad3kJD7uHU'
+    };
+    const $=id=>document.getElementById(id);
+    let client, S={tab:'events',categories:[],venues:[],events:[],banners:[],subs:[]};
+
+    // ---------- утилиты ----------
+    const MONTHS=['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+    const WD=['','пн','вт','ср','чт','пт','сб','вс'];
+    const esc=(s='')=>String(s==null?'':s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
+    const RU={'а':'a','б':'b','в':'v','г':'g','д':'d','е':'e','ё':'e','ж':'zh','з':'z','и':'i','й':'y','к':'k','л':'l','м':'m','н':'n','о':'o','п':'p','р':'r','с':'s','т':'t','у':'u','ф':'f','х':'h','ц':'c','ч':'ch','ш':'sh','щ':'sch','ъ':'','ы':'y','ь':'','э':'e','ю':'yu','я':'ya',' ':'-'};
+    const slugify=s=>(s||'').toLowerCase().split('').map(c=>RU[c]!==undefined?RU[c]:c).join('').replace(/[^a-z0-9-]/g,'').replace(/-+/g,'-').replace(/^-|-$/g,'').slice(0,60);
+    const fmtDay=s=>{if(!s)return '';const[y,m,d]=s.split('-').map(Number);return `${d} ${MONTHS[m-1]}`;};
+    const proxify=u=>typeof u==='string'?u.replace('https://hbmdpqnseywphwgxsnlg.supabase.co',CFG.url):u;
+    const catName=id=>{const c=S.categories.find(x=>x.id===id);return c?c.name:'';};
+    const venName=id=>{const v=S.venues.find(x=>x.id===id);return v?v.name:'';};
+    function schedText(ev){
+      const t=ev.start_time?String(ev.start_time).slice(0,5):'';
+      if(ev.schedule_type==='range'&&ev.ends_on) return `${fmtDay(ev.starts_on)} – ${fmtDay(ev.ends_on)}${t?', '+t:''}`;
+      if(ev.schedule_type==='weekly'){const d=(ev.weekdays||[]).map(w=>WD[w]).filter(Boolean).join(', ');return `по ${d||'?'}${t?', '+t:''}${ev.ends_on?' · до '+fmtDay(ev.ends_on):''}`;}
+      return `${fmtDay(ev.starts_on)}${t?', '+t:''}`;
+    }
+
+    // ---------- модалка ----------
+    const modal=$('modal');
+    function openModal(html){modal.innerHTML=`<div class="modal">${html}</div>`;modal.classList.add('open');modal.querySelectorAll('[data-close]').forEach(b=>b.onclick=closeModal);}
+    function closeModal(){modal.classList.remove('open');modal.innerHTML='';}
+    modal.addEventListener('click',e=>{if(e.target===modal)closeModal();});
+    document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();});
+
+    // ---------- загрузка файла в storage ----------
+    async function uploadFile(bucket,file,prefix=''){
+      const ext=(file.name.split('.').pop()||'bin').toLowerCase();
+      const path=`${prefix}${Date.now()}-${Math.random().toString(36).slice(2,8)}.${ext}`;
+      const {error}=await client.storage.from(bucket).upload(path,file,{cacheControl:'3600',upsert:false});
+      if(error) throw error;
+      const {data}=client.storage.from(bucket).getPublicUrl(path);
+      return {path,url:data.publicUrl};
+    }
+    async function removeFiles(bucket,paths){paths=paths.filter(Boolean);if(paths.length)try{await client.storage.from(bucket).remove(paths);}catch(_){}}
+
+    // ---------- очистка мусорных файлов (после автоудаления pg_cron) ----------
+    async function sweepTrash(){
+      try{
+        const {data}=await client.from('storage_trash').select('*').limit(300);
+        if(!data||!data.length)return;
+        const by={}; data.forEach(t=>{(by[t.bucket]=by[t.bucket]||[]).push(t.path);});
+        for(const b in by) await removeFiles(b,by[b]);
+        await client.from('storage_trash').delete().in('id',data.map(t=>t.id));
+      }catch(_){}
+    }
+
+    // ---------- аутентификация ----------
+    async function init(){
+      client=window.supabase.createClient(CFG.url,CFG.key);
+      const {data:{session}}=await client.auth.getSession();
+      if(session) startApp(session); else showLogin();
+    }
+    function showLogin(){$('loginScreen').style.display='flex';$('app').style.display='none';}
+    $('loginBtn').onclick=async()=>{
+      const btn=$('loginBtn'),msg=$('loginMsg');msg.className='msg';msg.textContent='';btn.disabled=true;btn.textContent='Входим…';
+      const {data,error}=await client.auth.signInWithPassword({email:$('email').value.trim(),password:$('pass').value});
+      btn.disabled=false;btn.textContent='Войти';
+      if(error){msg.className='msg err';msg.textContent='Не удалось войти: '+error.message;return;}
+      startApp(data.session);
+    };
+    $('pass').addEventListener('keydown',e=>{if(e.key==='Enter')$('loginBtn').click();});
+    $('logoutBtn').onclick=async()=>{await client.auth.signOut();location.reload();};
+
+    async function startApp(session){
+      $('loginScreen').style.display='none';$('app').style.display='block';
+      $('who').textContent=session.user.email;
+      await loadAll(); sweepTrash();
+      bindTabs(); render();
+    }
+
+    async function loadAll(){
+      const [c,v,e,b,s]=await Promise.all([
+        client.from('categories').select('*').order('sort_order'),
+        client.from('venues').select('*').order('name'),
+        client.from('events').select('*').order('starts_on',{ascending:false}),
+        client.from('banners').select('*').order('sort_order'),
+        client.from('event_submissions').select('*').eq('status','pending').order('created_at',{ascending:false})
+      ]);
+      S.categories=c.data||[];S.venues=v.data||[];S.events=e.data||[];S.banners=b.data||[];S.subs=s.data||[];
+      const cnt=S.subs.length;$('subCount').textContent=cnt?`(${cnt})`:'';
+    }
+
+    function bindTabs(){document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>{S.tab=b.dataset.tab;document.querySelectorAll('#tabs button').forEach(x=>x.classList.toggle('on',x===b));render();});}
+
+    function render(){
+      const v=$('view');
+      if(S.tab==='events')v.innerHTML=renderEvents();
+      else if(S.tab==='venues')v.innerHTML=renderVenues();
+      else if(S.tab==='categories')v.innerHTML=renderCategories();
+      else if(S.tab==='banners')v.innerHTML=renderBanners();
+      else if(S.tab==='subs')v.innerHTML=renderSubs();
+      wire();
+    }
+
+    // ================= СОБЫТИЯ =================
+    function renderEvents(){
+      const rows=S.events.map(ev=>`<div class="row">
+        <img class="thumb" src="${esc(proxify(ev.cover_image_url)||'')}" onerror="this.style.visibility='hidden'">
+        <div class="grow">
+          <b>${esc(ev.title)}</b>
+          <small>${esc(schedText(ev))}${venName(ev.venue_id)?' · '+esc(venName(ev.venue_id)):''}${catName(ev.category_id)?' · '+esc(catName(ev.category_id)):''}</small>
+        </div>
+        <span class="badge ${ev.status==='published'?'pub':'draft'}">${ev.status==='published'?'Опубликовано':'Черновик'}</span>
+        <div class="acts">
+          <button class="btn ghost sm" data-edit-ev="${ev.id}">Изменить</button>
+          <button class="btn danger sm" data-del-ev="${ev.id}">Удалить</button>
+        </div>
+      </div>`).join('');
+      return `<div class="head-row"><h2>События</h2><button class="btn accent" data-new-ev>+ Добавить событие</button></div>
+        <div class="list">${rows||'<div class="empty">Событий пока нет. Нажмите «Добавить событие».</div>'}</div>`;
+    }
+
+    function eventForm(ev){
+      ev=ev||{schedule_type:'single',status:'draft'};
+      const catOpts=S.categories.map(c=>`<option value="${c.id}" ${ev.category_id===c.id?'selected':''}>${esc(c.name)}</option>`).join('');
+      const venOpts=`<option value="">— не выбрана —</option>`+S.venues.map(v=>`<option value="${v.id}" ${ev.venue_id===v.id?'selected':''}>${esc(v.name)}</option>`).join('');
+      const wdSel=ev.weekdays||[];
+      const wdBoxes=[1,2,3,4,5,6,7].map(w=>`<label><input type="checkbox" class="wd-cb" value="${w}" ${wdSel.includes(w)?'checked':''}>${WD[w]}</label>`).join('');
+      openModal(`
+        <div class="modal-h"><h3>${ev.id?'Изменить событие':'Новое событие'}</h3><button class="x" data-close>✕</button></div>
+        <div class="modal-b">
+          <div class="field req"><label>Заголовок</label><input id="f_title" value="${esc(ev.title)}"></div>
+          <div class="field"><label>Адрес страницы (slug)</label><input id="f_slug" value="${esc(ev.slug)}" placeholder="сгенерируется из заголовка"><div class="hint">Латиницей, для SEO-ссылки события. Можно оставить пустым.</div></div>
+          <div class="field"><label>Исполнитель / артист</label><input id="f_perf" value="${esc(ev.performer)}" placeholder="имя артиста, для поиска"></div>
+          <div class="row-2">
+            <div class="field req"><label>Категория</label><select id="f_cat"><option value="">— выбрать —</option>${catOpts}</select></div>
+            <div class="field"><label>Площадка</label><select id="f_ven">${venOpts}</select></div>
+          </div>
+          <div class="field"><label>Краткое описание</label><textarea id="f_short" style="min-height:56px">${esc(ev.short_description)}</textarea><div class="hint">Показывается на карточке.</div></div>
+          <div class="field"><label>Полное описание</label><textarea id="f_full">${esc(ev.full_description)}</textarea></div>
+          <div class="row-2">
+            <div class="field"><label>Цена</label><input id="f_price" value="${esc(ev.price)}" placeholder="500 ₽ / бесплатно / от 1000 ₽"></div>
+            <div class="field"><label>Ссылка на билеты</label><input id="f_ext" value="${esc(ev.external_url)}" placeholder="https://..."></div>
+          </div>
+
+          <div class="field req"><label>Афиша (картинка)</label>
+            <div class="seg"><button type="button" class="on" data-imgmode="file">Загрузить файл</button><button type="button" data-imgmode="url">Вставить ссылку</button></div>
+            <div id="img_file"><input type="file" id="f_imgfile" accept="image/*"></div>
+            <div id="img_url" style="display:none"><input id="f_imgurl" value="${esc(ev.cover_image_url&&!ev.cover_image_path?ev.cover_image_url:'')}" placeholder="https://... .jpg"></div>
+            ${ev.cover_image_url?`<div class="up-prev"><img src="${esc(proxify(ev.cover_image_url))}"></div>`:''}
+            <div class="hint">Без картинки нельзя, если у площадки не задан логотип — он подставится на превью вместо афиши (например, для видео-анонсов).</div>
+          </div>
+
+          <div class="field"><label>Видео (необязательно)</label>
+            <div class="seg"><button type="button" class="on" data-vidmode="file">Загрузить файл</button><button type="button" data-vidmode="url">Вставить ссылку</button></div>
+            <div id="vid_file"><input type="file" id="f_vidfile" accept="video/*"></div>
+            <div id="vid_url" style="display:none"><input id="f_vidurl" value="${esc(ev.video_url&&!ev.video_path?ev.video_url:'')}" placeholder="прямая ссылка на .mp4"></div>
+          </div>
+
+          <div class="field"><label>Тип</label>
+            <div class="seg" id="schedSeg">
+              <button type="button" data-st="single" class="${ev.schedule_type==='single'?'on':''}">Разовое</button>
+              <button type="button" data-st="range" class="${ev.schedule_type==='range'?'on':''}">Длительное</button>
+              <button type="button" data-st="weekly" class="${ev.schedule_type==='weekly'?'on':''}">Повтор</button>
+            </div>
+          </div>
+          <div id="sched_single" class="row-2">
+            <div class="field req"><label>Дата</label><input type="date" id="f_date" value="${esc(ev.starts_on)}"></div>
+            <div class="field"><label>Время</label><input type="time" id="f_time" value="${ev.start_time?String(ev.start_time).slice(0,5):''}"></div>
+          </div>
+          <div id="sched_range" style="display:none">
+            <div class="row-2">
+              <div class="field req"><label>С</label><input type="date" id="f_from"></div>
+              <div class="field req"><label>По</label><input type="date" id="f_to"></div>
+            </div>
+            <div class="field"><label>Время</label><input type="time" id="f_rtime"></div>
+          </div>
+          <div id="sched_weekly" style="display:none">
+            <div class="field"><label>Дни недели</label><div class="wd">${wdBoxes}</div></div>
+            <div class="row-2">
+              <div class="field req"><label>Начиная с</label><input type="date" id="f_wfrom"></div>
+              <div class="field req"><label>По (до какой даты)</label><input type="date" id="f_wto"></div>
+            </div>
+            <div class="field"><label>Время</label><input type="time" id="f_wtime"></div>
+          </div>
+
+          <div class="row-2">
+            <div class="field"><label>Статус</label><select id="f_status"><option value="draft" ${ev.status!=='published'?'selected':''}>Черновик</option><option value="published" ${ev.status==='published'?'selected':''}>Опубликовано</option></select></div>
+            <div class="field"><label>Рекомендуем</label><label style="font-weight:500;margin-top:8px"><input type="checkbox" id="f_feat" style="width:auto" ${ev.is_featured?'checked':''}> отметить как рекомендованное</label></div>
+          </div>
+          <div class="msg err" id="evMsg"></div>
+        </div>
+        <div class="modal-f"><button class="btn ghost" data-close>Отмена</button><button class="btn accent" id="saveEv">Сохранить</button></div>
+      `);
+
+      // переключатели
+      const seg=(sel,cb)=>modal.querySelectorAll(sel).forEach(b=>b.onclick=()=>{modal.querySelectorAll(sel).forEach(x=>x.classList.toggle('on',x===b));cb(b.dataset);});
+      seg('[data-imgmode]',d=>{$('img_file').style.display=d.imgmode==='file'?'':'none';$('img_url').style.display=d.imgmode==='url'?'':'none';});
+      seg('[data-vidmode]',d=>{$('vid_file').style.display=d.vidmode==='file'?'':'none';$('vid_url').style.display=d.vidmode==='url'?'':'none';});
+      // prefill range/weekly из ev
+      if(ev.schedule_type==='range'){$('f_from').value=ev.starts_on||'';$('f_to').value=ev.ends_on||'';$('f_rtime').value=ev.start_time?String(ev.start_time).slice(0,5):'';}
+      if(ev.schedule_type==='weekly'){$('f_wfrom').value=ev.starts_on||'';$('f_wto').value=ev.ends_on||'';$('f_wtime').value=ev.start_time?String(ev.start_time).slice(0,5):'';}
+      let st=ev.schedule_type||'single';
+      const showSched=()=>{$('sched_single').style.display=st==='single'?'flex':'none';$('sched_range').style.display=st==='range'?'block':'none';$('sched_weekly').style.display=st==='weekly'?'block':'none';};
+      modal.querySelectorAll('#schedSeg button').forEach(b=>b.onclick=()=>{st=b.dataset.st;modal.querySelectorAll('#schedSeg button').forEach(x=>x.classList.toggle('on',x===b));showSched();});
+      showSched();
+      $('saveEv').onclick=()=>saveEvent(ev,st);
+    }
+
+    async function saveEvent(ev,st){
+      const msg=$('evMsg');msg.textContent='';
+      const title=$('f_title').value.trim();
+      const cat=$('f_cat').value;
+      if(!title){msg.textContent='Введите заголовок.';return;}
+      if(!cat){msg.textContent='Выберите категорию.';return;}
+      // расписание
+      let starts_on,ends_on,start_time,weekdays=null;
+      if(st==='single'){starts_on=$('f_date').value;ends_on=starts_on;start_time=$('f_time').value||null;}
+      else if(st==='range'){starts_on=$('f_from').value;ends_on=$('f_to').value;start_time=$('f_rtime').value||null;}
+      else{starts_on=$('f_wfrom').value;ends_on=$('f_wto').value;start_time=$('f_wtime').value||null;weekdays=[...modal.querySelectorAll('.wd-cb:checked')].map(c=>+c.value);}
+      if(!starts_on||!ends_on){msg.textContent='Укажите дату(ы) события.';return;}
+      if(st==='weekly'&&(!weekdays||!weekdays.length)){msg.textContent='Отметьте хотя бы один день недели.';return;}
+
+      const btn=$('saveEv');btn.disabled=true;btn.textContent='Сохраняем…';
+      try{
+        // картинка (обязательна)
+        let cover_url=ev.cover_image_url||null, cover_path=ev.cover_image_path||null;
+        const imgFile=$('f_imgfile').files[0];
+        const imgUrl=$('img_url').style.display!=='none'?$('f_imgurl').value.trim():'';
+        if(imgFile){ if(cover_path)await removeFiles('event-posters',[cover_path]); const r=await uploadFile('event-posters',imgFile);cover_url=r.url;cover_path=r.path; }
+        else if(imgUrl){ if(cover_path)await removeFiles('event-posters',[cover_path]); cover_url=imgUrl;cover_path=null; }
+        const selectedVenue=S.venues.find(x=>x.id===$('f_ven').value);
+        if(!cover_url && !selectedVenue?.logo_url){msg.textContent='Добавьте афишу, либо выберите площадку с логотипом.';btn.disabled=false;btn.textContent='Сохранить';return;}
+
+        // видео (опц.)
+        let video_url=ev.video_url||null, video_path=ev.video_path||null;
+        const vidFile=$('f_vidfile').files[0];
+        const vidUrl=$('vid_url').style.display!=='none'?$('f_vidurl').value.trim():'';
+        if(vidFile){ if(video_path)await removeFiles('event-videos',[video_path]); const r=await uploadFile('event-videos',vidFile);video_url=r.url;video_path=r.path; }
+        else if(vidUrl){ if(video_path)await removeFiles('event-videos',[video_path]); video_url=vidUrl;video_path=null; }
+
+        let slug=$('f_slug').value.trim()||slugify(title)||('event-'+Date.now());
+        const payload={title,slug,performer:$('f_perf').value.trim()||null,category_id:cat,venue_id:$('f_ven').value||null,
+          short_description:$('f_short').value.trim()||null,full_description:$('f_full').value.trim()||null,
+          price:$('f_price').value.trim()||null,external_url:$('f_ext').value.trim()||null,
+          cover_image_url:cover_url,cover_image_path:cover_path,video_url,video_path,
+          is_featured:$('f_feat').checked,schedule_type:st,starts_on,ends_on,start_time,weekdays,status:$('f_status').value};
+
+        let res;
+        if(ev.id) res=await client.from('events').update(payload).eq('id',ev.id);
+        else res=await client.from('events').insert(payload);
+        if(res.error){
+          if(String(res.error.message).includes('duplicate')||res.error.code==='23505'){ // slug занят
+            payload.slug=slug+'-'+Math.random().toString(36).slice(2,5);
+            res= ev.id?await client.from('events').update(payload).eq('id',ev.id):await client.from('events').insert(payload);
+          }
+          if(res.error) throw res.error;
+        }
+        closeModal(); await loadAll(); render();
+      }catch(e){ msg.textContent='Ошибка: '+(e.message||e); btn.disabled=false;btn.textContent='Сохранить'; }
+    }
+
+    async function delEvent(id){
+      const ev=S.events.find(x=>x.id===id); if(!ev)return;
+      if(!confirm('Удалить событие «'+ev.title+'»? Файлы тоже удалятся.'))return;
+      await removeFiles('event-posters',[ev.cover_image_path]);
+      await removeFiles('event-videos',[ev.video_path]);
+      await client.from('events').delete().eq('id',id);
+      await loadAll(); render();
+    }
+
+    // ================= ПЛОЩАДКИ =================
+    function renderVenues(){
+      const rows=S.venues.map(v=>`<div class="row"><div class="grow"><b>${esc(v.name)}</b><small>${esc(v.city||'')}${v.address?' · '+esc(v.address):''}${v.is_active?'':' · скрыта'}</small></div>
+        <div class="acts"><button class="btn ghost sm" data-edit-ven="${v.id}">Изменить</button><button class="btn danger sm" data-del-ven="${v.id}">Удалить</button></div></div>`).join('');
+      return `<div class="head-row"><h2>Площадки</h2><button class="btn accent" data-new-ven>+ Добавить площадку</button></div><div class="list">${rows||'<div class="empty">Площадок пока нет.</div>'}</div>`;
+    }
+    function venueForm(v){
+      v=v||{is_active:true};
+      openModal(`<div class="modal-h"><h3>${v.id?'Изменить площадку':'Новая площадка'}</h3><button class="x" data-close>✕</button></div>
+        <div class="modal-b">
+          <div class="field req"><label>Название</label><input id="v_name" value="${esc(v.name)}"></div>
+          <div class="row-2"><div class="field"><label>Город</label><input id="v_city" value="${esc(v.city)||'Екатеринбург'}"></div>
+          <div class="field"><label>Адрес</label><input id="v_addr" value="${esc(v.address)}"></div></div>
+          <div class="field"><label>Описание</label><textarea id="v_desc">${esc(v.description)}</textarea></div>
+          <div class="field"><label>Логотип / фото</label>
+            <div class="seg"><button type="button" class="on" data-logomode="file">Загрузить файл</button><button type="button" data-logomode="url">Вставить ссылку</button></div>
+            <div id="logo_file"><input type="file" id="v_logofile" accept="image/*"></div>
+            <div id="logo_url" style="display:none"><input id="v_logourl" value="${esc(v.logo_url&&!v.logo_path?v.logo_url:'')}" placeholder="https://... .jpg"></div>
+            ${v.logo_url?`<div class="up-prev"><img src="${esc(proxify(v.logo_url))}"></div>`:''}
+            <div class="hint">Показывается на превью-карточке, если у события нет своей афиши (например, видео-анонс без постера).</div>
+          </div>
+          <label style="font-weight:500"><input type="checkbox" id="v_active" style="width:auto" ${v.is_active?'checked':''}> показывать в фильтрах</label>
+          <div class="msg err" id="vMsg"></div>
+        </div>
+        <div class="modal-f"><button class="btn ghost" data-close>Отмена</button><button class="btn accent" id="saveVen">Сохранить</button></div>`);
+      const seg=(sel,cb)=>modal.querySelectorAll(sel).forEach(b=>b.onclick=()=>{modal.querySelectorAll(sel).forEach(x=>x.classList.toggle('on',x===b));cb(b.dataset);});
+      seg('[data-logomode]',d=>{$('logo_file').style.display=d.logomode==='file'?'':'none';$('logo_url').style.display=d.logomode==='url'?'':'none';});
+      $('saveVen').onclick=async()=>{
+        const msg=$('vMsg');msg.textContent='';
+        const name=$('v_name').value.trim(); if(!name){msg.textContent='Введите название.';return;}
+
+        let logo_url=v.logo_url||null, logo_path=v.logo_path||null;
+        const logoFile=$('v_logofile').files[0];
+        const logoUrl=$('logo_url').style.display!=='none'?$('v_logourl').value.trim():'';
+        if(logoFile){ if(logo_path)await removeFiles('event-posters',[logo_path]); const r=await uploadFile('event-posters',logoFile,'venues/');logo_url=r.url;logo_path=r.path; }
+        else if(logoUrl){ if(logo_path)await removeFiles('event-posters',[logo_path]); logo_url=logoUrl;logo_path=null; }
+
+        const payload={name,city:$('v_city').value.trim()||null,address:$('v_addr').value.trim()||null,description:$('v_desc').value.trim()||null,logo_url,logo_path,is_active:$('v_active').checked,slug:v.slug||slugify(name)||('venue-'+Date.now())};
+        const res=v.id?await client.from('venues').update(payload).eq('id',v.id):await client.from('venues').insert(payload);
+        if(res.error){msg.textContent='Ошибка: '+res.error.message;return;}
+        closeModal();await loadAll();render();
+      };
+    }
+    async function delVenue(id){const v=S.venues.find(x=>x.id===id);if(!confirm('Удалить площадку «'+v.name+'»?'))return;await client.from('venues').delete().eq('id',id);await loadAll();render();}
+
+    // ================= КАТЕГОРИИ =================
+    function renderCategories(){
+      const rows=S.categories.map(c=>`<div class="row"><div class="grow"><b>${esc(c.name)}</b><small>порядок: ${c.sort_order}</small></div>
+        <div class="acts"><button class="btn ghost sm" data-edit-cat="${c.id}">Изменить</button><button class="btn danger sm" data-del-cat="${c.id}">Удалить</button></div></div>`).join('');
+      return `<div class="head-row"><h2>Категории</h2><button class="btn accent" data-new-cat>+ Добавить категорию</button></div><div class="list">${rows||'<div class="empty">Категорий нет.</div>'}</div>`;
+    }
+    function catForm(c){
+      c=c||{sort_order:(S.categories.length+1)*10};
+      openModal(`<div class="modal-h"><h3>${c.id?'Изменить категорию':'Новая категория'}</h3><button class="x" data-close>✕</button></div>
+        <div class="modal-b"><div class="field req"><label>Название</label><input id="c_name" value="${esc(c.name)}"></div>
+        <div class="field"><label>Порядок сортировки</label><input type="number" id="c_sort" value="${c.sort_order}"></div>
+        <div class="msg err" id="cMsg"></div></div>
+        <div class="modal-f"><button class="btn ghost" data-close>Отмена</button><button class="btn accent" id="saveCat">Сохранить</button></div>`);
+      $('saveCat').onclick=async()=>{
+        const name=$('c_name').value.trim();if(!name){$('cMsg').textContent='Введите название.';return;}
+        const payload={name,sort_order:+$('c_sort').value||0,slug:c.slug||slugify(name)||('cat-'+Date.now())};
+        const res=c.id?await client.from('categories').update(payload).eq('id',c.id):await client.from('categories').insert(payload);
+        if(res.error){$('cMsg').textContent='Ошибка: '+res.error.message;return;}
+        closeModal();await loadAll();render();
+      };
+    }
+    async function delCat(id){const c=S.categories.find(x=>x.id===id);if(!confirm('Удалить категорию «'+c.name+'»? События этой категории останутся без неё.'))return;await client.from('categories').delete().eq('id',id);await loadAll();render();}
+
+    // ================= БАННЕРЫ =================
+    function renderBanners(){
+      const rows=S.banners.map(b=>`<div class="row">
+        <img class="thumb" src="${esc(proxify(b.image_url)||'')}" onerror="this.style.visibility='hidden'">
+        <div class="grow"><b>${esc(b.title||'Баннер')}</b><small>${b.link_url?esc(b.link_url):'без ссылки'}${b.active?'':' · выключен'}</small></div>
+        <span class="stat">👁 <b>${b.impressions||0}</b> · 👆 <b>${b.clicks||0}</b></span>
+        <div class="acts"><button class="btn ghost sm" data-edit-ban="${b.id}">Изменить</button><button class="btn danger sm" data-del-ban="${b.id}">Удалить</button></div>
+      </div>`).join('');
+      return `<div class="head-row"><h2>Баннеры карусели</h2><button class="btn accent" data-new-ban>+ Добавить баннер</button></div>
+        <div class="list">${rows||'<div class="empty">Баннеров нет. Добавьте — появятся в карусели вверху афиши.</div>'}</div>`;
+    }
+    function bannerForm(b){
+      b=b||{active:true,sort_order:(S.banners.length+1)*10};
+      openModal(`<div class="modal-h"><h3>${b.id?'Изменить баннер':'Новый баннер'}</h3><button class="x" data-close>✕</button></div>
+        <div class="modal-b">
+          <div class="field"><label>Название (для себя)</label><input id="b_title" value="${esc(b.title)}"></div>
+          <div class="field req"><label>Картинка баннера</label>
+            <div class="seg"><button type="button" class="on" data-bmode="file">Загрузить файл</button><button type="button" data-bmode="url">Вставить ссылку</button></div>
+            <div id="b_file"><input type="file" id="b_imgfile" accept="image/*"></div>
+            <div id="b_url_w" style="display:none"><input id="b_imgurl" value="${esc(b.image_url&&!b.image_path?b.image_url:'')}" placeholder="https://..."></div>
+            ${b.image_url?`<div class="up-prev"><img src="${esc(proxify(b.image_url))}"></div>`:''}
+          </div>
+          <div class="field"><label>Ссылка перехода</label><input id="b_link" value="${esc(b.link_url)}" placeholder="https://... куда ведёт баннер"></div>
+          <div class="row-2"><div class="field"><label>Порядок</label><input type="number" id="b_sort" value="${b.sort_order}"></div>
+          <div class="field"><label>Активен</label><label style="font-weight:500;margin-top:8px"><input type="checkbox" id="b_active" style="width:auto" ${b.active?'checked':''}> показывать</label></div></div>
+          ${b.id?`<div class="stat">Статистика: показов <b>${b.impressions||0}</b>, переходов <b>${b.clicks||0}</b></div>`:''}
+          <div class="msg err" id="bMsg"></div>
+        </div>
+        <div class="modal-f"><button class="btn ghost" data-close>Отмена</button><button class="btn accent" id="saveBan">Сохранить</button></div>`);
+      modal.querySelectorAll('[data-bmode]').forEach(x=>x.onclick=()=>{modal.querySelectorAll('[data-bmode]').forEach(y=>y.classList.toggle('on',y===x));$('b_file').style.display=x.dataset.bmode==='file'?'':'none';$('b_url_w').style.display=x.dataset.bmode==='url'?'':'none';});
+      $('saveBan').onclick=async()=>{
+        const msg=$('bMsg');msg.textContent='';const btn=$('saveBan');btn.disabled=true;btn.textContent='Сохраняем…';
+        try{
+          let url=b.image_url||null,path=b.image_path||null;
+          const f=$('b_imgfile').files[0];const u=$('b_url_w').style.display!=='none'?$('b_imgurl').value.trim():'';
+          if(f){if(path)await removeFiles('event-posters',[path]);const r=await uploadFile('event-posters',f);url=r.url;path=r.path;}
+          else if(u){if(path)await removeFiles('event-posters',[path]);url=u;path=null;}
+          if(!url){msg.textContent='Добавьте картинку баннера.';btn.disabled=false;btn.textContent='Сохранить';return;}
+          const payload={title:$('b_title').value.trim()||null,image_url:url,image_path:path,link_url:$('b_link').value.trim()||null,sort_order:+$('b_sort').value||0,active:$('b_active').checked};
+          const res=b.id?await client.from('banners').update(payload).eq('id',b.id):await client.from('banners').insert(payload);
+          if(res.error)throw res.error;
+          closeModal();await loadAll();render();
+        }catch(e){msg.textContent='Ошибка: '+(e.message||e);btn.disabled=false;btn.textContent='Сохранить';}
+      };
+    }
+    async function delBanner(id){const b=S.banners.find(x=>x.id===id);if(!confirm('Удалить баннер?'))return;await removeFiles('event-posters',[b.image_path]);await client.from('banners').delete().eq('id',id);await loadAll();render();}
+
+    // ================= ПРЕДЛОЖЕННОЕ =================
+    function renderSubs(){
+      const rows=S.subs.map(s=>`<div class="row">
+        <img class="thumb" src="${esc(proxify(s.cover_image_url)||'')}" onerror="this.style.visibility='hidden'">
+        <div class="grow"><b>${esc(s.title)}</b><small>${esc(schedText(s))}${s.venue_name?' · '+esc(s.venue_name):''}${catName(s.category_id)?' · '+esc(catName(s.category_id)):''} · от ${esc(s.submitter_name||'аноним')}${s.submitter_contact?' ('+esc(s.submitter_contact)+')':''}</small></div>
+        <div class="acts"><button class="btn accent sm" data-pub-sub="${s.id}">Опубликовать</button><button class="btn danger sm" data-del-sub="${s.id}">Отклонить</button></div>
+      </div>`).join('');
+      return `<div class="head-row"><h2>Предложенное организаторами</h2></div><div class="list">${rows||'<div class="empty">Новых заявок нет.</div>'}</div>`;
+    }
+    function publishSub(id){
+      const s=S.subs.find(x=>x.id===id);if(!s)return;
+      // открываем форму события, предзаполненную из заявки; после сохранения удаляем заявку
+      eventForm({schedule_type:s.schedule_type||'single',status:'published',title:s.title,performer:s.performer,category_id:s.category_id,
+        short_description:s.short_description,full_description:s.full_description,price:s.price,external_url:s.external_url,
+        cover_image_url:s.cover_image_url,cover_image_path:null,video_url:s.video_url||null,video_path:null,starts_on:s.starts_on,ends_on:s.ends_on,start_time:s.start_time,weekdays:s.weekdays});
+      const origSave=$('saveEv').onclick;
+      $('saveEv').onclick=async()=>{ await origSave(); if(!modal.classList.contains('open')){ await client.from('event_submissions').delete().eq('id',id); await loadAll(); if(S.tab==='subs')render(); } };
+    }
+    async function delSub(id){if(!confirm('Отклонить и удалить заявку?'))return;await client.from('event_submissions').delete().eq('id',id);await loadAll();render();}
+
+    // ---------- навешивание обработчиков ----------
+    function wire(){
+      const on=(attr,fn)=>document.querySelectorAll('['+attr+']').forEach(b=>b.onclick=()=>fn(b.getAttribute(attr)));
+      $('view').querySelector('[data-new-ev]') && ($('view').querySelector('[data-new-ev]').onclick=()=>eventForm());
+      $('view').querySelector('[data-new-ven]') && ($('view').querySelector('[data-new-ven]').onclick=()=>venueForm());
+      $('view').querySelector('[data-new-cat]') && ($('view').querySelector('[data-new-cat]').onclick=()=>catForm());
+      $('view').querySelector('[data-new-ban]') && ($('view').querySelector('[data-new-ban]').onclick=()=>bannerForm());
+      on('data-edit-ev',id=>eventForm(S.events.find(x=>x.id===id)));
+      on('data-del-ev',delEvent);
+      on('data-edit-ven',id=>venueForm(S.venues.find(x=>x.id===id)));
+      on('data-del-ven',delVenue);
+      on('data-edit-cat',id=>catForm(S.categories.find(x=>x.id===id)));
+      on('data-del-cat',delCat);
+      on('data-edit-ban',id=>bannerForm(S.banners.find(x=>x.id===id)));
+      on('data-del-ban',delBanner);
+      on('data-pub-sub',publishSub);
+      on('data-del-sub',delSub);
+    }
+
+    // авто-slug при вводе заголовка (в форме события)
+    modal.addEventListener('input',e=>{ if(e.target.id==='f_title'){const s=$('f_slug');if(s&&!s.dataset.touched)s.value=slugify(e.target.value);} if(e.target.id==='f_slug')e.target.dataset.touched='1'; });
+
+    init();
+  })();
+  </script>
+</body>
+</html>

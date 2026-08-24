@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Афиша Екатеринбурга — ЕКБ ГИД</title>
+<meta name="description" content="Афиша Екатеринбурга: вечеринки, рестораны, выставки, спорт и события города. Что происходит сегодня и на этой неделе — ЕКБ ГИД." />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Onest:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#FBFAF7;
+    --surface:#FFFFFF;
+    --surface-2:#F3F0E9;
+    --ink:#16151A;
+    --muted:#6B6A73;
+    --line:#E7E3DA;
+    --accent:#E5133C;
+    --accent-ink:#B00E30;
+    --radius:16px;
+    --radius-lg:22px;
+    --shadow:0 6px 24px rgba(22,21,26,.07);
+    --shadow-lg:0 18px 50px rgba(22,21,26,.16);
+    --display:'Montserrat',system-ui,sans-serif;
+    --body:'Onest',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;}
+  body{font-family:var(--body);background:var(--paper);color:var(--ink);-webkit-font-smoothing:antialiased;}
+  a{color:inherit;text-decoration:none;}
+  button,select,input{font:inherit;}
+  .wrap{max-width:1200px;margin:0 auto;padding:20px 20px 48px;}
+
+  /* ---------- Шапка ---------- */
+  .head{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin:6px 0 18px;}
+  .brand h1{font-family:var(--display);font-weight:800;font-size:clamp(26px,4.4vw,44px);line-height:.98;margin:0;letter-spacing:-.01em;}
+  .brand p{margin:8px 0 0;color:var(--muted);font-size:15px;}
+  .views{display:flex;gap:6px;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:4px;}
+  .views button{border:0;background:transparent;color:var(--muted);padding:9px 16px;border-radius:999px;cursor:pointer;font-weight:600;transition:.15s;}
+  .views button.on{background:var(--ink);color:#fff;}
+
+  /* ---------- Фильтры ---------- */
+  .filters{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:18px;}
+  .chips{display:flex;gap:8px;flex-wrap:wrap;}
+  .chip{border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:999px;padding:8px 15px;cursor:pointer;font-weight:600;font-size:14px;transition:.15s;}
+  .chip:hover{border-color:var(--ink);}
+  .chip.on{background:var(--accent);border-color:var(--accent);color:#fff;}
+  .venue{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:9px 15px;color:var(--ink);min-width:190px;cursor:pointer;}
+
+  /* ---------- Карусель баннеров (карточки, стиль afisha) ---------- */
+  #bannerHost{margin-bottom:24px;}
+  .promo{position:relative;}
+  .promo-track{display:flex;gap:14px;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;padding:2px;}
+  .promo-track::-webkit-scrollbar{display:none;}
+  .promo-card{flex:0 0 auto;width:clamp(250px,31%,360px);aspect-ratio:3/4;border-radius:20px;overflow:hidden;position:relative;scroll-snap-align:start;box-shadow:var(--shadow);background:var(--surface-2);transition:.18s;}
+  .promo-card:hover{transform:translateY(-3px);box-shadow:var(--shadow-lg);}
+  .promo-card img{width:100%;height:100%;object-fit:cover;display:block;}
+  .promo-card .ov{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:flex-end;padding:18px;background:linear-gradient(to top,rgba(0,0,0,.74),rgba(0,0,0,.12) 52%,transparent);}
+  .promo-card .ov h4{color:#fff;font-family:var(--display);font-weight:700;font-size:20px;line-height:1.12;margin:0 0 12px;}
+  .promo-card .cta{align-self:flex-start;background:#fff;color:var(--ink);border-radius:999px;padding:9px 16px;font-weight:700;font-size:14px;}
+  .promo-arrow{position:absolute;top:50%;transform:translateY(-50%);width:42px;height:42px;border-radius:50%;border:0;background:rgba(255,255,255,.95);color:var(--ink);font-size:20px;cursor:pointer;box-shadow:var(--shadow-lg);z-index:2;}
+  .promo-arrow.prev{left:-6px;} .promo-arrow.next{right:-6px;}
+  @media(max-width:640px){ .promo-card{width:80%;} .promo-arrow{display:none;} }
+
+  /* ---------- Лента дат (фирменный элемент) ---------- */
+  .ticker{position:sticky;top:0;z-index:20;background:var(--paper);padding:10px 0 12px;margin-bottom:6px;}
+  .ticker-inner{display:flex;align-items:stretch;gap:4px;overflow-x:auto;scrollbar-width:none;scroll-behavior:smooth;padding:2px;}
+  .ticker-inner::-webkit-scrollbar{display:none;}
+  .tick-month{flex:0 0 auto;align-self:center;font-family:var(--display);font-weight:700;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;padding:0 10px 0 4px;white-space:nowrap;}
+  .tick{flex:0 0 auto;min-width:56px;padding:10px 6px 8px;border-radius:14px;text-align:center;cursor:pointer;background:transparent;border:0;position:relative;transition:.12s;}
+  .tick .wd{font-size:11px;color:var(--muted);text-transform:lowercase;}
+  .tick .n{font-size:20px;font-weight:500;color:var(--muted);margin-top:1px;line-height:1;}
+  .tick.has .n{font-weight:800;color:var(--ink);}                 /* день с событиями — жирный */
+  .tick.weekend .wd{color:var(--accent);}
+  .tick.weekend.has .n{color:var(--accent);}
+  .tick.on{background:var(--ink);}
+  .tick.on .wd,.tick.on .n{color:#fff;}
+  .tick .mark{position:absolute;bottom:3px;left:50%;transform:translateX(-50%);width:5px;height:5px;border-radius:50%;background:var(--accent);}
+  .tick.on .mark{background:#fff;}
+  .ticker-arrow{flex:0 0 auto;width:34px;border:1px solid var(--line);background:var(--surface);border-radius:12px;cursor:pointer;color:var(--muted);font-size:16px;}
+  .ticker-arrow:hover{border-color:var(--ink);color:var(--ink);}
+  .day-head{font-family:var(--display);font-weight:700;font-size:20px;margin:8px 2px 14px;}
+  .clear-date{border:0;background:transparent;color:var(--accent);font:inherit;font-size:14px;font-weight:600;cursor:pointer;margin-left:6px;}
+
+  /* ---------- Сетка карточек ---------- */
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;display:flex;flex-direction:column;box-shadow:var(--shadow);transition:.18s;cursor:pointer;}
+  .card:hover{transform:translateY(-3px);box-shadow:var(--shadow-lg);border-color:#d8d3c8;}
+  .cover{position:relative;aspect-ratio:16/10;background:linear-gradient(135deg,#efe9dc,#e3dccf);display:flex;align-items:center;justify-content:center;overflow:hidden;}
+  .cover::after{content:'ЕКБ ГИД';font-family:var(--display);font-weight:800;color:rgba(22,21,26,.14);font-size:18px;letter-spacing:.05em;}
+  .cover img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;}
+  .cover .cat{position:absolute;top:10px;left:10px;background:rgba(255,255,255,.94);color:var(--ink);font-size:12px;font-weight:700;padding:5px 11px;border-radius:999px;z-index:2;}
+  .cover .feat{position:absolute;top:10px;right:10px;background:var(--accent);color:#fff;font-size:11px;font-weight:700;padding:5px 10px;border-radius:999px;z-index:2;}
+  .cover .vid{position:absolute;bottom:10px;right:10px;background:rgba(22,21,26,.72);color:#fff;font-size:12px;padding:4px 10px;border-radius:999px;z-index:2;}
+  .card-body{padding:15px 16px 16px;display:flex;flex-direction:column;gap:7px;flex:1;}
+  .when{color:var(--accent);font-weight:700;font-size:13px;}
+  .card h3{font-family:var(--display);font-weight:600;font-size:18px;line-height:1.14;margin:0;letter-spacing:-.01em;}
+  .perf{color:var(--muted);font-size:14px;margin-top:-2px;}
+  .place{color:var(--muted);font-size:13px;}
+  .card p{margin:2px 0 0;color:#413F39;font-size:14px;line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+  .card-foot{margin-top:auto;padding-top:10px;display:flex;justify-content:space-between;align-items:center;gap:10px;}
+  .price{font-weight:700;font-size:15px;}
+  .more{border:1px solid var(--ink);background:transparent;color:var(--ink);border-radius:999px;padding:8px 14px;font-weight:600;cursor:pointer;transition:.15s;}
+  .more:hover{background:var(--ink);color:#fff;}
+
+  .empty,.loading,.error{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:24px;color:var(--muted);text-align:center;}
+  .error{color:var(--accent-ink);}
+  .foot-note{margin-top:26px;color:var(--muted);font-size:13px;text-align:center;}
+  .foot-note a{color:var(--accent);font-weight:600;}
+
+  /* ---------- Модалка ---------- */
+  .backdrop{position:fixed;inset:0;background:rgba(16,15,20,.6);display:none;align-items:center;justify-content:center;padding:18px;z-index:9999;}
+  .backdrop.open{display:flex;}
+  .modal{width:min(760px,100%);max-height:92vh;overflow:auto;background:var(--surface);border-radius:22px;box-shadow:var(--shadow-lg);}
+  .modal .poster{display:block;max-width:100%;max-height:60vh;width:auto;height:auto;margin:14px auto;border-radius:14px;}
+  .modal video{display:block;margin:14px auto;width:auto;max-width:100%;max-height:70vh;background:#000;border-radius:14px;}
+  .modal-body{padding:20px 22px 24px;}
+  .modal-top{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;}
+  .modal-top h2{font-family:var(--display);font-weight:700;font-size:clamp(22px,3.4vw,30px);line-height:1.05;margin:0;}
+  .x{flex:0 0 auto;width:42px;height:42px;border-radius:50%;border:1px solid var(--line);background:var(--surface);cursor:pointer;font-size:18px;}
+  .x:hover{border-color:var(--ink);}
+  .modal .meta{display:flex;flex-wrap:wrap;gap:8px 16px;color:var(--muted);margin:12px 0 4px;font-size:14px;}
+  .modal .meta b{color:var(--ink);}
+  .desc{line-height:1.65;color:#2C2A26;white-space:pre-line;margin-top:14px;}
+  .ticket{display:inline-block;margin-top:18px;background:var(--accent);color:#fff;border-radius:999px;padding:12px 22px;font-weight:700;}
+  .ticket:hover{background:var(--accent-ink);}
+
+  @media (max-width:980px){ .grid{grid-template-columns:repeat(2,1fr);} }
+  @media (max-width:640px){
+    .wrap{padding:14px 14px 40px;}
+    .grid{grid-template-columns:1fr;}
+    .head{align-items:flex-start;}
+    .views{width:100%;} .views button{flex:1;}
+    .venue{width:100%;}
+    .tick{min-width:50px;}
+  }
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+  @media (prefers-reduced-motion:reduce){ *{transition:none!important;} .ticker-inner{scroll-behavior:auto;} }
+</style>
+</head>
+<body>
+  <div id="afisha-root" class="wrap"><div class="loading">Загрузка афиши…</div></div>
+  <div class="backdrop" id="modal"></div>
+
+  <script src="./supabase.js"></script>
+  <script>
+  (function(){
+    const cs = document.currentScript;
+    const CFG = {
+      url: (cs && cs.dataset.supabaseUrl) || 'https://sb.ekb-guide.ru',
+      key: (cs && cs.dataset.supabaseAnonKey) || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhibWRwcW5zZXl3cGh3Z3hzbmxnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3MjE1NzYsImV4cCI6MjA5NTI5NzU3Nn0.wLuTKZ-uhCQ69iEm6gyJrsgaP0NgVL-PBad3kJD7uHU',
+      title: 'Афиша Екатеринбурга',
+      subtitle: 'Что происходит в городе — от ЕКБ ГИД'
+    };
+
+    const root  = document.getElementById('afisha-root');
+    const modal = document.getElementById('modal');
+    let client;
+    const S = {
+      cat:'', venue:'', selectedDate:null,
+      categories:[], venues:[], events:[], banners:[],
+      loading:true, error:''
+    };
+
+    // ---------- утилиты ----------
+    const MONTHS=['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+    const MONTHS_SH=['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'];
+    const WD=['','пн','вт','ср','чт','пт','сб','вс'];
+    const esc=(s='')=>String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
+    const safeUrl=u=>/^https?:\/\//i.test(u||'')?u:'';
+    const SB_DIRECT='https://hbmdpqnseywphwgxsnlg.supabase.co';
+    const mediaUrl=u=>{const s=safeUrl(u);return s?s.replace(SB_DIRECT,CFG.url):s;};
+    const pad=n=>String(n).padStart(2,'0');
+    const ymd=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+    const parseD=s=>{const[y,m,d]=String(s).split('-').map(Number);return new Date(y,m-1,d);};
+    const isoDow=d=>{const g=d.getDay();return g===0?7:g;};
+    const fmtTime=t=>t?String(t).slice(0,5):'';
+    // Отображение времени — только часы, без минут, с русским склонением (19 часов, 22 часа, 21 час).
+    // Используется только для показа; для сортировки по времени остаётся fmtTime (HH:MM).
+    const hourWord=t=>{
+      if(!t)return '';
+      const h=parseInt(String(t).slice(0,2),10), m100=h%100, m10=h%10;
+      const word=(m100>=11&&m100<=14)?'часов':m10===1?'час':(m10>=2&&m10<=4)?'часа':'часов';
+      return `${h} ${word}`;
+    };
+    const fmtDay=s=>{const d=parseD(s);return `${d.getDate()} ${MONTHS[d.getMonth()]}`;};
+
+    function formatSchedule(ev){
+      const t=hourWord(ev.start_time);
+      if(ev.schedule_type==='range' && ev.ends_on){
+        const a=parseD(ev.starts_on), b=parseD(ev.ends_on);
+        const left=a.getMonth()===b.getMonth()?`${a.getDate()}`:`${a.getDate()} ${MONTHS[a.getMonth()]}`;
+        return `${left}–${b.getDate()} ${MONTHS[b.getMonth()]}${t?', '+t:''}`;
+      }
+      if(ev.schedule_type==='weekly'){
+        const days=(ev.weekdays||[]).slice().sort((x,y)=>x-y).map(w=>WD[w]).filter(Boolean).join(', ');
+        const until=ev.ends_on?` · до ${fmtDay(ev.ends_on)}`:'';
+        return `${days?'по '+days:'еженедельно'}${t?', '+t:''}${until}`;
+      }
+      return `${fmtDay(ev.starts_on)}${t?', '+t:''}`;
+    }
+
+    // даты, на которые попадает событие в окне [from..to] (включительно)
+    function occurrences(ev, from, to){
+      const res=[]; if(!ev.starts_on) return res;
+      const s=parseD(ev.starts_on);
+      const e=ev.ends_on?parseD(ev.ends_on):s;
+      if(ev.schedule_type==='single'){
+        if(s>=from && s<=to) res.push(ymd(s));
+        return res;
+      }
+      const start=new Date(Math.max(s.getTime(),from.getTime()));
+      const end=new Date(Math.min(e.getTime(),to.getTime()));
+      for(let d=new Date(start); d<=end; d.setDate(d.getDate()+1)){
+        if(ev.schedule_type==='weekly'){ if((ev.weekdays||[]).includes(isoDow(d))) res.push(ymd(d)); }
+        else res.push(ymd(d)); // range
+      }
+      return res;
+    }
+    function nextDate(ev, today){
+      const h=new Date(today); h.setDate(h.getDate()+365);
+      const o=occurrences(ev, today, h);
+      return o.length?o[0]:null;
+    }
+
+    function filtered(){
+      return S.events.filter(ev=>{
+        if(S.cat && (ev.categories?.slug!==S.cat)) return false;
+        if(S.venue && (ev.venues?.slug!==S.venue)) return false;
+        return true;
+      });
+    }
+
+    // ---------- загрузка ----------
+    const withTimeout=(p,ms)=>Promise.race([p,new Promise((_,rej)=>setTimeout(()=>rej(new Error('сервер не ответил за отведённое время')),ms))]);
+
+    async function load(){
+      try{
+        if(!window.supabase || !window.supabase.createClient)
+          throw new Error('не загрузилась библиотека supabase.js (положите её рядом с index.html)');
+        client=window.supabase.createClient(CFG.url,CFG.key);
+        loadBanners();
+        const [cats,vens,evs]=await withTimeout(Promise.all([
+          client.from('categories').select('id,name,slug').order('sort_order'),
+          client.from('venues').select('id,name,slug,city,address').eq('is_active',true).order('name'),
+          client.from('events').select('id,title,slug,performer,short_description,full_description,price,external_url,cover_image_url,video_url,is_featured,schedule_type,starts_on,ends_on,start_time,end_time,weekdays,status,category_id,venue_id,venues(id,name,slug,address,city,logo_url),categories(id,name,slug)').eq('status','published').order('starts_on',{ascending:true})
+        ]),12000);
+        if(evs.error) throw evs.error;
+        S.categories=cats.data||[]; S.venues=vens.data||[]; S.events=evs.data||[];
+        S.loading=false;
+        renderMain();
+      }catch(e){
+        S.loading=false; S.error=e.message||'Ошибка загрузки';
+        renderMain();
+      }
+    }
+
+    // ---------- баннеры (монтируются один раз) ----------
+    async function loadBanners(){
+      try{
+        const {data,error}=await client.from('banners').select('*').eq('active',true).order('sort_order');
+        if(error||!data||!data.length) return;
+        S.banners=data;
+        mountBanners();
+      }catch(_){}
+    }
+    function mountBanners(){
+      let host=document.getElementById('bannerHost');
+      if(!host){ host=document.createElement('div'); host.id='bannerHost'; root.prepend(host); }
+      const b=S.banners;
+      const cards=b.map(x=>{
+        const url=safeUrl(x.link_url);
+        const inner=`<img src="${esc(mediaUrl(x.image_url))}" alt="${esc(x.title||'')}" loading="lazy" onerror="this.style.display='none'">
+          <div class="ov"><h4>${esc(x.title||'')}</h4>${url?`<span class="cta">Подробнее →</span>`:''}</div>`;
+        return url
+          ? `<a class="promo-card" href="${esc(url)}" target="_blank" rel="noopener nofollow" data-bid="${esc(x.id)}">${inner}</a>`
+          : `<div class="promo-card" data-bid="${esc(x.id)}">${inner}</div>`;
+      }).join('');
+      const arrows=b.length>2?`<button class="promo-arrow prev" aria-label="Назад">‹</button><button class="promo-arrow next" aria-label="Вперёд">›</button>`:'';
+      host.innerHTML=`<div class="promo"><div class="promo-track" id="promoTrack">${cards}</div>${arrows}</div>`;
+      const track=document.getElementById('promoTrack');
+      const step=()=>Math.min(track.clientWidth*0.8, 400);
+      host.querySelector('.prev')?.addEventListener('click',()=>track.scrollBy({left:-step(),behavior:'smooth'}));
+      host.querySelector('.next')?.addEventListener('click',()=>track.scrollBy({left:step(),behavior:'smooth'}));
+      host.querySelectorAll('a.promo-card[data-bid]').forEach(a=>a.addEventListener('click',()=>{
+        client.rpc('banner_click',{b_id:a.dataset.bid}).then(()=>{}).catch(()=>{});
+      }));
+      // показ считаем один раз, когда карточка реально попала в поле зрения
+      const seen=new Set();
+      const io=new IntersectionObserver(es=>es.forEach(e=>{
+        if(e.isIntersecting){ const id=e.target.dataset.bid;
+          if(id&&!seen.has(id)){ seen.add(id); client.rpc('banner_impression',{b_id:id}).then(()=>{}).catch(()=>{}); }
+          io.unobserve(e.target);
+        }
+      }),{threshold:0.5});
+      host.querySelectorAll('.promo-card').forEach(c=>io.observe(c));
+    }
+
+    // ---------- карточка ----------
+    function card(ev, whenText){
+      const cat=ev.categories?.name;
+      // Приоритет превью: реальная афиша, иначе логотип заведения (для видео-анонсов без постера), иначе пусто.
+      const img=mediaUrl(ev.cover_image_url)||mediaUrl(ev.venues?.logo_url);
+      return `<article class="card" data-open="${esc(ev.id)}" tabindex="0" role="button">
+        <div class="cover">
+          ${img?`<img src="${esc(img)}" alt="${esc(ev.title)}" loading="lazy" onerror="this.remove()">`:''}
+          ${cat?`<span class="cat">${esc(cat)}</span>`:''}
+          ${ev.is_featured?`<span class="feat">Рекомендуем</span>`:''}
+          ${ev.video_url?`<span class="vid">▶ Видео</span>`:''}
+        </div>
+        <div class="card-body">
+          <div class="when">${esc(whenText||formatSchedule(ev))}</div>
+          <h3>${esc(ev.title)}</h3>
+          ${ev.performer?`<div class="perf">${esc(ev.performer)}</div>`:''}
+          ${ev.venues?.name?`<div class="place">${esc(ev.venues.name)}</div>`:''}
+          ${ev.short_description?`<p>${esc(ev.short_description)}</p>`:''}
+          <div class="card-foot">
+            <span class="price">${ev.price?esc(ev.price):'—'}</span>
+            <button class="more" data-open="${esc(ev.id)}">Подробнее</button>
+          </div>
+        </div>
+      </article>`;
+    }
+
+    // ---------- виды ----------
+    function renderMain(){
+      const prevScroll=document.getElementById('tickerInner')?.scrollLeft;
+      let host=document.getElementById('mainHost');
+
+      let tickerHtml='', eventsHtml='';
+      if(S.loading) eventsHtml='<div class="loading">Загрузка афиши…</div>';
+      else if(S.error) eventsHtml=`<div class="error">Не удалось загрузить афишу: ${esc(S.error)}</div>`;
+      else {
+        const today=new Date(); today.setHours(0,0,0,0);
+        const DAYS=60;
+        const horizon=new Date(today); horizon.setDate(horizon.getDate()+DAYS);
+        const byDate=new Map();
+        filtered().forEach(ev=>occurrences(ev,today,horizon).forEach(k=>{
+          if(!byDate.has(k)) byDate.set(k,[]); byDate.get(k).push(ev);
+        }));
+        if(S.selectedDate && !byDate.has(S.selectedDate)) S.selectedDate=null;
+
+        // лента дат
+        let ticks=''; let curMonth=-1;
+        for(let i=0;i<DAYS;i++){
+          const d=new Date(today); d.setDate(today.getDate()+i); const k=ymd(d);
+          if(d.getMonth()!==curMonth){ curMonth=d.getMonth(); ticks+=`<div class="tick-month">${MONTHS_SH[curMonth]}</div>`; }
+          const has=byDate.has(k); const we=isoDow(d)>=6;
+          ticks+=`<button class="tick ${has?'has':''} ${we?'weekend':''} ${S.selectedDate===k?'on':''}" data-date="${k}">
+            <span class="wd">${WD[isoDow(d)]}</span><span class="n">${d.getDate()}</span>${has?'<span class="mark"></span>':''}</button>`;
+        }
+        tickerHtml=`<div class="ticker"><div style="display:flex;gap:6px;align-items:stretch">
+            <button class="ticker-arrow" data-scroll="-1">‹</button>
+            <div class="ticker-inner" id="tickerInner">${ticks}</div>
+            <button class="ticker-arrow" data-scroll="1">›</button>
+          </div></div>`;
+
+        // анонсы: выбран день — события дня; иначе — весь список
+        if(S.selectedDate){
+          const d=parseD(S.selectedDate);
+          const dayItems=(byDate.get(S.selectedDate)||[]).sort((a,b)=>fmtTime(a.start_time).localeCompare(fmtTime(b.start_time)));
+          eventsHtml=`<div class="day-head">${WD[isoDow(d)]}, ${d.getDate()} ${MONTHS[d.getMonth()]} <button class="clear-date" data-clear>× показать все</button></div>`+
+            (dayItems.length?`<div class="grid">${dayItems.map(ev=>card(ev, hourWord(ev.start_time)||formatSchedule(ev))).join('')}</div>`
+              :`<div class="empty">На этот день событий нет.</div>`);
+        } else {
+          const items=filtered().map(ev=>({ev,d:nextDate(ev,today)})).filter(x=>x.d)
+            .sort((a,b)=> ((a.ev.schedule_type==='weekly')-(b.ev.schedule_type==='weekly')) || (b.ev.is_featured-a.ev.is_featured) || a.d.localeCompare(b.d));
+          eventsHtml=items.length?`<div class="grid">${items.map(x=>card(x.ev)).join('')}</div>`:`<div class="empty">Пока нет анонсов. Загляните позже.</div>`;
+        }
+      }
+
+      const chips=`<button class="chip ${!S.cat?'on':''}" data-cat="">Все</button>`+
+        S.categories.map(c=>`<button class="chip ${S.cat===c.slug?'on':''}" data-cat="${esc(c.slug)}">${esc(c.name)}</button>`).join('');
+      const venueOpts=`<option value="">Все площадки</option>`+
+        S.venues.map(v=>`<option value="${esc(v.slug)}" ${S.venue===v.slug?'selected':''}>${esc(v.name)}</option>`).join('');
+
+      const shell=`
+        <div class="head"><div class="brand"><h1>${esc(CFG.title)}</h1><p>${esc(CFG.subtitle)}</p></div></div>
+        ${tickerHtml}
+        <div class="filters">
+          <div class="chips">${chips}</div>
+          ${S.venues.length?`<select class="venue" id="venueSel">${venueOpts}</select>`:''}
+        </div>
+        <div id="mainBody">${eventsHtml}</div>
+        <div class="foot-note">Организуете событие? <a href="/submit.html">Предложить анонс →</a></div>`;
+      if(!host){ host=document.createElement('div'); host.id='mainHost'; root.appendChild(host); root.querySelector('.loading')?.remove(); }
+      host.innerHTML=shell;
+      bind();
+      const inner=document.getElementById('tickerInner');
+      if(inner){
+        if(prevScroll!=null) inner.scrollLeft=prevScroll;
+        else { const sel=inner.querySelector('.tick.on')||inner.querySelector('.tick.has'); if(sel) sel.scrollIntoView({inline:'center',block:'nearest'}); }
+      }
+    }
+
+    // ---------- модалка ----------
+    function openModal(id){
+      const ev=S.events.find(x=>String(x.id)===String(id)); if(!ev) return;
+      const v=ev.venues||{};
+      const cover=mediaUrl(ev.cover_image_url);
+      const ticket=safeUrl(ev.external_url);
+      modal.innerHTML=`<div class="modal" role="dialog" aria-modal="true" aria-label="${esc(ev.title)}">
+        <div class="modal-body">
+          <div class="modal-top">
+            <h2>${esc(ev.title)}</h2>
+            <button class="x" data-close aria-label="Закрыть">✕</button>
+          </div>
+          ${ev.performer?`<div class="perf" style="margin-top:6px">${esc(ev.performer)}</div>`:''}
+          ${cover?`<img class="poster" src="${esc(cover)}" alt="${esc(ev.title)}" onerror="this.remove()">`:''}
+          ${ev.video_url?`<video src="${esc(mediaUrl(ev.video_url))}" controls playsinline></video>`:''}
+          <div class="meta">
+            <span><b>${esc(formatSchedule(ev))}</b></span>
+            ${v.name?`<span>${esc(v.name)}</span>`:''}
+            ${v.address?`<span>${esc(v.address)}${v.city?', '+esc(v.city):''}</span>`:''}
+            ${ev.price?`<span><b>${esc(ev.price)}</b></span>`:''}
+          </div>
+          ${ev.full_description||ev.short_description?`<div class="desc">${esc(ev.full_description||ev.short_description)}</div>`:''}
+          ${ticket?`<a class="ticket" href="${esc(ticket)}" target="_blank" rel="noopener">Билеты и подробности →</a>`:''}
+          ${ev.slug?`<div style="margin-top:14px"><a href="/afisha/${esc(ev.slug)}" style="color:var(--muted);font-weight:600;font-size:14px">Открыть отдельной страницей →</a></div>`:''}
+        </div>
+      </div>`;
+      modal.classList.add('open');
+    }
+    function closeModal(){ modal.classList.remove('open'); modal.innerHTML=''; }
+    modal.addEventListener('click',e=>{ if(e.target===modal||e.target.closest('[data-close]')) closeModal(); });
+    document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeModal(); });
+
+    // ---------- события интерфейса ----------
+    function bind(){
+      document.querySelectorAll('[data-cat]').forEach(b=>b.onclick=()=>{S.cat=b.dataset.cat;S.selectedDate=null;renderMain();});
+      const vs=document.getElementById('venueSel'); if(vs) vs.onchange=()=>{S.venue=vs.value;S.selectedDate=null;renderMain();};
+      document.querySelectorAll('[data-date]').forEach(b=>b.onclick=()=>{S.selectedDate=(S.selectedDate===b.dataset.date)?null:b.dataset.date;renderMain();});
+      const cl=document.querySelector('[data-clear]'); if(cl) cl.onclick=()=>{S.selectedDate=null;renderMain();};
+      document.querySelectorAll('[data-scroll]').forEach(b=>b.onclick=()=>{const i=document.getElementById('tickerInner');if(i)i.scrollBy({left:+b.dataset.scroll*240,behavior:'smooth'});});
+      document.querySelectorAll('[data-open]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();openModal(b.dataset.open);}));
+      document.querySelectorAll('.card[role="button"]').forEach(c=>c.addEventListener('keydown',e=>{if(e.key==='Enter')openModal(c.dataset.open);}));
+    }
+
+    load();
+  })();
+  </script>
+</body>
+</html>
