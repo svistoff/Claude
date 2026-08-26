@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Настройки{% endblock %}
+{% block content %}
+<h1>Настройки</h1>
+
+{% if saved %}<div class="banner hint">Настройки сохранены.</div>{% endif %}
+
+{% if test_result %}
+<div class="banner {{ 'hint' if test_result.ok else 'warn' }}">
+    {{ "✅" if test_result.ok else "⚠️" }} {{ test_result.message }}
+</div>
+{% if test_result.devices %}
+<div class="card">
+    <table>
+        <thead><tr><th>MAC</th><th>Hostname</th><th>IP</th></tr></thead>
+        <tbody>
+        {% for d in test_result.devices %}
+            <tr><td>{{ d.mac }}</td><td>{{ d.hostname or "—" }}</td><td>{{ d.ip or "—" }}</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+{% endif %}
+
+<form method="post" action="/settings">
+    <div class="card">
+        <h3>Роутер</h3>
+        <label for="router_adapter">Тип адаптера</label>
+        <select id="router_adapter" name="router_adapter">
+            <option value="fake" {{ "selected" if settings.router_adapter == "fake" }}>fake (без реального роутера, для разработки/демо)</option>
+            <option value="xiaomi" {{ "selected" if settings.router_adapter == "xiaomi" }}>xiaomi (Xiaomi AX3000T / RD23)</option>
+        </select>
+
+        <label for="router_base_url">Адрес роутера</label>
+        <input type="text" id="router_base_url" name="router_base_url" value="{{ settings.router_base_url }}">
+
+        <label for="router_username">Логин роутера</label>
+        <input type="text" id="router_username" name="router_username" value="{{ settings.router_username }}">
+
+        <label for="router_password">Пароль роутера</label>
+        <input type="password" id="router_password" name="router_password"
+               placeholder="{{ '•••••• (задан)' if settings.router_password else 'не задан' }}">
+        <p class="muted">Оставьте пустым, чтобы не менять уже сохранённый пароль. Кнопка проверки ниже
+            использует то, что введено в полях выше (даже до сохранения).</p>
+
+        <button type="submit" form="test-connection-form" class="secondary">Проверить соединение</button>
+    </div>
+
+    <div class="card">
+        <h3>Опрос и таймаут</h3>
+        <label for="poll_interval_seconds">Интервал опроса роутера (секунды)</label>
+        <input type="number" id="poll_interval_seconds" name="poll_interval_seconds" value="{{ settings.poll_interval_seconds }}" min="10">
+
+        <label for="absence_timeout_minutes">Таймаут отсутствия (минуты)</label>
+        <input type="number" id="absence_timeout_minutes" name="absence_timeout_minutes" value="{{ settings.absence_timeout_minutes }}" min="1">
+
+        <label for="long_absence_hint_hours">Порог подсказки о смене MAC (часы)</label>
+        <input type="number" id="long_absence_hint_hours" name="long_absence_hint_hours" value="{{ settings.long_absence_hint_hours }}" min="1">
+
+        <label for="timezone">Часовой пояс</label>
+        <input type="text" id="timezone" name="timezone" value="{{ settings.timezone }}">
+    </div>
+
+    <button type="submit">Сохранить настройки</button>
+</form>
+
+<form method="post" action="/settings/test-connection" id="test-connection-form"></form>
+<script>
+// Кнопка "Проверить соединение" отправляет поля роутера в отдельную форму
+// (test-connection-form) без сохранения остальных настроек.
+document.querySelector('button[form="test-connection-form"]').addEventListener('click', function (e) {
+    var testForm = document.getElementById('test-connection-form');
+    testForm.innerHTML = '';
+    ['router_adapter', 'router_base_url', 'router_username', 'router_password'].forEach(function (name) {
+        var src = document.getElementsByName(name)[0];
+        var hidden = document.createElement('input');
+        hidden.type = 'hidden';
+        hidden.name = name;
+        hidden.value = src.value;
+        testForm.appendChild(hidden);
+    });
+});
+</script>
+{% endblock %}

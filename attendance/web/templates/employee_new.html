@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Новый сотрудник{% endblock %}
+{% block content %}
+<h1>Новый сотрудник</h1>
+<div class="card" style="max-width: 420px;">
+    <form method="post" action="/employees/new">
+        <label for="name">Имя</label>
+        <input type="text" id="name" name="name" required autofocus>
+        <button type="submit">Создать</button>
+    </form>
+</div>
+{% endblock %}

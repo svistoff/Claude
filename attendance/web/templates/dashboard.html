@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Дашборд — Учёт сотрудников{% endblock %}
+{% block content %}
+<h1>Учёт сотрудников</h1>
+<p class="muted">{{ today }}</p>
+
+{% if router_unreachable %}
+<div class="banner warn">⚠️ Нет связи с роутером. Последний успешный опрос: {{ last_ok_local }}. Автоматические уходы сейчас не фиксируются.</div>
+{% endif %}
+
+{% if hints %}
+<div class="banner hint">
+    ❓ Есть подозрение на смену MAC-адреса у {{ hints|length }} устройств(а) — см. <a href="/logs">логи</a> или карточку сотрудника, чтобы перепривязать.
+</div>
+{% endif %}
+
+<div class="counts">
+    <div class="count-tile"><div class="num">{{ counts.on_work }}</div><div class="label">На работе</div></div>
+    <div class="count-tile"><div class="num">{{ counts.left }}</div><div class="label">Ушли</div></div>
+    <div class="count-tile"><div class="num">{{ counts.not_arrived }}</div><div class="label">Не приходили</div></div>
+    <div class="count-tile"><div class="num">{{ counts.total }}</div><div class="label">Всего активных</div></div>
+</div>
+
+{% for s in statuses %}
+<div class="card">
+    <div class="status-row">
+        <div>
+            <strong>{{ s.label }} {{ s.employee.name }}</strong>
+            {% if s.device %}<div class="meta">{{ s.device.name }}</div>{% endif %}
+        </div>
+        <div class="meta" style="text-align: right;">
+            {% if s.status == 'on_work' %}
+                пришёл {{ fmt_time(s.arrived_at) }}<br>последнее обнаружение {{ fmt_time(s.last_seen_at) }}
+            {% elif s.status == 'left' %}
+                пришёл {{ fmt_time(s.arrived_at) }}, ушёл {{ fmt_time(s.left_at) }}
+            {% else %}
+                —
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% else %}
+<p class="muted">Нет активных сотрудников. <a href="/employees/new">Добавить сотрудника</a>.</p>
+{% endfor %}
+{% endblock %}

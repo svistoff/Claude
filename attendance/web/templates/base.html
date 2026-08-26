@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Учёт сотрудников{% endblock %}</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+{% if username is defined %}
+<nav class="topnav">
+    <div class="topnav-brand">Wi-Fi Attendance</div>
+    <a href="/dashboard">Дашборд</a>
+    <a href="/employees">Сотрудники</a>
+    <a href="/history">История</a>
+    <a href="/settings">Настройки</a>
+    <a href="/logs">Логи</a>
+    <form action="/logout" method="post" class="logout-form">
+        <button type="submit">Выход ({{ username }})</button>
+    </form>
+</nav>
+{% endif %}
+<main class="container">
+    {% block content %}{% endblock %}
+</main>
+</body>
+</html>

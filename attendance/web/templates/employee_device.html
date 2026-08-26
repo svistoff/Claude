@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Устройство — {{ employee.name }}{% endblock %}
+{% block content %}
+<h1>Устройство сотрудника {{ employee.name }}</h1>
+
+{% if device %}
+<p class="muted">Текущее устройство: {{ device.name }} (MAC {{ device.device_identifier }})</p>
+{% endif %}
+
+<div class="card">
+    <h3>Вариант 1 — выбрать из устройств, подключённых сейчас к Wi-Fi</h3>
+    <a class="btn secondary" href="/employees/{{ employee.id }}/device?discover=1">Получить список из роутера</a>
+
+    {% if discover_error %}
+        <p class="error">Не удалось получить список: {{ discover_error }}</p>
+    {% endif %}
+
+    {% if discovered %}
+    <form method="post" action="/employees/{{ employee.id }}/device" style="margin-top: 1rem;">
+        <table>
+            <thead><tr><th></th><th>MAC</th><th>Имя устройства (hostname)</th><th>IP</th></tr></thead>
+            <tbody>
+            {% for d in discovered %}
+                <tr>
+                    <td><input type="radio" name="device_identifier" value="{{ d.mac }}" required></td>
+                    <td>{{ d.mac }}</td>
+                    <td>{{ d.hostname or "—" }}</td>
+                    <td>{{ d.ip or "—" }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        <label for="device_name">Понятное название устройства</label>
+        <input type="text" id="device_name" name="device_name" placeholder="Например: Redmi Note 13 Pro" required>
+        <button type="submit">Привязать выбранное устройство</button>
+    </form>
+    {% endif %}
+</div>
+
+<div class="card">
+    <h3>Вариант 2 — ввести MAC-адрес вручную</h3>
+    <p class="muted">Если телефон не отображается в списке выше (например, сейчас не в сети).</p>
+    <form method="post" action="/employees/{{ employee.id }}/device">
+        <label for="device_identifier_manual">MAC-адрес</label>
+        <input type="text" id="device_identifier_manual" name="device_identifier"
+               placeholder="AA:BB:CC:DD:EE:FF" value="{{ prefill_mac }}" required>
+        <label for="device_name_manual">Понятное название устройства</label>
+        <input type="text" id="device_name_manual" name="device_name" placeholder="Например: iPhone" required>
+        <button type="submit">Привязать вручную</button>
+    </form>
+</div>
+{% endblock %}

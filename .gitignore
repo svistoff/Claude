@@ -4,7 +4,10 @@ __pycache__/
 venv/
 bot/.env
 bot/data/
+attendance/.env
+attendance/data/
 *.db
 *.db-wal
 *.db-shm
+.pytest_cache/
 .DS_Store

@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Сотрудники{% endblock %}
+{% block content %}
+<h1>Сотрудники</h1>
+<a class="btn" href="/employees/new">+ Добавить сотрудника</a>
+<table>
+    <thead>
+        <tr><th>Имя</th><th>Устройство</th><th>Статус</th><th></th></tr>
+    </thead>
+    <tbody>
+    {% for e in employees %}
+        <tr>
+            <td><a href="/employees/{{ e.id }}">{{ e.name }}</a></td>
+            <td>{{ devices[e.id].name if devices[e.id] else "не привязано" }}</td>
+            <td>{{ "активен" if e.is_active else "деактивирован" }}</td>
+            <td><a href="/employees/{{ e.id }}">Открыть</a></td>
+        </tr>
+    {% else %}
+        <tr><td colspan="4" class="muted">Пока нет сотрудников</td></tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

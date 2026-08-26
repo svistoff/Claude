@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}{{ employee.name }}{% endblock %}
+{% block content %}
+<h1>{{ employee.name }}</h1>
+
+<div class="card">
+    <p><strong>Статус:</strong> {{ status.label }}</p>
+    <p><strong>Сегодня:</strong>
+        {% if status.status == 'on_work' %}
+            Пришёл: {{ fmt_time(status.arrived_at) }} — Последнее обнаружение: {{ fmt_time(status.last_seen_at) }}
+        {% elif status.status == 'left' %}
+            Пришёл: {{ fmt_time(status.arrived_at) }} — Ушёл: {{ fmt_time(status.left_at) }}
+        {% else %}
+            —
+        {% endif %}
+    </p>
+
+    <form method="post" action="/employees/{{ employee.id }}/rename" class="inline">
+        <label for="name">Имя</label>
+        <input type="text" id="name" name="name" value="{{ employee.name }}">
+        <button type="submit">Сохранить имя</button>
+    </form>
+
+    <form method="post" action="/employees/{{ employee.id }}/toggle-active" class="inline">
+        <button type="submit" class="secondary">
+            {{ "Деактивировать" if employee.is_active else "Активировать" }}
+        </button>
+    </form>
+</div>
+
+<div class="card">
+    <h3>Устройство</h3>
+    {% if device %}
+        <p>{{ device.name }}<br><span class="muted">MAC: {{ device.device_identifier }}</span></p>
+    {% else %}
+        <p class="muted">Устройство не привязано</p>
+    {% endif %}
+    <a class="btn" href="/employees/{{ employee.id }}/device">{{ "Изменить устройство" if device else "Добавить устройство" }}</a>
+</div>
+
+<div class="card">
+    <h3>История посещений</h3>
+    <table>
+        <thead><tr><th>Дата</th><th>Пришёл</th><th>Ушёл</th><th>На работе</th></tr></thead>
+        <tbody>
+        {% for row in history_rows %}
+            <tr><td>{{ row.date }}</td><td>{{ row.started }}</td><td>{{ row.ended }}</td><td>{{ row.duration }}</td></tr>
+        {% else %}
+            <tr><td colspan="4" class="muted">Пока нет записей</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

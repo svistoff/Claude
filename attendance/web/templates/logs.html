@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Логи{% endblock %}
+{% block content %}
+<h1>Технические логи</h1>
+<table>
+    <thead><tr><th>Время (UTC)</th><th>Тип</th><th>Сообщение</th></tr></thead>
+    <tbody>
+    {% for e in events %}
+        <tr>
+            <td class="muted">{{ e.created_at }}</td>
+            <td>{{ "✅" if e.success else "⚠️" }} {{ e.event_type }}</td>
+            <td>{{ e.message }}</td>
+        </tr>
+    {% else %}
+        <tr><td colspan="3" class="muted">Пока нет событий</td></tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

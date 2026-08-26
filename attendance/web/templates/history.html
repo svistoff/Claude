@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}История{% endblock %}
+{% block content %}
+<h1>История</h1>
+
+<form method="get" action="/history" class="filters">
+    <div>
+        <label for="period">Период</label>
+        <select id="period" name="period" onchange="this.form.submit()">
+            <option value="today" {{ "selected" if period == "today" }}>Сегодня</option>
+            <option value="yesterday" {{ "selected" if period == "yesterday" }}>Вчера</option>
+            <option value="week" {{ "selected" if period == "week" }}>Эта неделя</option>
+            <option value="month" {{ "selected" if period == "month" }}>Этот месяц</option>
+            <option value="custom" {{ "selected" if period == "custom" }}>Произвольный период</option>
+        </select>
+    </div>
+    <div>
+        <label for="date_from">С</label>
+        <input type="date" id="date_from" name="date_from" value="{{ date_from }}">
+    </div>
+    <div>
+        <label for="date_to">По</label>
+        <input type="date" id="date_to" name="date_to" value="{{ date_to }}">
+    </div>
+    <div>
+        <label for="employee_id">Сотрудник</label>
+        <select id="employee_id" name="employee_id" onchange="this.form.submit()">
+            <option value="">Все</option>
+            {% for e in employees %}
+                <option value="{{ e.id }}" {{ "selected" if selected_employee_id == e.id }}>{{ e.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div>
+        <label for="status">Статус</label>
+        <select id="status" name="status" onchange="this.form.submit()">
+            <option value="">Все</option>
+            <option value="active" {{ "selected" if selected_status == "active" }}>На работе</option>
+            <option value="completed" {{ "selected" if selected_status == "completed" }}>Завершено</option>
+        </select>
+    </div>
+    <div><button type="submit">Применить</button></div>
+</form>
+
+<div class="counts">
+    <div class="count-tile"><div class="num">{{ summary.work_days }}</div><div class="label">Рабочих дней</div></div>
+    <div class="count-tile"><div class="num">{{ summary.sessions_count }}</div><div class="label">Сессий</div></div>
+    <div class="count-tile"><div class="num">{{ summary.total_duration }}</div><div class="label">Суммарно на работе</div></div>
+    <div class="count-tile"><div class="num">{{ summary.avg_arrival }}</div><div class="label">Среднее время прихода</div></div>
+    <div class="count-tile"><div class="num">{{ summary.avg_departure }}</div><div class="label">Среднее время ухода</div></div>
+</div>
+
+<table>
+    <thead><tr><th>Дата</th><th>Сотрудник</th><th>Пришёл</th><th>Ушёл</th><th>На работе</th><th>Статус</th></tr></thead>
+    <tbody>
+    {% for row in rows %}
+        <tr>
+            <td>{{ row.date }}</td>
+            <td>{{ row.employee_name }}</td>
+            <td>{{ row.started }}</td>
+            <td>{{ row.ended }}</td>
+            <td>{{ row.duration }}</td>
+            <td>{{ row.status }}</td>
+        </tr>
+    {% else %}
+        <tr><td colspan="6" class="muted">Нет записей за выбранный период</td></tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endblock %}
