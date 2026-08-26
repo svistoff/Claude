@@ -1,0 +1,576 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CRM · Сеть массажных салонов</title>
+<style>
+  :root { --bg:#f5f6f8; --card:#fff; --border:#e3e5e9; --text:#1a1c1f; --muted:#6b7280; --accent:#2f6feb; --danger:#d33; --ok:#2a9d5c; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: -apple-system, "Segoe UI", Arial, sans-serif; background:var(--bg); color:var(--text); }
+  #login { max-width:340px; margin:12vh auto; background:var(--card); padding:28px; border-radius:12px; box-shadow:0 2px 12px rgba(0,0,0,.06); }
+  #login h1 { font-size:18px; margin-top:0; }
+  #login input { width:100%; padding:10px; margin-bottom:10px; border:1px solid var(--border); border-radius:8px; font-size:14px; }
+  #login button { width:100%; padding:10px; border:none; border-radius:8px; background:var(--accent); color:#fff; font-size:14px; cursor:pointer; }
+  #login .err { color:var(--danger); font-size:13px; min-height:18px; }
+
+  #app { display:none; min-height:100vh; }
+  .layout { display:flex; min-height:100vh; }
+  nav.side { width:220px; background:#1c2230; color:#cfd6e4; flex-shrink:0; padding:16px 0; }
+  nav.side .brand { padding:0 16px 16px; font-weight:600; color:#fff; border-bottom:1px solid #2c3345; margin-bottom:8px;}
+  nav.side a { display:block; padding:10px 16px; color:#cfd6e4; text-decoration:none; font-size:14px; cursor:pointer; }
+  nav.side a:hover, nav.side a.active { background:#2c3345; color:#fff; }
+  nav.side .userinfo { position:absolute; bottom:0; padding:12px 16px; font-size:12px; color:#8b93a7; width:220px; }
+  main { flex:1; padding:24px; overflow-x:auto; }
+  h2 { margin-top:0; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px; margin-bottom:16px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; padding:8px; border-bottom:1px solid var(--border); vertical-align:top; }
+  th { color:var(--muted); font-weight:600; }
+  button, .btn { padding:7px 12px; border-radius:7px; border:1px solid var(--border); background:#fff; cursor:pointer; font-size:13px; }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  button.danger { color:var(--danger); border-color:#f1c6c6; }
+  button:disabled { opacity:.5; cursor:default; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .row.between { justify-content:space-between; }
+  input, select, textarea { padding:7px 9px; border:1px solid var(--border); border-radius:7px; font-size:13px; font-family:inherit; }
+  textarea { width:100%; min-height:60px; }
+  .tag { display:inline-block; padding:2px 8px; border-radius:20px; font-size:11px; background:#eef1f5; color:var(--muted); }
+  .tag.done { background:#e6f6ec; color:var(--ok); }
+  .tag.error { background:#fdeaea; color:var(--danger); }
+  .tag.new, .tag.processing { background:#fff6e0; color:#9a7200; }
+  .modal-bg { position:fixed; inset:0; background:rgba(0,0,0,.4); display:flex; align-items:flex-start; justify-content:center; padding:5vh 16px; overflow:auto; z-index:50; }
+  .modal { background:#fff; border-radius:12px; padding:20px; width:100%; max-width:700px; }
+  .checklist-item { display:flex; gap:8px; align-items:flex-start; padding:8px 0; border-bottom:1px solid var(--border); }
+  .checklist-item .mark { font-size:16px; width:20px; }
+  .muted { color:var(--muted); font-size:12px; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  @media (max-width:800px){ .layout{flex-direction:column;} nav.side{width:100%; position:static;} nav.side .userinfo{position:static;} .grid2{grid-template-columns:1fr;} main{padding:14px;} }
+</style>
+</head>
+<body>
+
+<div id="login">
+  <h1>Вход в CRM</h1>
+  <input id="login-username" placeholder="Логин" autocomplete="username">
+  <input id="login-password" type="password" placeholder="Пароль" autocomplete="current-password">
+  <div class="err" id="login-err"></div>
+  <button onclick="doLogin()">Войти</button>
+</div>
+
+<div id="app">
+  <div class="layout">
+    <nav class="side">
+      <div class="brand">💆 Салоны CRM</div>
+      <a data-route="salons">Салоны</a>
+      <a data-route="calls">Звонки</a>
+      <a data-route="staff" class="admin-only">Сотрудники</a>
+      <a data-route="checklist" class="admin-only">Чек-лист</a>
+      <a data-route="reports">Отчёты</a>
+      <a data-route="settings" class="admin-only">Настройки</a>
+      <div class="userinfo" id="userinfo"></div>
+    </nav>
+    <main id="main"></main>
+  </div>
+</div>
+
+<script>
+let ME = null;
+let SALONS = [];
+let CURRENT_SALON = null;
+
+async function api(path, opts) {
+  const resp = await fetch('/api' + path, {
+    method: (opts && opts.method) || 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    body: opts && opts.body ? JSON.stringify(opts.body) : undefined
+  });
+  const json = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(json.error || ('HTTP ' + resp.status));
+  return json;
+}
+
+async function doLogin() {
+  const username = document.getElementById('login-username').value.trim();
+  const password = document.getElementById('login-password').value;
+  const errEl = document.getElementById('login-err');
+  errEl.textContent = '';
+  try {
+    await api('/login', { method: 'POST', body: { username, password } });
+    await boot();
+  } catch (e) {
+    errEl.textContent = e.message;
+  }
+}
+
+async function logout() {
+  await api('/logout', { method: 'POST' });
+  location.reload();
+}
+
+async function boot() {
+  try {
+    ME = await api('/me');
+  } catch (e) {
+    document.getElementById('login').style.display = 'block';
+    document.getElementById('app').style.display = 'none';
+    return;
+  }
+  document.getElementById('login').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  document.getElementById('userinfo').textContent = ME.full_name + ' · ' + (ME.role === 'admin' ? 'админ' : 'сотрудник');
+  document.querySelectorAll('.admin-only').forEach(el => el.style.display = ME.role === 'admin' ? '' : 'none');
+
+  SALONS = await api('/salons');
+
+  document.querySelectorAll('nav.side a[data-route]').forEach(a => {
+    a.onclick = () => navigate(a.dataset.route);
+  });
+  navigate(location.hash.replace('#', '') || 'salons');
+}
+
+function navigate(route) {
+  location.hash = route;
+  document.querySelectorAll('nav.side a').forEach(a => a.classList.toggle('active', a.dataset.route === route));
+  const renderers = { salons: renderSalons, calls: renderCalls, staff: renderStaff, checklist: renderChecklist, reports: renderReports, settings: renderSettings };
+  (renderers[route] || renderSalons)();
+}
+
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+// ---------------- Салоны ----------------
+async function renderSalons() {
+  SALONS = await api('/salons');
+  const main = document.getElementById('main');
+  main.innerHTML = `
+    <div class="row between"><h2>Салоны</h2>${ME.role==='admin' ? '<button class="primary" onclick="showSalonForm()">+ Добавить салон</button>' : ''}</div>
+    <div class="card">
+      <table>
+        <tr><th>Название</th><th>Адрес</th><th>Телефон</th><th>Статус</th><th></th></tr>
+        ${SALONS.map(s => `
+          <tr>
+            <td>${esc(s.name)}</td>
+            <td>${esc(s.address||'—')}</td>
+            <td>${esc(s.phone)}</td>
+            <td>${s.active ? '<span class="tag done">активен</span>' : '<span class="tag">выключен</span>'}</td>
+            <td class="row">
+              <button onclick="navigate('calls'); setTimeout(()=>selectSalonForCalls(${s.id}),0)">Звонки</button>
+              ${ME.role==='admin' ? `<button onclick="showSalonForm(${s.id})">Изменить</button>
+              <button class="danger" onclick="deleteSalon(${s.id})">Удалить</button>` : ''}
+            </td>
+          </tr>`).join('')}
+      </table>
+      ${SALONS.length===0 ? '<p class="muted">Салонов пока нет</p>' : ''}
+    </div>
+    <div id="modal-root"></div>
+  `;
+}
+
+function showSalonForm(id) {
+  const salon = id ? SALONS.find(s => s.id === id) : null;
+  document.getElementById('modal-root').innerHTML = `
+    <div class="modal-bg" onclick="if(event.target===this)this.remove()">
+      <div class="modal">
+        <h3>${salon ? 'Изменить салон' : 'Новый салон'}</h3>
+        <div class="row" style="flex-direction:column;align-items:stretch;gap:10px">
+          <input id="f-name" placeholder="Название" value="${salon?esc(salon.name):''}">
+          <input id="f-address" placeholder="Адрес" value="${salon?esc(salon.address||''):''}">
+          <input id="f-phone" placeholder="Телефон (номер UIS)" value="${salon?esc(salon.phone):''}">
+          <input id="f-line" placeholder="ID виртуальной линии UIS (необязательно)" value="${salon?esc(salon.uis_line_id||''):''}">
+        </div>
+        <div class="row between" style="margin-top:16px">
+          <button onclick="document.querySelector('.modal-bg').remove()">Отмена</button>
+          <button class="primary" onclick="saveSalon(${id||'null'})">Сохранить</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+async function saveSalon(id) {
+  const body = {
+    name: document.getElementById('f-name').value.trim(),
+    address: document.getElementById('f-address').value.trim(),
+    phone: document.getElementById('f-phone').value.trim(),
+    uis_line_id: document.getElementById('f-line').value.trim()
+  };
+  if (!body.name || !body.phone) return alert('Укажите название и телефон');
+  try {
+    if (id) await api('/salons/' + id, { method: 'PUT', body });
+    else await api('/salons', { method: 'POST', body });
+    document.querySelector('.modal-bg').remove();
+    renderSalons();
+  } catch (e) { alert(e.message); }
+}
+
+async function deleteSalon(id) {
+  if (!confirm('Удалить салон? Все звонки и привязки сотрудников по нему будут удалены безвозвратно.')) return;
+  await api('/salons/' + id, { method: 'DELETE' });
+  renderSalons();
+}
+
+// ---------------- Звонки ----------------
+let CALLS_SALON_FILTER = null;
+
+function selectSalonForCalls(id) { CALLS_SALON_FILTER = id; renderCalls(); }
+
+async function renderCalls() {
+  const main = document.getElementById('main');
+  const salonOptions = SALONS.map(s => `<option value="${s.id}" ${CALLS_SALON_FILTER===s.id?'selected':''}>${esc(s.name)}</option>`).join('');
+  main.innerHTML = `
+    <h2>Звонки</h2>
+    <div class="card">
+      <div class="row">
+        <select id="calls-salon-filter">
+          <option value="">Все доступные салоны</option>
+          ${salonOptions}
+        </select>
+        <button onclick="applyCallsFilter()">Показать</button>
+      </div>
+    </div>
+    <div class="card" id="calls-table">Загрузка…</div>
+    <div id="modal-root"></div>
+  `;
+  document.getElementById('calls-salon-filter').value = CALLS_SALON_FILTER || '';
+  await loadCalls();
+}
+
+function applyCallsFilter() {
+  const v = document.getElementById('calls-salon-filter').value;
+  CALLS_SALON_FILTER = v ? Number(v) : null;
+  loadCalls();
+}
+
+async function loadCalls() {
+  const qs = CALLS_SALON_FILTER ? ('?salon_id=' + CALLS_SALON_FILTER) : '';
+  const calls = await api('/calls' + qs);
+  const statusLabel = { new:'новый', processing:'обработка', done:'готово', error:'ошибка', skipped:'без ответа' };
+  document.getElementById('calls-table').innerHTML = `
+    <table>
+      <tr><th>Дата</th><th>Салон</th><th>Телефон</th><th>Длит.</th><th>Сотрудник</th><th>Статус</th><th></th></tr>
+      ${calls.map(c => `
+        <tr>
+          <td>${esc(c.started_at)}</td>
+          <td>${esc(c.salon_name)}</td>
+          <td>${esc(c.caller_phone||'—')}</td>
+          <td>${c.duration_sec}s</td>
+          <td>${esc(c.matched_user_name || c.detected_staff_name || '—')}</td>
+          <td><span class="tag ${c.status}">${statusLabel[c.status]||c.status}</span></td>
+          <td><button onclick="openCall(${c.id})">Открыть</button></td>
+        </tr>`).join('')}
+    </table>
+    ${calls.length===0 ? '<p class="muted">Звонков нет</p>' : ''}
+  `;
+}
+
+async function openCall(id) {
+  const c = await api('/calls/' + id);
+  const checklist = (c.checklist_results || []).map(i => `
+    <div class="checklist-item">
+      <div class="mark">${i.passed ? '✅' : '❌'}</div>
+      <div>
+        <div>${esc(i.text)}</div>
+        ${i.evidence ? `<div class="muted">«${esc(i.evidence)}»</div>` : ''}
+      </div>
+    </div>`).join('');
+
+  document.getElementById('modal-root').innerHTML = `
+    <div class="modal-bg" onclick="if(event.target===this)this.remove()">
+      <div class="modal">
+        <div class="row between">
+          <h3>Звонок · ${esc(c.salon_name)} · ${esc(c.started_at)}</h3>
+          <button onclick="document.querySelector('.modal-bg').remove()">✕</button>
+        </div>
+        <p class="muted">Длительность: ${c.duration_sec}с · Ответил: ${esc(c.matched_user_name || c.detected_staff_name || 'не определено')}</p>
+
+        ${c.status === 'error' ? `<p style="color:#d33">Ошибка обработки: ${esc(c.error_message||'')}</p>` : ''}
+        ${c.status !== 'done' ? `<p class="muted">Статус: ${esc(c.status)}</p>` : ''}
+        <button onclick="reprocessCall(${c.id})">Обработать заново</button>
+
+        ${c.summary ? `<h4>Резюме</h4><p>${esc(c.summary)}</p>` : ''}
+        ${c.strengths ? `<h4>Сильные стороны</h4><p>${esc(c.strengths)}</p>` : ''}
+        ${c.weaknesses ? `<h4>Слабые места</h4><p>${esc(c.weaknesses)}</p>` : ''}
+        ${c.recommendations ? `<h4>Рекомендации</h4><p>${esc(c.recommendations)}</p>` : ''}
+
+        ${checklist ? `<h4>Чек-лист</h4>${checklist}` : ''}
+        ${c.transcript ? `<h4>Расшифровка</h4><p class="muted" style="white-space:pre-wrap">${esc(c.transcript)}</p>` : ''}
+      </div>
+    </div>`;
+}
+
+async function reprocessCall(id) {
+  await api('/calls/' + id + '/reprocess', { method: 'POST' });
+  alert('Звонок отправлен на повторную обработку');
+  document.querySelector('.modal-bg')?.remove();
+  loadCalls();
+}
+
+// ---------------- Сотрудники ----------------
+async function renderStaff() {
+  const users = await api('/users');
+  const main = document.getElementById('main');
+  main.innerHTML = `
+    <div class="row between"><h2>Сотрудники</h2><button class="primary" onclick="showStaffForm()">+ Добавить сотрудника</button></div>
+    <div class="card">
+      <table>
+        <tr><th>Имя</th><th>Логин</th><th>Роль</th><th>Телефон (UIS)</th><th>Салоны</th><th>Статус</th><th></th></tr>
+        ${users.map(u => `
+          <tr>
+            <td>${esc(u.full_name)}</td>
+            <td>${esc(u.username)}</td>
+            <td>${u.role === 'admin' ? 'админ' : 'сотрудник'}</td>
+            <td>${esc(u.phone||'—')}</td>
+            <td>${u.salon_ids.map(id => esc((SALONS.find(s=>s.id===id)||{}).name || id)).join(', ') || '—'}</td>
+            <td>${u.active ? '<span class="tag done">активен</span>' : '<span class="tag">выключен</span>'}</td>
+            <td class="row">
+              <button onclick="showStaffForm(${u.id})">Изменить</button>
+              <button class="danger" onclick="deleteStaff(${u.id})">Удалить</button>
+            </td>
+          </tr>`).join('')}
+      </table>
+    </div>
+    <div id="modal-root"></div>
+  `;
+}
+
+function showStaffForm(id) {
+  api('/users').then(users => {
+    const u = id ? users.find(x => x.id === id) : null;
+    const salonChecks = SALONS.map(s => `
+      <label class="row" style="gap:6px"><input type="checkbox" value="${s.id}" ${u&&u.salon_ids.includes(s.id)?'checked':''} class="staff-salon-chk"> ${esc(s.name)}</label>
+    `).join('');
+    document.getElementById('modal-root').innerHTML = `
+      <div class="modal-bg" onclick="if(event.target===this)this.remove()">
+        <div class="modal">
+          <h3>${u ? 'Изменить сотрудника' : 'Новый сотрудник'}</h3>
+          <div class="row" style="flex-direction:column;align-items:stretch;gap:10px">
+            <input id="f-fullname" placeholder="Имя (как представляется по телефону)" value="${u?esc(u.full_name):''}">
+            ${u ? '' : '<input id="f-username" placeholder="Логин">'}
+            <input id="f-password" type="password" placeholder="${u?'Новый пароль (необязательно)':'Пароль'}">
+            <input id="f-phone" placeholder="Телефон в приложении UIS (для клик-звонка)" value="${u?esc(u.phone||''):''}">
+            <select id="f-role"><option value="staff" ${u&&u.role==='staff'?'selected':''}>Сотрудник</option><option value="admin" ${u&&u.role==='admin'?'selected':''}>Админ</option></select>
+            <div><b>Салоны:</b><div>${salonChecks || '<span class="muted">Сначала добавьте салоны</span>'}</div></div>
+          </div>
+          <div class="row between" style="margin-top:16px">
+            <button onclick="document.querySelector('.modal-bg').remove()">Отмена</button>
+            <button class="primary" onclick="saveStaff(${id||'null'})">Сохранить</button>
+          </div>
+        </div>
+      </div>`;
+  });
+}
+
+async function saveStaff(id) {
+  const salon_ids = Array.from(document.querySelectorAll('.staff-salon-chk:checked')).map(el => Number(el.value));
+  const body = {
+    full_name: document.getElementById('f-fullname').value.trim(),
+    phone: document.getElementById('f-phone').value.trim(),
+    role: document.getElementById('f-role').value,
+    salon_ids
+  };
+  const password = document.getElementById('f-password').value;
+  if (password) body.password = password;
+  try {
+    if (id) {
+      await api('/users/' + id, { method: 'PUT', body });
+    } else {
+      body.username = document.getElementById('f-username').value.trim();
+      if (!body.username || !password) return alert('Укажите логин и пароль');
+      await api('/users', { method: 'POST', body });
+    }
+    document.querySelector('.modal-bg').remove();
+    renderStaff();
+  } catch (e) { alert(e.message); }
+}
+
+async function deleteStaff(id) {
+  if (!confirm('Удалить сотрудника?')) return;
+  await api('/users/' + id, { method: 'DELETE' });
+  renderStaff();
+}
+
+// ---------------- Чек-лист ----------------
+async function renderChecklist() {
+  const { items } = await api('/checklist');
+  const globalItems = items.filter(i => !i.salon_id);
+  const localItems = items.filter(i => i.salon_id);
+  const main = document.getElementById('main');
+  main.innerHTML = `
+    <h2>Чек-лист звонков</h2>
+    <div class="card">
+      <div class="row between"><h3 style="margin:0">Общий шаблон (для всех салонов)</h3><button onclick="addChecklistItem(null)">+ Пункт</button></div>
+      <table>
+        ${globalItems.map(i => `
+          <tr>
+            <td>${esc(i.text)}</td>
+            <td>${i.active ? '' : '<span class="tag">выключен</span>'}</td>
+            <td class="row">
+              <button onclick="toggleChecklistItem(${i.id}, ${i.active?0:1})">${i.active?'Выключить':'Включить'}</button>
+              <button class="danger" onclick="deleteChecklistItem(${i.id})">Удалить</button>
+            </td>
+          </tr>`).join('')}
+      </table>
+      <p class="muted">Отключить конкретный общий пункт для одного салона можно ниже, в блоке салона.</p>
+    </div>
+
+    ${SALONS.map(s => `
+      <div class="card">
+        <div class="row between"><h3 style="margin:0">${esc(s.name)}</h3><button onclick="addChecklistItem(${s.id})">+ Пункт только для этого салона</button></div>
+        <table>
+          ${globalItems.map(i => `
+            <tr>
+              <td>${esc(i.text)} <span class="muted">(общий)</span></td>
+              <td class="row"><button onclick="setOverride(${i.id}, ${s.id}, event.target.dataset.state==='off')" data-state="on" id="ov-${i.id}-${s.id}">Скрыть для этого салона</button></td>
+            </tr>`).join('')}
+          ${localItems.filter(i => i.salon_id === s.id).map(i => `
+            <tr>
+              <td>${esc(i.text)} <span class="muted">(только этот салон)</span></td>
+              <td class="row"><button class="danger" onclick="deleteChecklistItem(${i.id})">Удалить</button></td>
+            </tr>`).join('')}
+        </table>
+      </div>
+    `).join('')}
+  `;
+}
+
+async function addChecklistItem(salonId) {
+  const text = prompt('Текст пункта чек-листа:');
+  if (!text) return;
+  await api('/checklist', { method: 'POST', body: { text, salon_id: salonId } });
+  renderChecklist();
+}
+
+async function toggleChecklistItem(id, active) {
+  await api('/checklist/' + id, { method: 'PUT', body: { active } });
+  renderChecklist();
+}
+
+async function deleteChecklistItem(id) {
+  if (!confirm('Удалить пункт чек-листа?')) return;
+  await api('/checklist/' + id, { method: 'DELETE' });
+  renderChecklist();
+}
+
+async function setOverride(itemId, salonId, isCurrentlyOff) {
+  await api(`/checklist/${itemId}/override`, { method: 'POST', body: { salon_id: salonId, disabled: !isCurrentlyOff } });
+  renderChecklist();
+}
+
+// ---------------- Отчёты ----------------
+async function renderReports() {
+  const users = ME.role === 'admin' ? await api('/users') : [];
+  const main = document.getElementById('main');
+  main.innerHTML = `
+    <h2>Отчёты</h2>
+    <div class="grid2">
+      <div class="card">
+        <h3>По салону</h3>
+        <div class="row" style="flex-direction:column;align-items:stretch">
+          <select id="rep-salon">${SALONS.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select>
+          <select id="rep-salon-period"><option value="week">Неделя</option><option value="month">Месяц</option></select>
+          <button class="primary" onclick="openSalonReport()">Сформировать отчёт</button>
+        </div>
+      </div>
+      ${ME.role === 'admin' ? `
+      <div class="card">
+        <h3>По сотруднику</h3>
+        <div class="row" style="flex-direction:column;align-items:stretch">
+          <select id="rep-staff">${users.map(u=>`<option value="${u.id}">${esc(u.full_name)}</option>`).join('')}</select>
+          <select id="rep-staff-period"><option value="week">Неделя</option><option value="month">Месяц</option></select>
+          <button class="primary" onclick="openStaffReport()">Сформировать отчёт</button>
+        </div>
+      </div>` : ''}
+    </div>
+  `;
+}
+
+function openSalonReport() {
+  const id = document.getElementById('rep-salon').value;
+  const period = document.getElementById('rep-salon-period').value;
+  window.open(`/api/reports/salon/${id}?period=${period}`, '_blank');
+}
+function openStaffReport() {
+  const id = document.getElementById('rep-staff').value;
+  const period = document.getElementById('rep-staff-period').value;
+  window.open(`/api/reports/staff/${id}?period=${period}`, '_blank');
+}
+
+// ---------------- Настройки ----------------
+async function renderSettings() {
+  const ai = await api('/settings/ai');
+  const usage = await api('/settings/ai/usage');
+  const tel = await api('/settings/telephony');
+  const callout = await api('/settings/call-out');
+  const main = document.getElementById('main');
+  main.innerHTML = `
+    <h2>Настройки</h2>
+
+    <div class="card">
+      <h3>🤖 ИИ-обработка звонков (OpenAI)</h3>
+      <div class="row" style="flex-direction:column;align-items:stretch;max-width:480px">
+        <label>Ключ API<input id="s-openai-key" placeholder="${ai.openai_api_key || 'sk-...'}"></label>
+        <label>Контекст компании<textarea id="s-context">${esc(ai.company_context||'')}</textarea></label>
+        <label>Модель транскрибации<input id="s-transcribe-model" value="${esc(ai.transcribe_model)}"></label>
+        <label>Модель анализа<input id="s-analysis-model" value="${esc(ai.analysis_model)}"></label>
+        <label>Курс, ₽ за $<input id="s-rate" type="number" value="${ai.rub_per_usd}"></label>
+        <button class="primary" onclick="saveAiSettings()">Сохранить</button>
+      </div>
+      <p class="muted" style="margin-top:12px">Расходы сегодня: ${usage.today_usd.toFixed(4)}$ (${usage.today_rub.toFixed(2)}₽) · всего: ${usage.total_usd.toFixed(4)}$ (${usage.total_rub.toFixed(2)}₽)</p>
+    </div>
+
+    <div class="card">
+      <h3>☎️ Телефония UIS (приём звонков)</h3>
+      <div class="row" style="flex-direction:column;align-items:stretch;max-width:480px">
+        <label>Логин UIS<input id="t-login" value="${esc(tel.uis_login||'')}"></label>
+        <label>API-ключ (Data API)<input id="t-key" placeholder="${tel.uis_api_key || 'токен'}"></label>
+        <label>Интервал опроса, сек<input id="t-interval" type="number" value="${tel.poll_interval_sec}"></label>
+        <label class="row"><input id="t-enabled" type="checkbox" ${tel.enabled?'checked':''}> Включено</label>
+        <button class="primary" onclick="saveTelephonySettings()">Сохранить</button>
+      </div>
+      <p class="muted">Требуется whitelisted IP сервера в кабинете UIS (Аккаунт → Правила и настройки безопасности → API).</p>
+    </div>
+
+    <div class="card">
+      <h3>📞 Клик-звонок через UIS</h3>
+      <div class="row" style="flex-direction:column;align-items:stretch;max-width:480px">
+        <label>Виртуальный номер для исходящих<input id="co-number" value="${esc(callout.outbound_virtual_number||'')}"></label>
+        <label class="row"><input id="co-enabled" type="checkbox" ${callout.enabled?'checked':''}> Включено</label>
+        <button class="primary" onclick="saveCallOutSettings()">Сохранить</button>
+      </div>
+      <p class="muted">Телефоны сотрудников в приложении UIS задаются в карточке сотрудника на вкладке «Сотрудники».</p>
+    </div>
+  `;
+}
+
+async function saveAiSettings() {
+  await api('/settings/ai', { method: 'PUT', body: {
+    openai_api_key: document.getElementById('s-openai-key').value.trim(),
+    company_context: document.getElementById('s-context').value,
+    transcribe_model: document.getElementById('s-transcribe-model').value.trim(),
+    analysis_model: document.getElementById('s-analysis-model').value.trim(),
+    rub_per_usd: Number(document.getElementById('s-rate').value)
+  }});
+  renderSettings();
+}
+
+async function saveTelephonySettings() {
+  await api('/settings/telephony', { method: 'PUT', body: {
+    uis_login: document.getElementById('t-login').value.trim(),
+    uis_api_key: document.getElementById('t-key').value.trim(),
+    poll_interval_sec: Number(document.getElementById('t-interval').value),
+    enabled: document.getElementById('t-enabled').checked
+  }});
+  renderSettings();
+}
+
+async function saveCallOutSettings() {
+  await api('/settings/call-out', { method: 'PUT', body: {
+    outbound_virtual_number: document.getElementById('co-number').value.trim(),
+    enabled: document.getElementById('co-enabled').checked
+  }});
+  renderSettings();
+}
+
+boot();
+</script>
+</body>
+</html>
