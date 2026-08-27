@@ -6,9 +6,11 @@ const db = require('./db');
 
 const OPENAI_BASE = 'https://api.openai.com/v1';
 
+// calls.started_at приходит от UIS в формате "YYYY-MM-DD HH:mm:ss" (см. telephony.js) —
+// используем тот же формат здесь, иначе строковое сравнение в SQL съедет на границе периода.
 function periodStart(period) {
   const days = period === 'month' ? 30 : 7;
-  return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' ');
 }
 
 function getAiSettings() {

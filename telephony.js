@@ -37,17 +37,30 @@ async function uisRequest(method, params) {
   return json.result;
 }
 
-async function fetchCallsForSalon(salon, sinceIso) {
+// UIS ждёт даты в формате "YYYY-MM-DD HH:mm:ss" (без "T"/"Z") — это же формат,
+// который отдаёт SQLite для datetime('now'), поэтому используем его везде.
+function toUisDateString(date) {
+  return date.toISOString().slice(0, 19).replace('T', ' ');
+}
+
+async function fetchCallsForSalon(salon, sinceStr) {
   const result = await uisRequest('get.calls_report', {
-    date_from: sinceIso,
-    date_till: new Date().toISOString(),
-    filter: { virtual_phone_number: salon.uis_line_id || salon.phone },
+    date_from: sinceStr,
+    date_till: toUisDateString(new Date()),
+    filter: { field: 'virtual_phone_number', operator: '=', value: normalizePhone(salon.uis_line_id || salon.phone) },
     fields: [
-      'id', 'call_session_id', 'start_time', 'direction', 'is_lost',
-      'talk_duration', 'contact_phone_number', 'virtual_phone_number', 'record_url'
+      'id', 'start_time', 'direction', 'is_lost', 'talk_duration',
+      'calling_phone_number', 'called_phone_number', 'virtual_phone_number', 'call_records'
     ]
   });
   return (result && result.data) || [];
+}
+
+function extractRecordUrl(c) {
+  if (!Array.isArray(c.call_records) || c.call_records.length === 0) return null;
+  const first = c.call_records[0];
+  if (typeof first === 'string') return first;
+  return first?.record_url || first?.url || null;
 }
 
 async function pollOnce() {
@@ -55,7 +68,7 @@ async function pollOnce() {
   if (!settings.enabled || !settings.uis_api_key) return;
 
   const salons = db.prepare('SELECT * FROM salons WHERE active = 1').all();
-  const since = settings.last_poll_at || new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const since = settings.last_poll_at || toUisDateString(new Date(Date.now() - 24 * 60 * 60 * 1000));
 
   for (const salon of salons) {
     try {
@@ -69,16 +82,17 @@ async function pollOnce() {
   }
 
   sweepExpiredCallbackWindows(settings.callback_window_min);
-  db.prepare('UPDATE telephony_settings SET last_poll_at = ? WHERE id = 1').run(new Date().toISOString());
+  db.prepare(`UPDATE telephony_settings SET last_poll_at = ? WHERE id = 1`).run(toUisDateString(new Date()));
 }
 
 function saveCall(salon, c) {
-  const uisCallId = String(c.call_session_id || c.id);
+  const uisCallId = String(c.id);
   if (db.prepare('SELECT id FROM calls WHERE uis_call_id = ?').get(uisCallId)) return;
 
   const direction = c.direction === 'out' ? 'out' : 'in';
-  const isAnswered = !c.is_lost && Number(c.talk_duration) > 0;
-  const callerPhone = c.contact_phone_number || null;
+  const isLost = c.is_lost === true || c.is_lost === 1 || c.is_lost === '1';
+  const isAnswered = !isLost && Number(c.talk_duration) > 0;
+  const callerPhone = (direction === 'in' ? c.calling_phone_number : c.called_phone_number) || null;
   const clientId = callerPhone ? findOrCreateClient(callerPhone) : null;
 
   let status;
@@ -90,8 +104,8 @@ function saveCall(salon, c) {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     salon.id, clientId, uisCallId, direction, callerPhone,
-    c.start_time || new Date().toISOString(), Number(c.talk_duration) || 0,
-    isAnswered ? 1 : 0, c.record_url || null, status
+    c.start_time || toUisDateString(new Date()), Number(c.talk_duration) || 0,
+    isAnswered ? 1 : 0, extractRecordUrl(c), status
   );
   const callId = info.lastInsertRowid;
 
@@ -111,7 +125,7 @@ function linkCallbackIfMatches(salon, outCallId, callerPhone, outStartTime) {
   const norm = normalizePhone(callerPhone);
   if (!norm) return;
 
-  const since = new Date(new Date(outStartTime).getTime() - LOOKBACK_MS_FOR_CALLBACK_MATCH).toISOString();
+  const since = toUisDateString(new Date(new Date(outStartTime).getTime() - LOOKBACK_MS_FOR_CALLBACK_MATCH));
   const missed = db.prepare(`
     SELECT c.* FROM calls c
     WHERE c.salon_id = ? AND c.direction = 'in' AND c.is_answered = 0
@@ -133,7 +147,7 @@ function linkCallbackIfMatches(salon, outCallId, callerPhone, outStartTime) {
 // «не перезвонили»; если перезвон всё же случится позже, linkCallbackIfMatches
 // найдёт их по callback_call_id IS NULL и перекроет статус на 'late'.
 function sweepExpiredCallbackWindows(windowMin) {
-  const threshold = new Date(Date.now() - windowMin * 60000).toISOString();
+  const threshold = toUisDateString(new Date(Date.now() - windowMin * 60000));
   db.prepare(`
     UPDATE calls SET callback_status = 'none'
     WHERE direction = 'in' AND is_answered = 0 AND callback_call_id IS NULL
