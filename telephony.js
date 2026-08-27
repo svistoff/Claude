@@ -53,10 +53,32 @@ async function fetchCallsForSalon(salon, sinceStr) {
     filter: { field: 'virtual_phone_number', operator: '=', value: normalizePhone(salon.uis_line_id || salon.phone) },
     fields: [
       'id', 'start_time', 'direction', 'is_lost', 'talk_duration',
-      'contact_phone_number', 'virtual_phone_number', 'record_url'
+      'contact_phone_number', 'virtual_phone_number', 'call_records'
     ]
   });
   return (result && result.data) || [];
+}
+
+// Точная форма call_records не подтверждена на практике (в документации это
+// "идентификатор ссылки на запись" — возможно, требует отдельного запроса на
+// скачивание по id). Разбираем defensively и логируем сырые данные первого
+// звонка, чтобы уточнить формат по логам после первого реального звонка.
+let loggedRawCallRecordsSample = false;
+function extractRecordUrl(c) {
+  const raw = c.call_records;
+  if (raw == null) return null;
+  if (!loggedRawCallRecordsSample) {
+    console.log('[telephony] Пример сырых call_records от UIS:', JSON.stringify(raw));
+    loggedRawCallRecordsSample = true;
+  }
+  const arr = Array.isArray(raw) ? raw : [raw];
+  if (arr.length === 0) return null;
+  const first = arr[0];
+  if (typeof first === 'string') return first;
+  if (first && typeof first === 'object') {
+    return first.record_url || first.url || first.link || first.download_link || null;
+  }
+  return null;
 }
 
 async function pollOnce() {
@@ -101,7 +123,7 @@ function saveCall(salon, c) {
   `).run(
     salon.id, clientId, uisCallId, direction, callerPhone,
     c.start_time || toUisDateString(new Date()), Number(c.talk_duration) || 0,
-    isAnswered ? 1 : 0, c.record_url || null, status
+    isAnswered ? 1 : 0, extractRecordUrl(c), status
   );
   const callId = info.lastInsertRowid;
 
