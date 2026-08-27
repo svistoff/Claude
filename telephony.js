@@ -64,8 +64,9 @@ async function fetchAllCalls(sinceStr) {
 // call_records от UIS — это не прямая ссылка, а хэш-идентификатор записи
 // (подтверждено на практике: массив вида ["2e675888ded89ed517d5c60e63a2d8c3"]).
 // Реальный playback-URL собирается по схеме из документации UIS/Comagic:
-// http://app.comagic.ru/system/media/talk/{call_session_id}/{hash}/
+// https://app.comagic.ru/system/media/talk/{call_session_id}/{hash}/
 // где call_session_id — это то же самое поле "id" звонка в отчёте.
+// Важно: именно https — http отдаёт 308 редирект на https (подтверждено на практике).
 function extractRecordUrl(c) {
   const raw = c.call_records;
   if (raw == null) return null;
@@ -74,7 +75,7 @@ function extractRecordUrl(c) {
   const first = arr[0];
   const hash = typeof first === 'string' ? first : (first?.record_url || first?.url || first?.hash || null);
   if (!hash) return null;
-  return `http://app.comagic.ru/system/media/talk/${c.id}/${hash}/`;
+  return `https://app.comagic.ru/system/media/talk/${c.id}/${hash}/`;
 }
 
 async function pollOnce() {
