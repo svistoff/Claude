@@ -119,6 +119,9 @@ ${checklistList}
   return { system, user: `Расшифровка звонка:\n\n${transcript}` };
 }
 
+// temperature намеренно не передаётся: некоторые модели (в т.ч. используемая
+// в проекте) поддерживают только значение по умолчанию и отклоняют запрос
+// с любым другим числом.
 async function analyzeTranscript(args) {
   const { system, user } = buildAnalysisPrompt(args);
   const resp = await fetch(`${OPENAI_BASE}/chat/completions`, {
@@ -127,8 +130,7 @@ async function analyzeTranscript(args) {
     body: JSON.stringify({
       model: args.model,
       messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
-      response_format: { type: 'json_object' },
-      temperature: 0.2
+      response_format: { type: 'json_object' }
     })
   });
   const json = await resp.json();

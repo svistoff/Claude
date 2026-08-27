@@ -37,8 +37,7 @@ async function generateNarrative({ calls, contextLabel }) {
         { role: 'system', content: `Ты готовишь отчёт для владельца сети массажных салонов и сауны по звонкам ${contextLabel} за период. Отвечай строго JSON: {"strengths": string, "weaknesses": string, "recommendations": string, "conclusion": string}. Кратко и предметно, только по переданным данным, по-русски.` },
         { role: 'user', content: digest }
       ],
-      response_format: { type: 'json_object' },
-      temperature: 0.3
+      response_format: { type: 'json_object' }
     })
   });
   const json = await resp.json();
