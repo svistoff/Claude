@@ -33,7 +33,10 @@ async function uisRequest(method, params) {
     body: JSON.stringify(body)
   });
   const json = await resp.json();
-  if (json.error) throw new Error(`UIS API error: ${json.error.message || JSON.stringify(json.error)}`);
+  if (json.error) {
+    const details = json.error.data ? ` | data: ${JSON.stringify(json.error.data)}` : '';
+    throw new Error(`UIS API error: ${json.error.message || JSON.stringify(json.error)}${details}`);
+  }
   return json.result;
 }
 
