@@ -4,6 +4,7 @@
 
 const fetch = require('node-fetch');
 const db = require('./db');
+const { adminForUser } = require('./lib');
 
 const CALL_API_URL = 'https://callapi.uiscom.ru/v4.0/';
 
@@ -14,8 +15,8 @@ async function startClickToCall({ userId, salonId, targetPhone }) {
   if (!settings.enabled) throw new Error('Клик-звонок отключён в настройках');
   if (!telephony.uis_api_key) throw new Error('Не задан ключ UIS API');
 
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
-  if (!user || !user.phone) throw new Error('У сотрудника не указан номер телефона в приложении UIS');
+  const admin = adminForUser(userId);
+  if (!admin || !admin.callout_phone) throw new Error('У администратора не указан номер телефона в приложении UIS');
 
   const salon = db.prepare('SELECT * FROM salons WHERE id = ?').get(salonId);
   if (!salon) throw new Error('Салон не найден');
@@ -26,7 +27,7 @@ async function startClickToCall({ userId, salonId, targetPhone }) {
     method: 'start.simple_call',
     params: {
       access_token: telephony.uis_api_key,
-      employee_phone: user.phone,
+      employee_phone: admin.callout_phone,
       client_phone: targetPhone,
       virtual_phone_number: settings.outbound_virtual_number || salon.uis_line_id || salon.phone
     }
