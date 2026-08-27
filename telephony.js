@@ -53,17 +53,10 @@ async function fetchCallsForSalon(salon, sinceStr) {
     filter: { field: 'virtual_phone_number', operator: '=', value: normalizePhone(salon.uis_line_id || salon.phone) },
     fields: [
       'id', 'start_time', 'direction', 'is_lost', 'talk_duration',
-      'calling_phone_number', 'called_phone_number', 'virtual_phone_number', 'call_records'
+      'contact_phone_number', 'virtual_phone_number', 'record_url'
     ]
   });
   return (result && result.data) || [];
-}
-
-function extractRecordUrl(c) {
-  if (!Array.isArray(c.call_records) || c.call_records.length === 0) return null;
-  const first = c.call_records[0];
-  if (typeof first === 'string') return first;
-  return first?.record_url || first?.url || null;
 }
 
 async function pollOnce() {
@@ -95,7 +88,7 @@ function saveCall(salon, c) {
   const direction = c.direction === 'out' ? 'out' : 'in';
   const isLost = c.is_lost === true || c.is_lost === 1 || c.is_lost === '1';
   const isAnswered = !isLost && Number(c.talk_duration) > 0;
-  const callerPhone = (direction === 'in' ? c.calling_phone_number : c.called_phone_number) || null;
+  const callerPhone = c.contact_phone_number || null;
   const clientId = callerPhone ? findOrCreateClient(callerPhone) : null;
 
   let status;
@@ -108,7 +101,7 @@ function saveCall(salon, c) {
   `).run(
     salon.id, clientId, uisCallId, direction, callerPhone,
     c.start_time || toUisDateString(new Date()), Number(c.talk_duration) || 0,
-    isAnswered ? 1 : 0, extractRecordUrl(c), status
+    isAnswered ? 1 : 0, c.record_url || null, status
   );
   const callId = info.lastInsertRowid;
 
