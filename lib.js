@@ -57,6 +57,28 @@ function getEffectiveChecklist(salon) {
   `).all(salon.id, salon.type, salon.id);
 }
 
+// Карта "нормализованный номер -> salon_id" по всем активным объектам:
+// основной номер салона + все доп. номера (например, с рекламных площадок
+// с переадресацией на этот салон). Используется телефонией, чтобы разложить
+// звонки по объектам вне зависимости от того, по какому именно из номеров
+// клиент дозвонился.
+function getSalonPhoneMap() {
+  const map = new Map();
+  const salons = db.prepare('SELECT * FROM salons WHERE active = 1').all();
+  const extra = db.prepare('SELECT * FROM salon_phone_numbers').all();
+  for (const s of salons) {
+    for (const raw of [s.phone, s.uis_line_id]) {
+      const norm = normalizePhone(raw);
+      if (norm) map.set(norm, s.id);
+    }
+  }
+  for (const row of extra) {
+    const norm = normalizePhone(row.phone);
+    if (norm) map.set(norm, row.salon_id);
+  }
+  return map;
+}
+
 // Администратор привязан ровно к одному объекту (через users -> admins.user_id).
 function adminForUser(userId) {
   return db.prepare('SELECT * FROM admins WHERE user_id = ?').get(userId);
@@ -68,4 +90,4 @@ function canAccessSalon(user, salonId) {
   return !!admin && admin.salon_id === Number(salonId);
 }
 
-module.exports = { normalizePhone, findOrCreateClient, getEffectiveChecklist, adminForUser, canAccessSalon };
+module.exports = { normalizePhone, findOrCreateClient, getEffectiveChecklist, getSalonPhoneMap, adminForUser, canAccessSalon };

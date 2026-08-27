@@ -29,13 +29,25 @@ CREATE TABLE IF NOT EXISTS salons (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
   address TEXT,
-  phone TEXT NOT NULL,              -- виртуальный номер UIS объекта
+  phone TEXT NOT NULL,              -- основной виртуальный номер UIS объекта
   uis_line_id TEXT,
   type TEXT NOT NULL DEFAULT 'salon', -- salon | sauna
   checklist_mode TEXT NOT NULL DEFAULT 'template', -- template | custom (отвязан от шаблона)
   active INTEGER NOT NULL DEFAULT 1,  -- 0 = архив (удаление объекта = архивация)
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Доп. номера, привязанные к тому же объекту (например, номера с разных
+-- рекламных площадок с переадресацией на салон) — основной номер из salons.phone
+-- участвует в сопоставлении наравне с этими.
+CREATE TABLE IF NOT EXISTS salon_phone_numbers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  salon_id INTEGER NOT NULL REFERENCES salons(id) ON DELETE CASCADE,
+  phone TEXT NOT NULL,
+  note TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_salon_phone_numbers_salon ON salon_phone_numbers(salon_id);
 
 -- ===== Администраторы =====
 -- Отдельно от users: администратор существует как метка для ИИ даже без логина.

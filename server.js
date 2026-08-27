@@ -92,6 +92,25 @@ app.put('/api/salons/:id/checklist-mode', auth.requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
+// доп. номера объекта (например, с разных рекламных площадок с переадресацией на салон) —
+// звонки на любой из них будут распознаны как звонки этому объекту, см. telephony.js
+app.get('/api/salons/:id/phones', auth.requireAdmin, (req, res) => {
+  res.json(db.prepare('SELECT * FROM salon_phone_numbers WHERE salon_id = ? ORDER BY id').all(req.params.id));
+});
+
+app.post('/api/salons/:id/phones', auth.requireAdmin, (req, res) => {
+  const { phone, note } = req.body || {};
+  if (!phone) return res.status(400).json({ error: 'Укажите номер' });
+  const info = db.prepare('INSERT INTO salon_phone_numbers (salon_id, phone, note) VALUES (?, ?, ?)')
+    .run(req.params.id, phone.trim(), note || null);
+  res.json(db.prepare('SELECT * FROM salon_phone_numbers WHERE id = ?').get(info.lastInsertRowid));
+});
+
+app.delete('/api/salons/:salonId/phones/:phoneId', auth.requireAdmin, (req, res) => {
+  db.prepare('DELETE FROM salon_phone_numbers WHERE id = ? AND salon_id = ?').run(req.params.phoneId, req.params.salonId);
+  res.json({ ok: true });
+});
+
 // ================= АДМИНИСТРАТОРЫ =================
 app.get('/api/admins', (req, res) => {
   let salonId = req.query.salon_id ? Number(req.query.salon_id) : null;

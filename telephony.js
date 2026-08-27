@@ -1,14 +1,17 @@
-// Приём звонков UIS (Data API, get.calls_report) по номерам объектов сети,
-// плюс логика пропущенных звонков и привязки перезвонов.
+// Приём звонков UIS (Data API, get.calls_report) — плюс логика пропущенных
+// звонков и привязки перезвонов.
 //
-// Один опрос раз в poll_interval_sec покрывает все активные объекты (номера).
-// Звонок относится к объекту по номеру: входящие — по номеру, на который
-// позвонили; исходящие — по номеру, с которого звонили (т.е. по номеру самого
-// объекта, который мы и опрашиваем).
+// Один опрос раз в poll_interval_sec забирает ВСЕ звонки аккаунта за период
+// одним запросом (без фильтра по номеру), а дальше каждый звонок раскладывается
+// по объектам локально — по карте "номер -> объект" (см. lib.getSalonPhoneMap).
+// Так сделано потому, что на объект может приходить несколько разных номеров
+// (например, с разных рекламных площадок с переадресацией на один салон) —
+// фильтрация по единственному "своему" номеру объекта теряла бы такие звонки.
+// Звонки на номера, которых нет ни у одного объекта в карте, просто пропускаются.
 
 const fetch = require('node-fetch');
 const db = require('./db');
-const { normalizePhone, findOrCreateClient } = require('./lib');
+const { normalizePhone, findOrCreateClient, getSalonPhoneMap } = require('./lib');
 
 const DATA_API_URL = 'https://dataapi.uiscom.ru/v2.0';
 const LOOKBACK_MS_FOR_CALLBACK_MATCH = 48 * 60 * 60 * 1000; // окно поиска пары «пропущен → перезвон»
@@ -46,11 +49,10 @@ function toUisDateString(date) {
   return date.toISOString().slice(0, 19).replace('T', ' ');
 }
 
-async function fetchCallsForSalon(salon, sinceStr) {
+async function fetchAllCalls(sinceStr) {
   const result = await uisRequest('get.calls_report', {
     date_from: sinceStr,
     date_till: toUisDateString(new Date()),
-    filter: { field: 'virtual_phone_number', operator: '=', value: normalizePhone(salon.uis_line_id || salon.phone) },
     fields: [
       'id', 'start_time', 'direction', 'is_lost', 'talk_duration',
       'contact_phone_number', 'virtual_phone_number', 'call_records'
@@ -85,18 +87,27 @@ async function pollOnce() {
   const settings = getTelephonySettings();
   if (!settings.enabled || !settings.uis_api_key) return;
 
-  const salons = db.prepare('SELECT * FROM salons WHERE active = 1').all();
   const since = settings.last_poll_at || toUisDateString(new Date(Date.now() - 24 * 60 * 60 * 1000));
+  const salonsById = new Map(db.prepare('SELECT * FROM salons WHERE active = 1').all().map(s => [s.id, s]));
+  const phoneMap = getSalonPhoneMap();
 
-  for (const salon of salons) {
-    try {
-      const calls = await fetchCallsForSalon(salon, since);
-      // сортируем по времени начала, чтобы пропущенный всегда сохранялся раньше перезвона
-      calls.sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
-      for (const c of calls) saveCall(salon, c);
-    } catch (err) {
-      console.error(`[telephony] Ошибка получения звонков для объекта "${salon.name}":`, err.message);
+  try {
+    const calls = await fetchAllCalls(since);
+    // сортируем по времени начала, чтобы пропущенный всегда сохранялся раньше перезвона
+    calls.sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
+
+    let unmatched = 0;
+    for (const c of calls) {
+      const salonId = phoneMap.get(normalizePhone(c.virtual_phone_number));
+      const salon = salonId ? salonsById.get(salonId) : null;
+      if (!salon) { unmatched++; continue; }
+      saveCall(salon, c);
     }
+    if (unmatched > 0) {
+      console.log(`[telephony] ${unmatched} звонк(ов) на номера, не привязанные ни к одному объекту — пропущены. Проверьте "Салоны" → номера объекта.`);
+    }
+  } catch (err) {
+    console.error('[telephony] Ошибка получения звонков:', err.message);
   }
 
   sweepExpiredCallbackWindows(settings.callback_window_min);

@@ -468,6 +468,7 @@ RENDERERS.salons = async function renderSalons() {
           <td>${s.active ? '<span class="tag done">активен</span>' : '<span class="tag">архив</span>'}</td>
           <td class="row">
             <button onclick="showSalonForm(${s.id})">Изменить</button>
+            <button onclick="manageSalonPhones(${s.id})">Номера</button>
             ${s.active ? `<button class="danger" onclick="archiveSalon(${s.id})">В архив</button>` : `<button class="ok" onclick="unarchiveSalon(${s.id})">Вернуть</button>`}
           </td>
         </tr>`).join('')}
@@ -519,6 +520,49 @@ async function toggleChecklistMode(id, mode) {
   if (!confirm(msg)) return;
   await api(`/salons/${id}/checklist-mode`, { method: 'PUT', body: { mode } });
   RENDERERS.salons();
+}
+
+// Доп. номера объекта — на случай, если на салон льются звонки с разных
+// рекламных площадок (разные номера с переадресацией на один и тот же объект).
+async function manageSalonPhones(salonId) {
+  const salon = SALONS.find(s => s.id === salonId);
+  const phones = await api(`/salons/${salonId}/phones`);
+  document.getElementById('modal-root').innerHTML = `
+    <div class="modal-bg" onclick="if(event.target===this)this.remove()">
+      <div class="modal">
+        <h3>Номера объекта «${esc(salon.name)}»</h3>
+        <p class="muted">Основной номер: ${esc(salon.phone)}. Ниже — дополнительные номера (например, с разных
+        рекламных площадок с переадресацией на этот салон) — звонки на любой из них будут
+        распознаны как звонки этому объекту.</p>
+        <table id="salon-phones-table">${renderSalonPhonesRows(phones)}</table>
+        <div class="row" style="margin-top:12px">
+          <input id="new-phone" placeholder="Номер">
+          <input id="new-phone-note" placeholder="Заметка (например, «Авито»)">
+          <button class="primary" onclick="addSalonPhone(${salonId})">+ Добавить номер</button>
+        </div>
+        <div class="row between" style="margin-top:16px">
+          <span></span>
+          <button onclick="document.querySelector('.modal-bg').remove()">Закрыть</button>
+        </div>
+      </div>
+    </div>`;
+}
+function renderSalonPhonesRows(phones) {
+  return `<tr><th>Номер</th><th>Заметка</th><th></th></tr>` +
+    (phones.map(p => `<tr><td>${esc(p.phone)}</td><td>${esc(p.note||'—')}</td>
+      <td><button class="danger" onclick="deleteSalonPhone(${p.salon_id},${p.id})">Удалить</button></td></tr>`).join('')
+    || '<tr><td colspan="3" class="muted">Дополнительных номеров нет</td></tr>');
+}
+async function addSalonPhone(salonId) {
+  const phone = document.getElementById('new-phone').value.trim();
+  const note = document.getElementById('new-phone-note').value.trim();
+  if (!phone) return alert('Укажите номер');
+  await api(`/salons/${salonId}/phones`, { method: 'POST', body: { phone, note } });
+  manageSalonPhones(salonId);
+}
+async function deleteSalonPhone(salonId, phoneId) {
+  await api(`/salons/${salonId}/phones/${phoneId}`, { method: 'DELETE' });
+  manageSalonPhones(salonId);
 }
 
 // ================= ЧЕК-ЛИСТЫ =================
