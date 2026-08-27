@@ -61,26 +61,20 @@ async function fetchAllCalls(sinceStr) {
   return (result && result.data) || [];
 }
 
-// Точная форма call_records не подтверждена на практике (в документации это
-// "идентификатор ссылки на запись" — возможно, требует отдельного запроса на
-// скачивание по id). Разбираем defensively и логируем сырые данные первого
-// звонка, чтобы уточнить формат по логам после первого реального звонка.
-let loggedRawCallRecordsSample = false;
+// call_records от UIS — это не прямая ссылка, а хэш-идентификатор записи
+// (подтверждено на практике: массив вида ["2e675888ded89ed517d5c60e63a2d8c3"]).
+// Реальный playback-URL собирается по схеме из документации UIS/Comagic:
+// http://app.comagic.ru/system/media/talk/{call_session_id}/{hash}/
+// где call_session_id — это то же самое поле "id" звонка в отчёте.
 function extractRecordUrl(c) {
   const raw = c.call_records;
   if (raw == null) return null;
-  if (!loggedRawCallRecordsSample) {
-    console.log('[telephony] Пример сырых call_records от UIS:', JSON.stringify(raw));
-    loggedRawCallRecordsSample = true;
-  }
   const arr = Array.isArray(raw) ? raw : [raw];
   if (arr.length === 0) return null;
   const first = arr[0];
-  if (typeof first === 'string') return first;
-  if (first && typeof first === 'object') {
-    return first.record_url || first.url || first.link || first.download_link || null;
-  }
-  return null;
+  const hash = typeof first === 'string' ? first : (first?.record_url || first?.url || first?.hash || null);
+  if (!hash) return null;
+  return `http://app.comagic.ru/system/media/talk/${c.id}/${hash}/`;
 }
 
 async function pollOnce() {
