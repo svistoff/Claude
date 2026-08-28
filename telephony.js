@@ -55,7 +55,7 @@ async function fetchAllCalls(sinceStr) {
     date_till: toUisDateString(new Date()),
     fields: [
       'id', 'start_time', 'direction', 'is_lost', 'talk_duration',
-      'contact_phone_number', 'virtual_phone_number', 'call_records'
+      'contact_phone_number', 'virtual_phone_number', 'communication_number', 'call_records'
     ]
   });
   return (result && result.data) || [];
@@ -91,15 +91,25 @@ async function pollOnce() {
     // сортируем по времени начала, чтобы пропущенный всегда сохранялся раньше перезвона
     calls.sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
 
-    let unmatched = 0;
+    // Номер, на который поступил звонок, может быть либо "родным" виртуальным
+    // номером UIS (virtual_phone_number), либо чужим номером, перенесённым в
+    // UIS через SIP-реквизиты (в этом случае заполнено communication_number,
+    // а virtual_phone_number может быть пустым) — проверяем оба поля.
+    const unmatchedNumbers = new Set();
     for (const c of calls) {
-      const salonId = phoneMap.get(normalizePhone(c.virtual_phone_number));
+      const candidate = normalizePhone(c.virtual_phone_number) || normalizePhone(c.communication_number);
+      const salonId = candidate ? phoneMap.get(candidate) : null;
       const salon = salonId ? salonsById.get(salonId) : null;
-      if (!salon) { unmatched++; continue; }
+      if (!salon) {
+        if (c.virtual_phone_number || c.communication_number) {
+          unmatchedNumbers.add(`${c.virtual_phone_number || '—'} / ${c.communication_number || '—'}`);
+        }
+        continue;
+      }
       saveCall(salon, c);
     }
-    if (unmatched > 0) {
-      console.log(`[telephony] ${unmatched} звонк(ов) на номера, не привязанные ни к одному объекту — пропущены. Проверьте "Салоны" → номера объекта.`);
+    if (unmatchedNumbers.size > 0) {
+      console.log(`[telephony] Звонки на номера, не привязанные ни к одному объекту (virtual_phone_number / communication_number): ${Array.from(unmatchedNumbers).join('; ')} — добавьте нужный номер в "Салоны" → "Номера".`);
     }
   } catch (err) {
     console.error('[telephony] Ошибка получения звонков:', err.message);
