@@ -675,6 +675,16 @@ RENDERERS.settings = async function renderSettings() {
       <p class="muted">Требуется whitelisted IP сервера в кабинете UIS (Аккаунт → Правила и настройки безопасности → API). Один опрос покрывает все 5 номеров.</p>
     </div>
     <div class="card">
+      <h3>⏮️ Дозагрузить звонки за период</h3>
+      <p class="muted">Если обычный опрос не работал какое-то время (настройка ключа, отладка) — часть звонков могла не попасть в скользящее окно. Здесь можно забрать конкретный период вручную (не более 3 месяцев за раз).</p>
+      <div class="row">
+        <label>С <input id="bf-from" type="datetime-local"></label>
+        <label>По <input id="bf-till" type="datetime-local"></label>
+        <button class="primary" onclick="runBackfill()">Дозагрузить</button>
+      </div>
+      <div id="bf-result" class="muted" style="margin-top:8px"></div>
+    </div>
+    <div class="card">
       <h3>📞 Клик-звонок через UIS <span class="muted">(отложено — мало исходящих)</span></h3>
       <div class="row" style="flex-direction:column;align-items:stretch;max-width:480px">
         <label>Виртуальный номер для исходящих<input id="co-number" value="${esc(callout.outbound_virtual_number||'')}"></label>
@@ -704,6 +714,28 @@ async function saveTelephonySettings() {
     enabled: document.getElementById('t-enabled').checked
   }});
   RENDERERS.settings();
+}
+// datetime-local не несёт часовой пояс — переводим в однозначный UTC в
+// формате, который ждёт UIS ("YYYY-MM-DD HH:mm:ss"), на стороне браузера.
+function localDatetimeToUisUtc(value) {
+  return new Date(value).toISOString().slice(0, 19).replace('T', ' ');
+}
+async function runBackfill() {
+  const fromVal = document.getElementById('bf-from').value;
+  const tillVal = document.getElementById('bf-till').value;
+  if (!fromVal || !tillVal) return alert('Укажите обе даты');
+  const resultEl = document.getElementById('bf-result');
+  resultEl.textContent = 'Загрузка…';
+  try {
+    const result = await api('/settings/telephony/backfill', { method: 'POST', body: {
+      date_from: localDatetimeToUisUtc(fromVal),
+      date_till: localDatetimeToUisUtc(tillVal)
+    }});
+    resultEl.textContent = `Готово: получено ${result.total}, распределено по салонам ${result.matched}` +
+      (result.unmatchedNumbers.length ? `, непривязанные номера: ${result.unmatchedNumbers.join('; ')}` : '');
+  } catch (e) {
+    resultEl.textContent = 'Ошибка: ' + e.message;
+  }
 }
 async function saveCallOutSettings() {
   await api('/settings/call-out', { method: 'PUT', body: {

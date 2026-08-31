@@ -539,6 +539,16 @@ app.put('/api/settings/telephony', auth.requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
+// ручная дозагрузка звонков за произвольный период (например, если обычный опрос
+// не работал какое-то время и часть звонков не попала в скользящее окно)
+app.post('/api/settings/telephony/backfill', auth.requireAdmin, (req, res) => {
+  const { date_from, date_till } = req.body || {};
+  if (!date_from || !date_till) return res.status(400).json({ error: 'Укажите date_from и date_till' });
+  require('./telephony').backfill(date_from, date_till)
+    .then(result => res.json(result))
+    .catch(err => res.status(500).json({ error: err.message }));
+});
+
 // ================= КЛИК-ЗВОНОК (отложено, но код доступен) =================
 app.get('/api/settings/call-out', auth.requireAdmin, (req, res) => {
   res.json(db.prepare('SELECT * FROM call_out_settings WHERE id = 1').get());

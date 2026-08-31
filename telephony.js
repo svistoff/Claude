@@ -49,10 +49,10 @@ function toUisDateString(date) {
   return date.toISOString().slice(0, 19).replace('T', ' ');
 }
 
-async function fetchAllCalls(sinceStr) {
+async function fetchAllCalls(sinceStr, tillStr) {
   const result = await uisRequest('get.calls_report', {
     date_from: sinceStr,
-    date_till: toUisDateString(new Date()),
+    date_till: tillStr,
     fields: [
       'id', 'start_time', 'direction', 'is_lost', 'talk_duration',
       'contact_phone_number', 'virtual_phone_number', 'communication_number', 'call_records'
@@ -78,45 +78,69 @@ function extractRecordUrl(c) {
   return `https://app.comagic.ru/system/media/talk/${c.id}/${hash}/`;
 }
 
+// Забирает и раскладывает звонки за период [sinceStr, tillStr] по объектам.
+// Используется и обычным опросом, и ручным backfill за произвольный период.
+async function ingestCalls(sinceStr, tillStr) {
+  const salonsById = new Map(db.prepare('SELECT * FROM salons WHERE active = 1').all().map(s => [s.id, s]));
+  const phoneMap = getSalonPhoneMap();
+
+  const calls = await fetchAllCalls(sinceStr, tillStr);
+  // сортируем по времени начала, чтобы пропущенный всегда сохранялся раньше перезвона
+  calls.sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
+
+  // Номер, на который поступил звонок, может быть либо "родным" виртуальным
+  // номером UIS (virtual_phone_number), либо чужим номером, перенесённым в
+  // UIS через SIP-реквизиты (в этом случае заполнено communication_number,
+  // а virtual_phone_number может быть пустым) — проверяем оба поля.
+  const unmatchedNumbers = new Set();
+  let matched = 0;
+  for (const c of calls) {
+    const candidate = normalizePhone(c.virtual_phone_number) || normalizePhone(c.communication_number);
+    const salonId = candidate ? phoneMap.get(candidate) : null;
+    const salon = salonId ? salonsById.get(salonId) : null;
+    if (!salon) {
+      if (c.virtual_phone_number || c.communication_number) {
+        unmatchedNumbers.add(`${c.virtual_phone_number || '—'} / ${c.communication_number || '—'}`);
+      }
+      continue;
+    }
+    saveCall(salon, c);
+    matched++;
+  }
+  if (unmatchedNumbers.size > 0) {
+    console.log(`[telephony] Звонки на номера, не привязанные ни к одному объекту (virtual_phone_number / communication_number): ${Array.from(unmatchedNumbers).join('; ')} — добавьте нужный номер в "Салоны" → "Номера".`);
+  }
+  return { total: calls.length, matched, unmatchedNumbers: Array.from(unmatchedNumbers) };
+}
+
 async function pollOnce() {
   const settings = getTelephonySettings();
   if (!settings.enabled || !settings.uis_api_key) return;
 
   const since = settings.last_poll_at || toUisDateString(new Date(Date.now() - 24 * 60 * 60 * 1000));
-  const salonsById = new Map(db.prepare('SELECT * FROM salons WHERE active = 1').all().map(s => [s.id, s]));
-  const phoneMap = getSalonPhoneMap();
+  const till = toUisDateString(new Date());
 
   try {
-    const calls = await fetchAllCalls(since);
-    // сортируем по времени начала, чтобы пропущенный всегда сохранялся раньше перезвона
-    calls.sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
-
-    // Номер, на который поступил звонок, может быть либо "родным" виртуальным
-    // номером UIS (virtual_phone_number), либо чужим номером, перенесённым в
-    // UIS через SIP-реквизиты (в этом случае заполнено communication_number,
-    // а virtual_phone_number может быть пустым) — проверяем оба поля.
-    const unmatchedNumbers = new Set();
-    for (const c of calls) {
-      const candidate = normalizePhone(c.virtual_phone_number) || normalizePhone(c.communication_number);
-      const salonId = candidate ? phoneMap.get(candidate) : null;
-      const salon = salonId ? salonsById.get(salonId) : null;
-      if (!salon) {
-        if (c.virtual_phone_number || c.communication_number) {
-          unmatchedNumbers.add(`${c.virtual_phone_number || '—'} / ${c.communication_number || '—'}`);
-        }
-        continue;
-      }
-      saveCall(salon, c);
-    }
-    if (unmatchedNumbers.size > 0) {
-      console.log(`[telephony] Звонки на номера, не привязанные ни к одному объекту (virtual_phone_number / communication_number): ${Array.from(unmatchedNumbers).join('; ')} — добавьте нужный номер в "Салоны" → "Номера".`);
-    }
+    await ingestCalls(since, till);
+    // окно опроса сдвигаем вперёд ТОЛЬКО при успешном запросе — иначе при
+    // ошибке API интервал молча "проглатывается" и эти звонки уже никогда
+    // не будут забраны обычным опросом (только через ручной backfill ниже)
+    db.prepare(`UPDATE telephony_settings SET last_poll_at = ? WHERE id = 1`).run(till);
   } catch (err) {
     console.error('[telephony] Ошибка получения звонков:', err.message);
   }
 
   sweepExpiredCallbackWindows(settings.callback_window_min);
-  db.prepare(`UPDATE telephony_settings SET last_poll_at = ? WHERE id = 1`).run(toUisDateString(new Date()));
+}
+
+// Ручная дозагрузка за произвольный период — например, если обычный опрос
+// не работал какое-то время (ошибка ключа, отладка и т.п.) и часть звонков
+// не попала в окно, т.к. last_poll_at продолжал жить своей жизнью.
+// UIS ограничивает период одного запроса тремя месяцами.
+async function backfill(sinceStr, tillStr) {
+  const settings = getTelephonySettings();
+  if (!settings.uis_api_key) throw new Error('Не задан ключ UIS API');
+  return ingestCalls(sinceStr, tillStr);
 }
 
 function saveCall(salon, c) {
@@ -204,4 +228,4 @@ function startPolling() {
   tick();
 }
 
-module.exports = { startPolling, pollOnce };
+module.exports = { startPolling, pollOnce, backfill };
