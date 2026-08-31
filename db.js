@@ -221,7 +221,9 @@ CREATE TABLE IF NOT EXISTS telephony_settings (
   poll_interval_sec INTEGER NOT NULL DEFAULT 300,
   callback_window_min INTEGER NOT NULL DEFAULT 5,
   enabled INTEGER NOT NULL DEFAULT 0,
-  last_poll_at TEXT
+  last_poll_at TEXT,
+  uis_timezone_offset_hours INTEGER NOT NULL DEFAULT 5 -- UIS отдаёт/принимает время в часовом
+    -- поясе аккаунта (не UTC) — по умолчанию 5 (Екатеринбург, без перехода на летнее время)
 );
 INSERT OR IGNORE INTO telephony_settings (id) VALUES (1);
 
@@ -238,6 +240,10 @@ INSERT OR IGNORE INTO call_out_settings (id) VALUES (1);
 const salonColumns = db.prepare("PRAGMA table_info(salons)").all().map(c => c.name);
 if (!salonColumns.includes('uis_action_name')) {
   db.exec('ALTER TABLE salons ADD COLUMN uis_action_name TEXT');
+}
+const telephonyColumns = db.prepare("PRAGMA table_info(telephony_settings)").all().map(c => c.name);
+if (!telephonyColumns.includes('uis_timezone_offset_hours')) {
+  db.exec('ALTER TABLE telephony_settings ADD COLUMN uis_timezone_offset_hours INTEGER NOT NULL DEFAULT 5');
 }
 
 // первичный владелец, если пользователей ещё нет

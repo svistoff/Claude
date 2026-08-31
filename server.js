@@ -546,13 +546,14 @@ app.get('/api/settings/telephony', auth.requireAdmin, (req, res) => {
 
 app.put('/api/settings/telephony', auth.requireAdmin, (req, res) => {
   const s = db.prepare('SELECT * FROM telephony_settings WHERE id = 1').get();
-  const { uis_login, uis_api_key, poll_interval_sec, callback_window_min, enabled } = req.body || {};
-  db.prepare(`UPDATE telephony_settings SET uis_login=?, uis_api_key=?, poll_interval_sec=?, callback_window_min=?, enabled=? WHERE id=1`)
+  const { uis_login, uis_api_key, poll_interval_sec, callback_window_min, uis_timezone_offset_hours, enabled } = req.body || {};
+  db.prepare(`UPDATE telephony_settings SET uis_login=?, uis_api_key=?, poll_interval_sec=?, callback_window_min=?, uis_timezone_offset_hours=?, enabled=? WHERE id=1`)
     .run(
       uis_login ?? s.uis_login,
       uis_api_key && !uis_api_key.startsWith('••••') ? uis_api_key : s.uis_api_key,
       poll_interval_sec || s.poll_interval_sec,
       callback_window_min || s.callback_window_min,
+      uis_timezone_offset_hours === undefined ? s.uis_timezone_offset_hours : uis_timezone_offset_hours,
       enabled === undefined ? s.enabled : (enabled ? 1 : 0)
     );
   res.json({ ok: true });

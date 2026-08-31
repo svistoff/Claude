@@ -674,10 +674,12 @@ RENDERERS.settings = async function renderSettings() {
         <label>API-ключ (Data API)<input id="t-key" placeholder="${tel.uis_api_key || 'токен'}"></label>
         <label>Интервал опроса, сек<input id="t-interval" type="number" value="${tel.poll_interval_sec}"></label>
         <label>Окно перезвона, мин<input id="t-callback" type="number" value="${tel.callback_window_min}"></label>
+        <label>Часовой пояс UIS, смещение от UTC (часов)<input id="t-tz" type="number" value="${tel.uis_timezone_offset_hours}"></label>
         <label class="row"><input id="t-enabled" type="checkbox" ${tel.enabled?'checked':''}> Включено</label>
         <button class="primary" onclick="saveTelephonySettings()">Сохранить</button>
       </div>
-      <p class="muted">Требуется whitelisted IP сервера в кабинете UIS (Аккаунт → Правила и настройки безопасности → API). Один опрос покрывает все 5 номеров.</p>
+      <p class="muted">Требуется whitelisted IP сервера в кабинете UIS (Аккаунт → Правила и настройки безопасности → API). Один опрос покрывает все 5 номеров.
+      UIS отдаёт время звонков в часовом поясе аккаунта, не в UTC — по умолчанию 5 (Екатеринбург).</p>
     </div>
     <div class="card">
       <h3>🔀 Общие номера с голосовым меню</h3>
@@ -729,25 +731,28 @@ async function saveTelephonySettings() {
     uis_api_key: document.getElementById('t-key').value.trim(),
     poll_interval_sec: Number(document.getElementById('t-interval').value),
     callback_window_min: Number(document.getElementById('t-callback').value),
+    uis_timezone_offset_hours: Number(document.getElementById('t-tz').value),
     enabled: document.getElementById('t-enabled').checked
   }});
   RENDERERS.settings();
 }
-// datetime-local не несёт часовой пояс — переводим в однозначный UTC в
-// формате, который ждёт UIS ("YYYY-MM-DD HH:mm:ss"), на стороне браузера.
-function localDatetimeToUisUtc(value) {
-  return new Date(value).toISOString().slice(0, 19).replace('T', ' ');
+// datetime-local не несёт часовой пояс. UIS ждёт время в СВОЁМ часовом поясе
+// (не UTC!) — переводим выбранный момент в реальный UTC, затем сдвигаем на
+// офсет из настроек, чтобы получить именно то, что понимает UIS.
+function localDatetimeToUisLocal(value, offsetHours) {
+  return new Date(new Date(value).getTime() + offsetHours * 3600000).toISOString().slice(0, 19).replace('T', ' ');
 }
 async function runBackfill() {
   const fromVal = document.getElementById('bf-from').value;
   const tillVal = document.getElementById('bf-till').value;
   if (!fromVal || !tillVal) return alert('Укажите обе даты');
+  const offsetHours = Number(document.getElementById('t-tz').value);
   const resultEl = document.getElementById('bf-result');
   resultEl.textContent = 'Загрузка…';
   try {
     const result = await api('/settings/telephony/backfill', { method: 'POST', body: {
-      date_from: localDatetimeToUisUtc(fromVal),
-      date_till: localDatetimeToUisUtc(tillVal)
+      date_from: localDatetimeToUisLocal(fromVal, offsetHours),
+      date_till: localDatetimeToUisLocal(tillVal, offsetHours)
     }});
     resultEl.textContent = `Готово: получено ${result.total}, распределено по салонам ${result.matched}` +
       (result.unmatchedNumbers.length ? `, непривязанные номера: ${result.unmatchedNumbers.join('; ')}` : '');

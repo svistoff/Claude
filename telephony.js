@@ -45,8 +45,20 @@ async function uisRequest(method, params) {
 
 // UIS ждёт даты в формате "YYYY-MM-DD HH:mm:ss" (без "T"/"Z") — это же формат,
 // который отдаёт SQLite для datetime('now'), поэтому используем его везде.
+// ВАЖНО: сами значения — не UTC, а в часовом поясе аккаунта UIS (подтверждено
+// на практике: Екатеринбург, UTC+5, без перехода на летнее время). Эта функция
+// только форматирует Date в строку — сдвиг на офсет делают вызывающие места.
 function toUisDateString(date) {
   return date.toISOString().slice(0, 19).replace('T', ' ');
+}
+
+// Переводит РЕАЛЬНЫЙ момент времени (мс с эпохи) в строку "который час сейчас
+// у UIS" — используется для date_from/date_till, отправляемых В UIS, и при
+// сохранении last_poll_at. Для арифметики НАД уже полученной от UIS строкой
+// (например, "+10 минут от начала звонка") офсет второй раз применять не
+// нужно — там уже находимся в системе координат UIS, просто считаем разницу.
+function uisLocalStringFor(instantMs, offsetHours) {
+  return toUisDateString(new Date(instantMs + offsetHours * 3600000));
 }
 
 async function fetchAllCalls(sinceStr, tillStr) {
@@ -178,8 +190,9 @@ async function pollOnce() {
   const settings = getTelephonySettings();
   if (!settings.enabled || !settings.uis_api_key) return;
 
-  const since = settings.last_poll_at || toUisDateString(new Date(Date.now() - 24 * 60 * 60 * 1000));
-  const till = toUisDateString(new Date());
+  const offset = settings.uis_timezone_offset_hours;
+  const since = settings.last_poll_at || uisLocalStringFor(Date.now() - 24 * 60 * 60 * 1000, offset);
+  const till = uisLocalStringFor(Date.now(), offset);
 
   try {
     await ingestCalls(since, till);
@@ -191,7 +204,7 @@ async function pollOnce() {
     console.error('[telephony] Ошибка получения звонков:', err.message);
   }
 
-  sweepExpiredCallbackWindows(settings.callback_window_min);
+  sweepExpiredCallbackWindows(settings.callback_window_min, offset);
 }
 
 // Ручная дозагрузка за произвольный период — например, если обычный опрос
@@ -223,7 +236,7 @@ function saveCall(salon, c) {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     salon.id, clientId, uisCallId, direction, callerPhone,
-    c.start_time || toUisDateString(new Date()), Number(c.talk_duration) || 0,
+    c.start_time || uisLocalStringFor(Date.now(), getTelephonySettings().uis_timezone_offset_hours), Number(c.talk_duration) || 0,
     isAnswered ? 1 : 0, extractRecordUrl(c), status
   );
   const callId = info.lastInsertRowid;
@@ -265,8 +278,8 @@ function linkCallbackIfMatches(salon, outCallId, callerPhone, outStartTime) {
 // Пропущенные, чьё окно перезвона истекло без исходящего звонка, помечаем
 // «не перезвонили»; если перезвон всё же случится позже, linkCallbackIfMatches
 // найдёт их по callback_call_id IS NULL и перекроет статус на 'late'.
-function sweepExpiredCallbackWindows(windowMin) {
-  const threshold = toUisDateString(new Date(Date.now() - windowMin * 60000));
+function sweepExpiredCallbackWindows(windowMin, offsetHours) {
+  const threshold = uisLocalStringFor(Date.now() - windowMin * 60000, offsetHours);
   db.prepare(`
     UPDATE calls SET callback_status = 'none'
     WHERE direction = 'in' AND is_answered = 0 AND callback_call_id IS NULL
