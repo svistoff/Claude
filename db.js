@@ -34,6 +34,8 @@ CREATE TABLE IF NOT EXISTS salons (
   type TEXT NOT NULL DEFAULT 'salon', -- salon | sauna
   checklist_mode TEXT NOT NULL DEFAULT 'template', -- template | custom (отвязан от шаблона)
   active INTEGER NOT NULL DEFAULT 1,  -- 0 = архив (удаление объекта = архивация)
+  uis_action_name TEXT, -- название сценария/группы в UIS (action_name из get.call_legs_report) —
+                        -- нужно только для номеров с общим голосовым меню на несколько объектов
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -48,6 +50,17 @@ CREATE TABLE IF NOT EXISTS salon_phone_numbers (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_salon_phone_numbers_salon ON salon_phone_numbers(salon_id);
+
+-- Номера с общим голосовым меню на несколько объектов сразу (например,
+-- "нажмите 1 — Жара, нажмите 2 — VIP"): по такому номеру нельзя определить
+-- объект напрямую — нужно смотреть плечи звонка (get.call_legs_report) и
+-- искать успешное исходящее плечо, чьё action_name сопоставлено с salons.uis_action_name.
+CREATE TABLE IF NOT EXISTS shared_ivr_numbers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  phone TEXT NOT NULL,
+  note TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 
 -- ===== Администраторы =====
 -- Отдельно от users: администратор существует как метка для ИИ даже без логина.
@@ -219,6 +232,13 @@ CREATE TABLE IF NOT EXISTS call_out_settings (
 );
 INSERT OR IGNORE INTO call_out_settings (id) VALUES (1);
 `);
+
+// миграции для баз, созданных до появления новых колонок —
+// CREATE TABLE IF NOT EXISTS не добавляет колонки в уже существующую таблицу
+const salonColumns = db.prepare("PRAGMA table_info(salons)").all().map(c => c.name);
+if (!salonColumns.includes('uis_action_name')) {
+  db.exec('ALTER TABLE salons ADD COLUMN uis_action_name TEXT');
+}
 
 // первичный владелец, если пользователей ещё нет
 const usersCount = db.prepare('SELECT COUNT(*) AS c FROM users').get().c;

@@ -79,6 +79,24 @@ function getSalonPhoneMap() {
   return map;
 }
 
+// Номера с общим голосовым меню на несколько объектов ("нажмите 1 — Жара,
+// нажмите 2 — VIP") — по самому номеру объект не определить, для них
+// используется отдельная логика через get.call_legs_report (см. telephony.js).
+function getSharedIvrNumberSet() {
+  const rows = db.prepare('SELECT phone FROM shared_ivr_numbers').all();
+  return new Set(rows.map(r => normalizePhone(r.phone)).filter(Boolean));
+}
+
+// Карта "action_name (сценарий/группа в UIS) -> salon_id" — сопоставление
+// задаётся вручную в карточке салона (поле uis_action_name), т.к. в UIS эти
+// названия на латинице и не обязаны совпадать со внутренним названием салона.
+function getActionNameSalonMap() {
+  const map = new Map();
+  const salons = db.prepare(`SELECT id, uis_action_name FROM salons WHERE active = 1 AND uis_action_name IS NOT NULL AND uis_action_name != ''`).all();
+  for (const s of salons) map.set(s.uis_action_name.trim().toLowerCase(), s.id);
+  return map;
+}
+
 // Администратор привязан ровно к одному объекту (через users -> admins.user_id).
 function adminForUser(userId) {
   return db.prepare('SELECT * FROM admins WHERE user_id = ?').get(userId);
@@ -90,4 +108,7 @@ function canAccessSalon(user, salonId) {
   return !!admin && admin.salon_id === Number(salonId);
 }
 
-module.exports = { normalizePhone, findOrCreateClient, getEffectiveChecklist, getSalonPhoneMap, adminForUser, canAccessSalon };
+module.exports = {
+  normalizePhone, findOrCreateClient, getEffectiveChecklist, getSalonPhoneMap,
+  getSharedIvrNumberSet, getActionNameSalonMap, adminForUser, canAccessSalon
+};

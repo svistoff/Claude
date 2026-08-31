@@ -53,12 +53,14 @@ app.post('/api/salons', auth.requireAdmin, (req, res) => {
 app.put('/api/salons/:id', auth.requireAdmin, (req, res) => {
   const salon = db.prepare('SELECT * FROM salons WHERE id = ?').get(req.params.id);
   if (!salon) return res.status(404).json({ error: 'Объект не найден' });
-  const { name, address, phone, uis_line_id, type, active } = req.body || {};
-  db.prepare('UPDATE salons SET name=?, address=?, phone=?, uis_line_id=?, type=?, active=? WHERE id=?')
+  const { name, address, phone, uis_line_id, type, active, uis_action_name } = req.body || {};
+  db.prepare('UPDATE salons SET name=?, address=?, phone=?, uis_line_id=?, type=?, active=?, uis_action_name=? WHERE id=?')
     .run(
       name ?? salon.name, address ?? salon.address, phone ?? salon.phone,
       uis_line_id ?? salon.uis_line_id, type === 'sauna' || type === 'salon' ? type : salon.type,
-      active === undefined ? salon.active : (active ? 1 : 0), salon.id
+      active === undefined ? salon.active : (active ? 1 : 0),
+      uis_action_name === undefined ? salon.uis_action_name : (uis_action_name || null),
+      salon.id
     );
   res.json(db.prepare('SELECT * FROM salons WHERE id = ?').get(salon.id));
 });
@@ -108,6 +110,23 @@ app.post('/api/salons/:id/phones', auth.requireAdmin, (req, res) => {
 
 app.delete('/api/salons/:salonId/phones/:phoneId', auth.requireAdmin, (req, res) => {
   db.prepare('DELETE FROM salon_phone_numbers WHERE id = ? AND salon_id = ?').run(req.params.phoneId, req.params.salonId);
+  res.json({ ok: true });
+});
+
+// номера с общим голосовым меню на несколько объектов (см. telephony.js resolveSalonByLegs)
+app.get('/api/ivr-numbers', auth.requireAdmin, (req, res) => {
+  res.json(db.prepare('SELECT * FROM shared_ivr_numbers ORDER BY id').all());
+});
+
+app.post('/api/ivr-numbers', auth.requireAdmin, (req, res) => {
+  const { phone, note } = req.body || {};
+  if (!phone) return res.status(400).json({ error: 'Укажите номер' });
+  const info = db.prepare('INSERT INTO shared_ivr_numbers (phone, note) VALUES (?, ?)').run(phone.trim(), note || null);
+  res.json(db.prepare('SELECT * FROM shared_ivr_numbers WHERE id = ?').get(info.lastInsertRowid));
+});
+
+app.delete('/api/ivr-numbers/:id', auth.requireAdmin, (req, res) => {
+  db.prepare('DELETE FROM shared_ivr_numbers WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
 });
 

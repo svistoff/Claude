@@ -490,7 +490,11 @@ function showSalonForm(id) {
           <input id="f-phone" placeholder="Телефон (номер UIS)" value="${s?esc(s.phone):''}">
           <input id="f-line" placeholder="ID виртуальной линии UIS (необязательно)" value="${s?esc(s.uis_line_id||''):''}">
           <select id="f-type"><option value="salon" ${s&&s.type==='salon'?'selected':''}>Салон</option><option value="sauna" ${s&&s.type==='sauna'?'selected':''}>Сауна</option></select>
+          <input id="f-action-name" placeholder="Название сценария/группы в UIS (только для общих номеров с меню)" value="${s?esc(s.uis_action_name||''):''}">
         </div>
+        <p class="muted">Название сценария нужно только если у вас есть общий номер с голосовым меню
+        на несколько салонов (см. «Настройки» → «Общие номера с меню») — впишите сюда точное
+        значение action_name из UIS для ветки этого салона (см. лог сервера при тестовом звонке).</p>
         <div class="row between" style="margin-top:16px">
           <button onclick="document.querySelector('.modal-bg').remove()">Отмена</button>
           <button class="primary" onclick="saveSalon(${id||'null'})">Сохранить</button>
@@ -504,7 +508,8 @@ async function saveSalon(id) {
     address: document.getElementById('f-address').value.trim(),
     phone: document.getElementById('f-phone').value.trim(),
     uis_line_id: document.getElementById('f-line').value.trim(),
-    type: document.getElementById('f-type').value
+    type: document.getElementById('f-type').value,
+    uis_action_name: document.getElementById('f-action-name').value.trim()
   };
   if (!body.name || !body.phone) return alert('Укажите название и телефон');
   try {
@@ -644,8 +649,8 @@ RENDERERS.reports = async function renderReports() {
 
 // ================= НАСТРОЙКИ =================
 RENDERERS.settings = async function renderSettings() {
-  const [ai, usage, tel, callout] = await Promise.all([
-    api('/settings/ai'), api('/settings/ai/usage'), api('/settings/telephony'), api('/settings/call-out')
+  const [ai, usage, tel, callout, ivrNumbers] = await Promise.all([
+    api('/settings/ai'), api('/settings/ai/usage'), api('/settings/telephony'), api('/settings/call-out'), api('/ivr-numbers')
   ]);
   const main = document.getElementById('main');
   main.innerHTML = `
@@ -673,6 +678,19 @@ RENDERERS.settings = async function renderSettings() {
         <button class="primary" onclick="saveTelephonySettings()">Сохранить</button>
       </div>
       <p class="muted">Требуется whitelisted IP сервера в кабинете UIS (Аккаунт → Правила и настройки безопасности → API). Один опрос покрывает все 5 номеров.</p>
+    </div>
+    <div class="card">
+      <h3>🔀 Общие номера с голосовым меню</h3>
+      <p class="muted">Для номеров, где меню разводит звонок в разные салоны по нажатой цифре
+      (например, «нажмите 1 — Жара, нажмите 2 — VIP») — сам номер не определяет салон, поэтому
+      сюда добавляется сам общий номер, а в карточке каждого салона (вкладка «Салоны» → «Изменить»)
+      указывается название сценария UIS (action_name) для его ветки меню.</p>
+      <table id="ivr-numbers-table">${renderIvrNumbersRows(ivrNumbers)}</table>
+      <div class="row" style="margin-top:8px">
+        <input id="new-ivr-phone" placeholder="Общий номер (например, 3844438)">
+        <input id="new-ivr-note" placeholder="Заметка">
+        <button class="primary" onclick="addIvrNumber()">+ Добавить</button>
+      </div>
     </div>
     <div class="card">
       <h3>⏮️ Дозагрузить звонки за период</h3>
@@ -736,6 +754,23 @@ async function runBackfill() {
   } catch (e) {
     resultEl.textContent = 'Ошибка: ' + e.message;
   }
+}
+function renderIvrNumbersRows(rows) {
+  return `<tr><th>Номер</th><th>Заметка</th><th></th></tr>` +
+    (rows.map(r => `<tr><td>${esc(r.phone)}</td><td>${esc(r.note||'—')}</td>
+      <td><button class="danger" onclick="deleteIvrNumber(${r.id})">Удалить</button></td></tr>`).join('')
+    || '<tr><td colspan="3" class="muted">Общих номеров с меню нет</td></tr>');
+}
+async function addIvrNumber() {
+  const phone = document.getElementById('new-ivr-phone').value.trim();
+  const note = document.getElementById('new-ivr-note').value.trim();
+  if (!phone) return alert('Укажите номер');
+  await api('/ivr-numbers', { method: 'POST', body: { phone, note } });
+  RENDERERS.settings();
+}
+async function deleteIvrNumber(id) {
+  await api('/ivr-numbers/' + id, { method: 'DELETE' });
+  RENDERERS.settings();
 }
 async function saveCallOutSettings() {
   await api('/settings/call-out', { method: 'PUT', body: {

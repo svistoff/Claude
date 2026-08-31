@@ -11,7 +11,7 @@
 
 const fetch = require('node-fetch');
 const db = require('./db');
-const { normalizePhone, findOrCreateClient, getSalonPhoneMap } = require('./lib');
+const { normalizePhone, findOrCreateClient, getSalonPhoneMap, getSharedIvrNumberSet, getActionNameSalonMap } = require('./lib');
 
 const DATA_API_URL = 'https://dataapi.uiscom.ru/v2.0';
 const LOOKBACK_MS_FOR_CALLBACK_MATCH = 48 * 60 * 60 * 1000; // окно поиска пары «пропущен → перезвон»
@@ -78,11 +78,56 @@ function extractRecordUrl(c) {
   return `https://app.comagic.ru/system/media/talk/${c.id}/${hash}/`;
 }
 
+// Для номеров с общим голосовым меню (см. shared_ivr_numbers) сам звонок не
+// говорит, в какой салон его перевело меню — это видно только по "плечам"
+// звонка (get.call_legs_report): исходящее плечо, которое реально соединилось
+// (is_failed=false, есть connect_time), несёт поле action_name — название
+// сценария/группы в UIS, которое администратор сопоставил с салоном
+// (salons.uis_action_name) в интерфейсе. Подтверждено на практике: campaign_id
+// для таких звонков всегда -1 (кампании в UIS не настроены), поэтому action_name
+// с плеча — единственный надёжный сигнал.
+async function fetchCallLegs(callSessionId, startTimeStr) {
+  const tillStr = toUisDateString(new Date(new Date(startTimeStr).getTime() + 10 * 60000));
+  try {
+    const result = await uisRequest('get.call_legs_report', {
+      date_from: startTimeStr,
+      date_till: tillStr,
+      filter: { field: 'call_session_id', operator: '=', value: callSessionId }
+    });
+    return (result && result.data) || [];
+  } catch (err) {
+    // call_session_id может оказаться нефильтруемым полем у этого метода —
+    // тогда берём узкое окно по времени и отбираем нужную сессию сами
+    const result = await uisRequest('get.call_legs_report', { date_from: startTimeStr, date_till: tillStr });
+    const all = (result && result.data) || [];
+    return all.filter(l => String(l.call_session_id) === String(callSessionId));
+  }
+}
+
+function pickResolvingLeg(legs) {
+  return legs.find(l => l.direction === 'out' && !l.is_failed && l.connect_time) || null;
+}
+
+async function resolveSalonByLegs(call, actionNameMap, salonsById) {
+  try {
+    const legs = await fetchCallLegs(call.id, call.start_time);
+    const leg = pickResolvingLeg(legs);
+    if (!leg || !leg.action_name) return null;
+    const salonId = actionNameMap.get(leg.action_name.trim().toLowerCase());
+    return salonId ? salonsById.get(salonId) : null;
+  } catch (err) {
+    console.error(`[telephony] Не удалось получить плечи звонка #${call.id}:`, err.message);
+    return null;
+  }
+}
+
 // Забирает и раскладывает звонки за период [sinceStr, tillStr] по объектам.
 // Используется и обычным опросом, и ручным backfill за произвольный период.
 async function ingestCalls(sinceStr, tillStr) {
   const salonsById = new Map(db.prepare('SELECT * FROM salons WHERE active = 1').all().map(s => [s.id, s]));
   const phoneMap = getSalonPhoneMap();
+  const sharedIvrNumbers = getSharedIvrNumberSet();
+  const actionNameMap = getActionNameSalonMap();
 
   const calls = await fetchAllCalls(sinceStr, tillStr);
   // сортируем по времени начала, чтобы пропущенный всегда сохранялся раньше перезвона
@@ -96,8 +141,15 @@ async function ingestCalls(sinceStr, tillStr) {
   let matched = 0;
   for (const c of calls) {
     const candidate = normalizePhone(c.virtual_phone_number) || normalizePhone(c.communication_number);
-    const salonId = candidate ? phoneMap.get(candidate) : null;
-    const salon = salonId ? salonsById.get(salonId) : null;
+    let salon = candidate ? salonsById.get(phoneMap.get(candidate)) : null;
+
+    if (!salon && candidate && sharedIvrNumbers.has(candidate)) {
+      salon = await resolveSalonByLegs(c, actionNameMap, salonsById);
+      if (!salon) {
+        console.log(`[telephony] Звонок на общий номер меню ${c.virtual_phone_number || c.communication_number} (id=${c.id}): не удалось определить салон по action_name плеча — проверьте "Салоны" → название сценария UIS.`);
+      }
+    }
+
     if (!salon) {
       if (c.virtual_phone_number || c.communication_number) {
         unmatchedNumbers.add(`${c.virtual_phone_number || '—'} / ${c.communication_number || '—'}`);
@@ -108,7 +160,7 @@ async function ingestCalls(sinceStr, tillStr) {
     matched++;
   }
   if (unmatchedNumbers.size > 0) {
-    console.log(`[telephony] Звонки на номера, не привязанные ни к одному объекту (virtual_phone_number / communication_number): ${Array.from(unmatchedNumbers).join('; ')} — добавьте нужный номер в "Салоны" → "Номера".`);
+    console.log(`[telephony] Звонки на номера, не привязанные ни к одному объекту (virtual_phone_number / communication_number): ${Array.from(unmatchedNumbers).join('; ')} — добавьте нужный номер в "Салоны" → "Номера" либо в "Общие номера меню".`);
   }
   return { total: calls.length, matched, unmatchedNumbers: Array.from(unmatchedNumbers) };
 }
