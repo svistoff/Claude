@@ -11,7 +11,7 @@
 
 const fetch = require('node-fetch');
 const db = require('./db');
-const { normalizePhone, findOrCreateClient, getSalonPhoneMap, getSharedIvrNumberSet, getActionNameSalonMap } = require('./lib');
+const { normalizePhone, findOrCreateClient, getSalonPhoneMap, getSharedIvrNumberSet, getExcludedNumberSet, getActionNameSalonMap } = require('./lib');
 
 const DATA_API_URL = 'https://dataapi.uiscom.ru/v2.0';
 const LOOKBACK_MS_FOR_CALLBACK_MATCH = 48 * 60 * 60 * 1000; // окно поиска пары «пропущен → перезвон»
@@ -142,6 +142,7 @@ async function ingestCalls(sinceStr, tillStr) {
   const salonsById = new Map(db.prepare('SELECT * FROM salons WHERE active = 1').all().map(s => [s.id, s]));
   const phoneMap = getSalonPhoneMap();
   const sharedIvrNumbers = getSharedIvrNumberSet();
+  const excludedNumbers = getExcludedNumberSet();
   const actionNameMap = getActionNameSalonMap();
 
   const calls = await fetchAllCalls(sinceStr, tillStr);
@@ -156,6 +157,11 @@ async function ingestCalls(sinceStr, tillStr) {
   let matched = 0;
   for (const c of calls) {
     const candidate = normalizePhone(c.virtual_phone_number) || normalizePhone(c.communication_number);
+
+    // аккаунт UIS общий с другим бизнесом — его номера пропускаем молча,
+    // даже не логируя как "непривязанные" (не наши данные)
+    if (candidate && excludedNumbers.has(candidate)) continue;
+
     let salon = candidate ? salonsById.get(phoneMap.get(candidate)) : null;
 
     if (!salon && candidate && sharedIvrNumbers.has(candidate)) {

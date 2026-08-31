@@ -130,6 +130,23 @@ app.delete('/api/ivr-numbers/:id', auth.requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
+// номера заведомо чужого бизнеса на общем аккаунте UIS — не тянуть и не логировать
+app.get('/api/excluded-numbers', auth.requireAdmin, (req, res) => {
+  res.json(db.prepare('SELECT * FROM excluded_call_numbers ORDER BY id').all());
+});
+
+app.post('/api/excluded-numbers', auth.requireAdmin, (req, res) => {
+  const { phone, note } = req.body || {};
+  if (!phone) return res.status(400).json({ error: 'Укажите номер' });
+  const info = db.prepare('INSERT INTO excluded_call_numbers (phone, note) VALUES (?, ?)').run(phone.trim(), note || null);
+  res.json(db.prepare('SELECT * FROM excluded_call_numbers WHERE id = ?').get(info.lastInsertRowid));
+});
+
+app.delete('/api/excluded-numbers/:id', auth.requireAdmin, (req, res) => {
+  db.prepare('DELETE FROM excluded_call_numbers WHERE id = ?').run(req.params.id);
+  res.json({ ok: true });
+});
+
 // ================= АДМИНИСТРАТОРЫ =================
 app.get('/api/admins', (req, res) => {
   let salonId = req.query.salon_id ? Number(req.query.salon_id) : null;

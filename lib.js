@@ -87,6 +87,13 @@ function getSharedIvrNumberSet() {
   return new Set(rows.map(r => normalizePhone(r.phone)).filter(Boolean));
 }
 
+// Номера заведомо чужого бизнеса на том же аккаунте UIS — их не нужно ни
+// сохранять, ни даже упоминать в логах непривязанных номеров.
+function getExcludedNumberSet() {
+  const rows = db.prepare('SELECT phone FROM excluded_call_numbers').all();
+  return new Set(rows.map(r => normalizePhone(r.phone)).filter(Boolean));
+}
+
 // Карта "action_name (сценарий/группа в UIS) -> salon_id" — сопоставление
 // задаётся вручную в карточке салона (поле uis_action_name), т.к. в UIS эти
 // названия на латинице и не обязаны совпадать со внутренним названием салона.
@@ -110,5 +117,5 @@ function canAccessSalon(user, salonId) {
 
 module.exports = {
   normalizePhone, findOrCreateClient, getEffectiveChecklist, getSalonPhoneMap,
-  getSharedIvrNumberSet, getActionNameSalonMap, adminForUser, canAccessSalon
+  getSharedIvrNumberSet, getExcludedNumberSet, getActionNameSalonMap, adminForUser, canAccessSalon
 };

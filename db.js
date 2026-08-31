@@ -62,6 +62,16 @@ CREATE TABLE IF NOT EXISTS shared_ivr_numbers (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Номера, заведомо НЕ относящиеся к этой сети (например, аккаунт UIS общий с
+-- другим бизнесом/CRM) — звонки на них пропускаются молча, без логирования
+-- как "непривязанные", чтобы не тянуть и не светить чужие данные.
+CREATE TABLE IF NOT EXISTS excluded_call_numbers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  phone TEXT NOT NULL,
+  note TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- ===== Администраторы =====
 -- Отдельно от users: администратор существует как метка для ИИ даже без логина.
 -- Привязан ровно к одному объекту. user_id заполняется, только если владелец

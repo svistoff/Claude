@@ -649,8 +649,8 @@ RENDERERS.reports = async function renderReports() {
 
 // ================= НАСТРОЙКИ =================
 RENDERERS.settings = async function renderSettings() {
-  const [ai, usage, tel, callout, ivrNumbers] = await Promise.all([
-    api('/settings/ai'), api('/settings/ai/usage'), api('/settings/telephony'), api('/settings/call-out'), api('/ivr-numbers')
+  const [ai, usage, tel, callout, ivrNumbers, excludedNumbers] = await Promise.all([
+    api('/settings/ai'), api('/settings/ai/usage'), api('/settings/telephony'), api('/settings/call-out'), api('/ivr-numbers'), api('/excluded-numbers')
   ]);
   const main = document.getElementById('main');
   main.innerHTML = `
@@ -692,6 +692,18 @@ RENDERERS.settings = async function renderSettings() {
         <input id="new-ivr-phone" placeholder="Общий номер (например, 3844438)">
         <input id="new-ivr-note" placeholder="Заметка">
         <button class="primary" onclick="addIvrNumber()">+ Добавить</button>
+      </div>
+    </div>
+    <div class="card">
+      <h3>🚫 Чужие номера (общий аккаунт UIS)</h3>
+      <p class="muted">Если аккаунт UIS используется ещё каким-то другим бизнесом/CRM — номера
+      этого бизнеса будут попадаться в общем отчёте звонков. Добавьте их сюда, чтобы CRM
+      полностью их игнорировала (не тянула, не логировала, не сохраняла).</p>
+      <table id="excluded-numbers-table">${renderExcludedNumbersRows(excludedNumbers)}</table>
+      <div class="row" style="margin-top:8px">
+        <input id="new-excluded-phone" placeholder="Чужой номер">
+        <input id="new-excluded-note" placeholder="Заметка (например, «менеджер ЕКБ ГИД»)">
+        <button class="primary" onclick="addExcludedNumber()">+ Добавить</button>
       </div>
     </div>
     <div class="card">
@@ -775,6 +787,23 @@ async function addIvrNumber() {
 }
 async function deleteIvrNumber(id) {
   await api('/ivr-numbers/' + id, { method: 'DELETE' });
+  RENDERERS.settings();
+}
+function renderExcludedNumbersRows(rows) {
+  return `<tr><th>Номер</th><th>Заметка</th><th></th></tr>` +
+    (rows.map(r => `<tr><td>${esc(r.phone)}</td><td>${esc(r.note||'—')}</td>
+      <td><button class="danger" onclick="deleteExcludedNumber(${r.id})">Удалить</button></td></tr>`).join('')
+    || '<tr><td colspan="3" class="muted">Чужих номеров не добавлено</td></tr>');
+}
+async function addExcludedNumber() {
+  const phone = document.getElementById('new-excluded-phone').value.trim();
+  const note = document.getElementById('new-excluded-note').value.trim();
+  if (!phone) return alert('Укажите номер');
+  await api('/excluded-numbers', { method: 'POST', body: { phone, note } });
+  RENDERERS.settings();
+}
+async function deleteExcludedNumber(id) {
+  await api('/excluded-numbers/' + id, { method: 'DELETE' });
   RENDERERS.settings();
 }
 async function saveCallOutSettings() {
