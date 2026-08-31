@@ -108,16 +108,19 @@ function pickResolvingLeg(legs) {
   return legs.find(l => l.direction === 'out' && !l.is_failed && l.connect_time) || null;
 }
 
+// Возвращает { salon, actionName } — actionName возвращается даже когда salon
+// не нашёлся, чтобы можно было залогировать реальное значение из UIS и
+// подсказать владельцу, что вписать в карточку салона.
 async function resolveSalonByLegs(call, actionNameMap, salonsById) {
   try {
     const legs = await fetchCallLegs(call.id, call.start_time);
     const leg = pickResolvingLeg(legs);
-    if (!leg || !leg.action_name) return null;
+    if (!leg || !leg.action_name) return { salon: null, actionName: null };
     const salonId = actionNameMap.get(leg.action_name.trim().toLowerCase());
-    return salonId ? salonsById.get(salonId) : null;
+    return { salon: salonId ? salonsById.get(salonId) : null, actionName: leg.action_name };
   } catch (err) {
     console.error(`[telephony] Не удалось получить плечи звонка #${call.id}:`, err.message);
-    return null;
+    return { salon: null, actionName: null };
   }
 }
 
@@ -144,9 +147,15 @@ async function ingestCalls(sinceStr, tillStr) {
     let salon = candidate ? salonsById.get(phoneMap.get(candidate)) : null;
 
     if (!salon && candidate && sharedIvrNumbers.has(candidate)) {
-      salon = await resolveSalonByLegs(c, actionNameMap, salonsById);
+      const resolved = await resolveSalonByLegs(c, actionNameMap, salonsById);
+      salon = resolved.salon;
       if (!salon) {
-        console.log(`[telephony] Звонок на общий номер меню ${c.virtual_phone_number || c.communication_number} (id=${c.id}): не удалось определить салон по action_name плеча — проверьте "Салоны" → название сценария UIS.`);
+        const numberDesc = c.virtual_phone_number || c.communication_number;
+        if (resolved.actionName) {
+          console.log(`[telephony] Звонок на общий номер меню ${numberDesc} (id=${c.id}): плечо ушло в сценарий UIS "${resolved.actionName}", но ни один салон не сопоставлен с этим названием — впишите "${resolved.actionName}" в поле "Название сценария в UIS" нужного салона.`);
+        } else {
+          console.log(`[telephony] Звонок на общий номер меню ${numberDesc} (id=${c.id}): не нашлось успешного исходящего плеча с action_name (клиент мог положить трубку в меню, не дозвонившись до салона).`);
+        }
       }
     }
 
