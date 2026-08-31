@@ -128,6 +128,8 @@ CREATE TABLE IF NOT EXISTS calls (
   uis_call_id TEXT UNIQUE,
   direction TEXT NOT NULL DEFAULT 'in', -- in | out
   caller_phone TEXT,
+  dialed_number TEXT, -- фактический номер объекта, на который позвонил клиент
+                       -- (virtual_phone_number/communication_number от UIS) — для рейтинга номеров
   started_at TEXT NOT NULL,
   duration_sec INTEGER NOT NULL DEFAULT 0,
   is_answered INTEGER NOT NULL DEFAULT 0,
@@ -254,6 +256,10 @@ if (!salonColumns.includes('uis_action_name')) {
 const telephonyColumns = db.prepare("PRAGMA table_info(telephony_settings)").all().map(c => c.name);
 if (!telephonyColumns.includes('uis_timezone_offset_hours')) {
   db.exec('ALTER TABLE telephony_settings ADD COLUMN uis_timezone_offset_hours INTEGER NOT NULL DEFAULT 5');
+}
+const callColumns = db.prepare("PRAGMA table_info(calls)").all().map(c => c.name);
+if (!callColumns.includes('dialed_number')) {
+  db.exec('ALTER TABLE calls ADD COLUMN dialed_number TEXT');
 }
 
 // первичный владелец, если пользователей ещё нет

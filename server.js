@@ -373,13 +373,53 @@ app.get('/api/dashboard', auth.requireAdmin, (req, res) => {
     if (unmarked > 0) unclosedDays.push({ salon_id: s.id, salon_name: s.name, date: today, unmarked_count: unmarked });
   }
 
-  const todaySummary = salons.map(s => {
-    const calls = db.prepare(`SELECT COUNT(*) AS c FROM calls WHERE salon_id = ? AND date(started_at) = ?`).get(s.id, today).c;
-    const missed = db.prepare(`SELECT COUNT(*) AS c FROM calls WHERE salon_id = ? AND date(started_at) = ? AND direction='in' AND is_answered=0`).get(s.id, today).c;
-    return { salon_id: s.id, salon_name: s.name, calls, missed };
-  });
+  res.json({ missed_no_callback: missedNoCallback.map(formatCall), unconfirmed_admins: unconfirmedAdmins, unclosed_days: unclosedDays });
+});
 
-  res.json({ missed_no_callback: missedNoCallback.map(formatCall), unconfirmed_admins: unconfirmedAdmins, unclosed_days: unclosedDays, today_summary: todaySummary });
+// calls.started_at хранится в часовом поясе аккаунта UIS (см. telephony.js) —
+// границы периода считаем в той же системе координат, сдвигая реальное
+// "сейчас" на тот же офсет, а не полагаясь на UTC-функции SQLite.
+function periodBounds(period, offsetHours) {
+  const localNow = new Date(Date.now() + offsetHours * 3600000);
+  const toStr = d => d.toISOString().slice(0, 19).replace('T', ' ');
+  let fromDate;
+  if (period === 'week') fromDate = new Date(localNow.getTime() - 7 * 24 * 3600000);
+  else if (period === 'month') fromDate = new Date(localNow.getTime() - 30 * 24 * 3600000);
+  else fromDate = new Date(Date.UTC(localNow.getUTCFullYear(), localNow.getUTCMonth(), localNow.getUTCDate()));
+  return { from: toStr(fromDate), till: toStr(localNow) };
+}
+
+function getTzOffset() {
+  return db.prepare('SELECT uis_timezone_offset_hours FROM telephony_settings WHERE id = 1').get().uis_timezone_offset_hours;
+}
+
+// звонки / пропущено / перезвонили по каждому объекту за период — для графиков дашборда
+app.get('/api/dashboard/salon-stats', auth.requireAdmin, (req, res) => {
+  const period = ['today', 'week', 'month'].includes(req.query.period) ? req.query.period : 'today';
+  const { from, till } = periodBounds(period, getTzOffset());
+  const salons = db.prepare('SELECT * FROM salons WHERE active = 1').all();
+  const stats = salons.map(s => {
+    const calls = db.prepare(`SELECT COUNT(*) AS c FROM calls WHERE salon_id=? AND started_at>=? AND started_at<=?`).get(s.id, from, till).c;
+    const missed = db.prepare(`SELECT COUNT(*) AS c FROM calls WHERE salon_id=? AND direction='in' AND is_answered=0 AND started_at>=? AND started_at<=?`).get(s.id, from, till).c;
+    const calledBack = db.prepare(`SELECT COUNT(*) AS c FROM calls WHERE salon_id=? AND direction='in' AND is_answered=0 AND callback_status IN ('on_time','late') AND started_at>=? AND started_at<=?`).get(s.id, from, till).c;
+    return { salon_id: s.id, salon_name: s.name, calls, missed, called_back: calledBack };
+  });
+  res.json({ period, from, till, stats });
+});
+
+// рейтинг номеров объектов по количеству звонков за период
+app.get('/api/dashboard/number-ranking', auth.requireAdmin, (req, res) => {
+  const period = ['today', 'week', 'month'].includes(req.query.period) ? req.query.period : 'today';
+  const { from, till } = periodBounds(period, getTzOffset());
+  const ranking = db.prepare(`
+    SELECT c.dialed_number AS phone, s.name AS salon_name, COUNT(*) AS calls
+    FROM calls c JOIN salons s ON s.id = c.salon_id
+    WHERE c.dialed_number IS NOT NULL AND c.started_at >= ? AND c.started_at <= ?
+    GROUP BY c.dialed_number, s.id
+    ORDER BY calls DESC
+    LIMIT 20
+  `).all(from, till);
+  res.json({ period, from, till, ranking });
 });
 
 // ================= КЛИЕНТЫ =================

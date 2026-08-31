@@ -237,11 +237,13 @@ function saveCall(salon, c) {
   if (direction === 'in') status = isAnswered ? 'new' : 'missed';
   else status = isAnswered ? 'new' : 'skipped';
 
+  const dialedNumber = c.virtual_phone_number || c.communication_number || null;
+
   const info = db.prepare(`
-    INSERT INTO calls (salon_id, client_id, uis_call_id, direction, caller_phone, started_at, duration_sec, is_answered, recording_url, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO calls (salon_id, client_id, uis_call_id, direction, caller_phone, dialed_number, started_at, duration_sec, is_answered, recording_url, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
-    salon.id, clientId, uisCallId, direction, callerPhone,
+    salon.id, clientId, uisCallId, direction, callerPhone, dialedNumber,
     c.start_time || uisLocalStringFor(Date.now(), getTelephonySettings().uis_timezone_offset_hours), Number(c.talk_duration) || 0,
     isAnswered ? 1 : 0, extractRecordUrl(c), status
   );

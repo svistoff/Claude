@@ -145,16 +145,27 @@ function salonName(id) { return (SALONS.find(s => s.id === id) || {}).name || ('
 function adminName(id) { return (ADMINS.find(a => a.id === id) || {}).name || null; }
 
 // ================= ДАШБОРД =================
+const PERIOD_LABELS = { today: 'Сегодня', week: 'Неделя', month: 'Месяц' };
+let dashboardPeriod = 'today';
+
 RENDERERS.dashboard = async function renderDashboard() {
   const d = await api('/dashboard');
   const main = document.getElementById('main');
   main.innerHTML = `
     <h2>Дашборд</h2>
     <div class="card">
-      <h3>Сегодня по сети</h3>
-      <table><tr><th>Объект</th><th>Звонков</th><th>Пропущено</th></tr>
-        ${d.today_summary.map(s => `<tr><td>${esc(s.salon_name)}</td><td>${s.calls}</td><td>${s.missed}</td></tr>`).join('')}
-      </table>
+      <div class="row between">
+        <h3 style="margin:0">Звонки по объектам</h3>
+        <div class="row">
+          ${Object.entries(PERIOD_LABELS).map(([key, label]) =>
+            `<button class="${dashboardPeriod===key?'primary':''}" onclick="setDashboardPeriod('${key}')">${label}</button>`).join('')}
+        </div>
+      </div>
+      <div id="dash-chart" style="margin-top:12px">Загрузка…</div>
+    </div>
+    <div class="card">
+      <h3>📞 Рейтинг номеров объектов</h3>
+      <div id="dash-ranking">Загрузка…</div>
     </div>
     <div class="grid2">
       <div class="card">
@@ -178,7 +189,71 @@ RENDERERS.dashboard = async function renderDashboard() {
       </table>
     </div>
   `;
+  loadDashboardStats();
+  loadDashboardRanking();
 };
+
+function setDashboardPeriod(period) {
+  dashboardPeriod = period;
+  RENDERERS.dashboard();
+}
+
+async function loadDashboardStats() {
+  const { stats } = await api('/dashboard/salon-stats?period=' + dashboardPeriod);
+  document.getElementById('dash-chart').innerHTML = renderSalonStatsChart(stats);
+}
+
+async function loadDashboardRanking() {
+  const { ranking } = await api('/dashboard/number-ranking?period=' + dashboardPeriod);
+  document.getElementById('dash-ranking').innerHTML = `
+    <table><tr><th>#</th><th>Номер</th><th>Объект</th><th>Звонков</th></tr>
+      ${ranking.map((r, i) => `<tr><td>${i+1}</td><td>${esc(r.phone)}</td><td>${esc(r.salon_name)}</td><td>${r.calls}</td></tr>`).join('')
+        || '<tr><td colspan="4" class="muted">Нет данных за период</td></tr>'}
+    </table>`;
+}
+
+// Простой сгруппированный столбчатый график без внешних библиотек:
+// на каждый объект — 3 столбца (звонки/пропущено/перезвонили) фиксированных
+// цветов (синий/красный/зелёный — уже используются в интерфейсе как
+// акцент/опасность/успех, поэтому семантически понятны и не требуют легенды-сюрприза).
+function renderSalonStatsChart(stats) {
+  if (stats.length === 0) return '<p class="muted">Нет активных объектов</p>';
+  const maxVal = Math.max(1, ...stats.flatMap(s => [s.calls, s.missed, s.called_back]));
+  const barW = 22, barGap = 4, groupGap = 40, chartH = 160;
+  const groupW = barW * 3 + barGap * 2;
+  const width = stats.length * (groupW + groupGap) + groupGap;
+  const scale = v => Math.round((v / maxVal) * (chartH - 20));
+
+  const metrics = [
+    { key: 'calls', color: 'var(--accent)' },
+    { key: 'missed', color: 'var(--danger)' },
+    { key: 'called_back', color: 'var(--ok)' }
+  ];
+
+  const groups = stats.map((s, i) => {
+    const gx = groupGap + i * (groupW + groupGap);
+    const bars = metrics.map((m, j) => {
+      const val = s[m.key];
+      const h = scale(val);
+      const x = gx + j * (barW + barGap);
+      const y = chartH - h;
+      return `<rect x="${x}" y="${y}" width="${barW}" height="${h}" rx="4" fill="${m.color}"></rect>
+        <text x="${x + barW/2}" y="${y - 4}" text-anchor="middle" font-size="11" fill="currentColor">${val}</text>`;
+    }).join('');
+    return `${bars}<text x="${gx + groupW/2}" y="${chartH + 18}" text-anchor="middle" font-size="12" fill="currentColor">${esc(s.salon_name)}</text>`;
+  }).join('');
+
+  return `
+    <svg viewBox="0 0 ${width} ${chartH + 30}" style="width:100%;max-width:720px;height:auto;color:var(--text)">
+      <line x1="0" y1="${chartH}" x2="${width}" y2="${chartH}" stroke="var(--border)" stroke-width="1"></line>
+      ${groups}
+    </svg>
+    <div class="row" style="gap:16px;margin-top:8px;font-size:12px">
+      <span><span style="display:inline-block;width:10px;height:10px;background:var(--accent);border-radius:2px;margin-right:4px"></span>Звонки</span>
+      <span><span style="display:inline-block;width:10px;height:10px;background:var(--danger);border-radius:2px;margin-right:4px"></span>Пропущено</span>
+      <span><span style="display:inline-block;width:10px;height:10px;background:var(--ok);border-radius:2px;margin-right:4px"></span>Перезвонили</span>
+    </div>`;
+}
 
 async function confirmAdmin(id) { await api(`/admins/${id}/confirm`, { method: 'POST' }); navigate('dashboard'); }
 async function rejectAdmin(id) { if (!confirm('Отклонить? Запись будет удалена.')) return; await api(`/admins/${id}`, { method: 'DELETE' }); navigate('dashboard'); }
