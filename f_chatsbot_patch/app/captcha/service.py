@@ -216,18 +216,17 @@ class CaptchaService:
                 reply_markup=group_verify_keyboard(self._bot_username, chat_id),
             )
             self._group_prompts[(chat_id, user.id)] = msg.message_id
-            # Автоудаление через 10 секунд — не зависит от исхода капчи,
-            # просто убирает "мусор" из чата при массовых заходах
-            asyncio.create_task(self._auto_delete_group_prompt(chat_id, user.id, delay=10))
+            # Раньше тут было принудительное удаление этого сообщения через
+            # 10 секунд, независимо от того, успел ли человек нажать кнопку.
+            # При таймауте капчи (60с) это резало живым людям окно на реакцию
+            # с 60 секунд до фактических 10 — кнопка пропадала, пока человек
+            # ещё грузил ленту/читал уведомление, и он оставался замьюченным
+            # без видимого способа пройти проверку. Удалять это сообщение не
+            # нужно принудительно по таймеру: оно и так корректно убирается
+            # через _delete_group_prompt() в момент реального разрешения
+            # капчи — либо при успехе (_pass), либо при таймауте (_timer_task).
         except Exception as e:
             logger.warning(f"[CAPTCHA] не удалось отправить сообщение в группу: {e}")
-
-    async def _auto_delete_group_prompt(self, chat_id: int, user_id: int, delay: int = 10):
-        try:
-            await asyncio.sleep(delay)
-            await self._delete_group_prompt(chat_id, user_id)
-        except asyncio.CancelledError:
-            pass
 
     # ── Deep-link: юзер открыл ЛС по кнопке ───────────────────────────────
 
