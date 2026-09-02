@@ -401,9 +401,16 @@ class CaptchaService:
             except Exception as e:
                 logger.warning(f"[CAPTCHA] не удалось удалить user={user_id}: {e}")
 
-            await self._delete_group_prompt(chat_id, user_id)
+            # Раньше тут сообщение с кнопкой просто удалялось — человек, у
+            # которого не открыт ЛС с ботом (типичный случай для только что
+            # вступившего), не получал вообще никакого объяснения: кнопка
+            # пропадала, а следом пропадал и он сам, без единой подсказки,
+            # что случилось и что делать. Вместо удаления — редактируем то
+            # же сообщение на прямое объяснение, оно живёт ещё 30 секунд
+            # (чтобы живой человек успел прочитать), потом само чистится.
+            await self._explain_and_cleanup_group_prompt(chat_id, user_id)
 
-            # Уведомление в ЛС, если бот может писать этому пользователю
+            # Уведомление в ЛС — дополнительно, если бот может писать этому пользователю
             try:
                 await self._bot.send_message(
                     user_id,
@@ -446,6 +453,42 @@ class CaptchaService:
                 await self._bot.delete_message(chat_id, msg_id)
             except Exception:
                 pass
+
+    async def _explain_and_cleanup_group_prompt(self, chat_id: int, user_id: int):
+        """При кике по таймауту — вместо молчаливого удаления сообщения с
+        кнопкой редактируем его на прямое объяснение. ЛС-уведомление часто
+        не доходит (человек ни разу не писал боту), а группа — единственное
+        место, где он вообще видел хоть что-то от бота. Объяснение живёт
+        ещё немного, чтобы его успели прочитать, потом само чистится —
+        чтобы не копиться в чате при массовых заходах ботов."""
+        msg_id = self._group_prompts.pop((chat_id, user_id), None)
+        if not msg_id:
+            return
+        try:
+            await self._bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=msg_id,
+                text="⏰ Проверка не пройдена вовремя — участник удалён из группы. "
+                     "Можно вступить снова, чтобы попробовать ещё раз.",
+                reply_markup=None,
+            )
+        except Exception:
+            # Не получилось отредактировать (например, сообщение уже удалено
+            # каким-то другим путём) — тогда просто убираем как раньше.
+            try:
+                await self._bot.delete_message(chat_id, msg_id)
+            except Exception:
+                pass
+            return
+
+        async def _cleanup():
+            await asyncio.sleep(30)
+            try:
+                await self._bot.delete_message(chat_id, msg_id)
+            except Exception:
+                pass
+
+        asyncio.create_task(_cleanup())
 
     async def _send_group_return_button(self, chat_id: int, user_id: int):
         """После успешной капчи — кнопка одним тапом обратно в группу."""
