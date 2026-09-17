@@ -46,6 +46,23 @@ sudo -u aiagent nano /opt/ai-agent/.env
 Отредактируйте `backend/config.yaml` — впишите **фактические пути** к проектам на VPS
 и, при необходимости, id модели DeepSeek.
 
+### Workspace для новых проектов
+
+Чтобы из UI работала кнопка **«+ Новый проект»** (создание проектов прямо с телефона),
+создайте папку из поля `workspace` в `config.yaml` (по умолчанию `/var/www/ai-workspace`)
+и дайте к ней доступ пользователю `aiagent`:
+
+```bash
+sudo apt install -y acl
+sudo mkdir -p /var/www/ai-workspace
+sudo setfacl -R  -m u:aiagent:rwx /var/www/ai-workspace
+sudo setfacl -R -d -m u:aiagent:rwx /var/www/ai-workspace   # и для будущих файлов
+```
+
+Так же дайте `aiagent` доступ к папкам уже существующих проектов, которыми он должен
+управлять (по одной команде `setfacl` на проект). Новые проекты, созданные кнопкой,
+живут внутри `workspace` — песочница сохраняется.
+
 ## 4. systemd-сервис
 
 ```bash

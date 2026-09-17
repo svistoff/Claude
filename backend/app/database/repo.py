@@ -8,7 +8,7 @@ from typing import Any
 from sqlalchemy import select
 
 from . import get_session
-from .models import Conversation, Message, ToolCallLog
+from .models import Conversation, Message, Project, ToolCallLog
 
 
 def create_conversation(project: str, title: str = "Новый чат") -> str:
@@ -92,6 +92,26 @@ def get_history_for_llm(conv_id: str) -> list[dict[str, Any]]:
             else:
                 out.append({"role": m.role, "content": m.content})
         return out
+
+
+# --- Проекты, созданные через UI -------------------------------------------
+
+def add_project(name: str, path: str) -> None:
+    with get_session() as db:
+        db.merge(Project(name=name, path=path))
+        db.commit()
+
+
+def list_custom_projects() -> list[dict[str, str]]:
+    with get_session() as db:
+        rows = db.execute(select(Project).order_by(Project.created_at)).scalars().all()
+        return [{"name": p.name, "path": p.path} for p in rows]
+
+
+def get_custom_project_path(name: str) -> str | None:
+    with get_session() as db:
+        p = db.get(Project, name)
+        return p.path if p else None
 
 
 def _msg_dict(m: Message) -> dict[str, Any]:

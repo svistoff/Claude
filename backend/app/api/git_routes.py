@@ -5,18 +5,16 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from .. import auth
-from ..config import get_project_map
+from .. import auth, projects_store
 from ..tools import git
 
 router = APIRouter(prefix="/api/git", tags=["git"])
 
 
 def _root(project: str):
-    pm = get_project_map()
-    if project not in pm:
+    root = projects_store.project_root(project)
+    if root is None:
         raise HTTPException(400, f"Неизвестный проект: {project}")
-    root = pm[project]
     if not root.is_dir():
         raise HTTPException(400, "Директория проекта не найдена.")
     return root

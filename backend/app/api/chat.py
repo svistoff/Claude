@@ -9,11 +9,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from .. import auth
+from .. import auth, projects_store
 from ..agent.loop import run_agent
 from ..agent.prompts import SYSTEM_PROMPT
 from ..agent.runtime import registry
-from ..config import get_app_config, get_project_map
+from ..config import get_app_config
 from ..database import repo
 from ..llm import get_provider
 from ..tools.base import ToolContext
@@ -43,10 +43,9 @@ def _sse(event: dict[str, Any]) -> str:
 
 @router.post("/chat")
 def chat(body: ChatBody, user: str = Depends(auth.require_csrf)) -> StreamingResponse:
-    project_map = get_project_map()
-    if body.project not in project_map:
+    project_root = projects_store.project_root(body.project)
+    if project_root is None:
         raise HTTPException(400, f"Неизвестный проект: {body.project}")
-    project_root = project_map[body.project]
     if not project_root.is_dir():
         raise HTTPException(400, f"Директория проекта не найдена: {project_root}")
 

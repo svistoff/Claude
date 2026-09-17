@@ -85,6 +85,9 @@ class AppConfig(BaseModel):
     pricing: PricingConfig = PricingConfig()
     agent: AgentConfig = AgentConfig()
     projects: list[ProjectConfig] = []
+    # Родительская папка, внутри которой агент может создавать новые проекты
+    # (кнопка «+ Новый проект»). None — создание новых проектов отключено.
+    workspace: str | None = None
     secret_patterns: list[str] = []
     terminal_policy: TerminalPolicy = TerminalPolicy()
 

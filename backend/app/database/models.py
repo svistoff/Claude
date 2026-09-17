@@ -55,6 +55,19 @@ class Message(Base):
     conversation: Mapped[Conversation] = relationship(back_populates="messages")
 
 
+class Project(Base):
+    """Проекты, созданные через UI (кнопка «+ Новый проект»).
+
+    Конфиговые проекты (config.yaml) здесь не хранятся — они статичны.
+    """
+
+    __tablename__ = "projects"
+
+    name: Mapped[str] = mapped_column(String(64), primary_key=True)
+    path: Mapped[str] = mapped_column(String(512))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
 class ToolCallLog(Base):
     __tablename__ = "tool_calls"
 

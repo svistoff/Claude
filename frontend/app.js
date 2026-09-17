@@ -71,26 +71,63 @@ async function showApp() {
 }
 
 // ------- Проекты -------
-async function loadProjects() {
+let projectsBound = false;
+async function loadProjects(selectName) {
   const resp = await api("/api/projects");
   const data = await resp.json();
   const sel = $("#project-select");
   sel.innerHTML = "";
   data.projects.forEach((p) => {
-    const opt = el("option", null, p.name + (p.available ? "" : " (нет)"));
+    const label = (p.kind === "custom" ? "• " : "") + p.name + (p.available ? "" : " (нет)");
+    const opt = el("option", null, label);
     opt.value = p.name;
     if (!p.available) opt.disabled = true;
     sel.appendChild(opt);
   });
-  const first = data.projects.find((p) => p.available);
+  if (data.can_create) {
+    const opt = el("option", null, "➕ Новый проект…");
+    opt.value = "__new__";
+    sel.appendChild(opt);
+  }
+
+  const wanted = selectName && data.projects.find((p) => p.name === selectName);
+  const first = wanted || data.projects.find((p) => p.available);
   if (first) {
     sel.value = first.name;
     state.project = first.name;
   }
-  sel.addEventListener("change", () => {
-    state.project = sel.value;
-    newChat();
+
+  if (!projectsBound) {
+    projectsBound = true;
+    sel.addEventListener("change", onProjectChange);
+  }
+}
+
+async function onProjectChange() {
+  const sel = $("#project-select");
+  if (sel.value === "__new__") {
+    sel.value = state.project || "";     // вернём выбор, пока создаём
+    await createProject();
+    return;
+  }
+  state.project = sel.value;
+  newChat();
+}
+
+async function createProject() {
+  const name = prompt("Имя нового проекта (латиница, цифры, дефис):", "");
+  if (!name) return;
+  const resp = await api("/api/projects/new", {
+    method: "POST",
+    body: JSON.stringify({ name: name.trim() }),
   });
+  const data = await resp.json();
+  if (!resp.ok) {
+    alert("Не удалось создать проект: " + (data.detail || resp.status));
+    return;
+  }
+  await loadProjects(data.project.name);
+  newChat();
 }
 
 // ------- Чаты -------

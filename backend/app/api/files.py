@@ -11,18 +11,17 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
-from .. import auth
-from ..config import get_app_config, get_project_map
+from .. import auth, projects_store
+from ..config import get_app_config
 from ..security import SecurityError, is_secret_path, resolve_within_root
 
 router = APIRouter(prefix="/api/files", tags=["files"])
 
 
 def _root(project: str) -> Path:
-    pm = get_project_map()
-    if project not in pm:
+    root = projects_store.project_root(project)
+    if root is None:
         raise HTTPException(400, f"Неизвестный проект: {project}")
-    root = pm[project]
     if not root.is_dir():
         raise HTTPException(400, "Директория проекта не найдена.")
     return root
