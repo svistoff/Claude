@@ -1,0 +1,108 @@
+# ============================================================================
+# Несекретная конфигурация AI Coding Agent.
+# Секреты (API-ключи, пароли) — только в .env, не здесь.
+# ============================================================================
+
+# --- LLM-провайдер ----------------------------------------------------------
+# Абстракция позволяет заменить провайдера/модель без изменения agent loop.
+llm:
+  provider: deepseek
+  # Имя модели. Может быть переопределено переменной DEEPSEEK_MODEL из .env.
+  # Официальные модели DeepSeek API: deepseek-chat, deepseek-reasoner.
+  # (V4.1-Flash: при появлении в официальном API указать её id здесь.)
+  model: deepseek-chat
+  temperature: 0.2
+  max_tokens: 4096
+  # request_timeout — таймаут одного запроса к API, сек.
+  request_timeout: 120
+
+# --- Тарифы DeepSeek (USD за 1M токенов) ------------------------------------
+# Вынесены в одно место (раздел 27 ТЗ). Обновляйте при смене тарифа.
+# cache_hit — цена входных токенов, попавших в контекст-кэш DeepSeek.
+pricing:
+  currency: USD
+  per_million_tokens:
+    input: 0.27
+    input_cache_hit: 0.07
+    output: 1.10
+
+# --- Лимиты агента ----------------------------------------------------------
+agent:
+  # Максимум итераций цикла (раздел 37 ТЗ).
+  max_iterations: 30
+  # Таймауты terminal-команд, сек (раздел 21 ТЗ).
+  terminal_timeout_default: 60
+  terminal_timeout_max: 300
+  # Максимальный размер читаемого файла (защита от раздувания контекста), байт.
+  max_read_bytes: 200000
+  # Максимум результатов поиска, возвращаемых модели.
+  max_search_results: 100
+
+# --- Проекты (раздел 6 ТЗ) --------------------------------------------------
+# Агент видит ТОЛЬКО эти директории. Все операции — относительно root проекта.
+# ВАЖНО: укажите фактические пути на VPS при установке.
+projects:
+  - name: fuckwell-crm
+    path: /var/www/fuckwell-crm
+  - name: gorod-dating
+    path: /var/www/gorod-dating
+  - name: unified_bot
+    path: /var/www/unified_bot
+  - name: f_chatsbot
+    path: /var/www/f_chatsbot
+
+# --- Фильтр секретных файлов (разделы 9.2, 44 ТЗ) ---------------------------
+# Эти паттерны НЕ показываются в list/search и НЕ читаются read/edit.
+# Применяется на уровне ВСЕХ файловых инструментов.
+secret_patterns:
+  - ".env"
+  - ".env.*"
+  - "*.pem"
+  - "*.key"
+  - "id_rsa"
+  - "id_rsa.*"
+  - "id_ed25519"
+  - "id_ed25519.*"
+  - "credentials*"
+  - "*.p12"
+  - "*.pfx"
+  - ".git/config"
+  - "*.secret"
+  - "secrets.*"
+
+# --- Опасные команды терминала (разделы 9.5, 10 ТЗ) -------------------------
+# match: подстроки/regex, при совпадении команда требует подтверждения (confirm)
+#        либо блокируется (block).
+terminal_policy:
+  # Полностью запрещённые (никогда, даже с подтверждением).
+  blocked:
+    - "mkfs"
+    - "dd if="
+    - ":(){:|:&};:"          # fork bomb
+    - "> /dev/sd"
+  # Требуют явного подтверждения пользователя в UI.
+  confirm:
+    - "rm -rf"
+    - "rm -fr"
+    - "rm -r"
+    - "git push"
+    - "shutdown"
+    - "reboot"
+    - "passwd"
+    - "userdel"
+    - "iptables"
+    - "systemctl stop"
+    - "systemctl restart"
+    - "systemctl disable"
+    - "supervisorctl stop"
+    - "docker system prune"
+    - "docker rm"
+    - "docker rmi"
+    - "chmod -R"
+    - "chown -R"
+    - "truncate"
+    - "apt install"
+    - "apt-get install"
+    - "pip uninstall"
+    - "nginx"           # правка/перезапуск nginx
+    - "certbot"

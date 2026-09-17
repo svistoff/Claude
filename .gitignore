@@ -1,0 +1,33 @@
+# Секреты — НИКОГДА не коммитить
+.env
+*.pem
+*.key
+id_rsa
+id_rsa.*
+credentials*
+
+# Данные приложения
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# Логи
+*.log
+logs/
+
+# ОС / редакторы
+.DS_Store
+.idea/
+.vscode/
+*.swp

@@ -1,0 +1,42 @@
+# systemd unit для AI Coding Agent (раздел 22 ТЗ).
+# Установка:
+#   sudo cp deploy/ai-agent.service /etc/systemd/system/ai-agent.service
+#   sudo systemctl daemon-reload && sudo systemctl enable --now ai-agent
+# Логи: journalctl -u ai-agent -f   (или /var/log/ai-agent/ при настройке ниже)
+
+[Unit]
+Description=AI Coding Agent (ai.svistoff.ru)
+After=network.target
+
+[Service]
+Type=simple
+# Отдельный непривилегированный пользователь агента (создать заранее, см. deploy/README.md).
+User=aiagent
+Group=aiagent
+
+# Корень приложения на VPS.
+WorkingDirectory=/opt/ai-agent/backend
+Environment=ENV_FILE=/opt/ai-agent/.env
+ExecStart=/opt/ai-agent/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+
+Restart=always
+RestartSec=3
+autorestart=true
+
+# --- Ограничения безопасности (systemd sandbox) ---
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectControlGroups=true
+ProtectKernelModules=true
+RestrictSUIDSGID=true
+# Агенту нужен доступ на запись только к своим данным и к директориям проектов.
+# ReadWritePaths перечисляет разрешённые пути (проекты + данные приложения).
+ReadWritePaths=/opt/ai-agent/backend/data /var/www
+
+# Журналирование в файл (опционально; по умолчанию идёт в journald).
+StandardOutput=append:/var/log/ai-agent/agent.log
+StandardError=append:/var/log/ai-agent/agent.log
+
+[Install]
+WantedBy=multi-user.target

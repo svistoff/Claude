@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b0f14" />
+  <title>AI Coder</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <!-- ЭКРАН ВХОДА -->
+  <section id="login-view" class="login" hidden>
+    <form id="login-form" class="login-card" autocomplete="on">
+      <h1>AI Coder</h1>
+      <p class="muted">Вход администратора</p>
+      <input id="login-user" name="username" placeholder="Логин" autocomplete="username" />
+      <input id="login-pass" name="password" type="password" placeholder="Пароль" autocomplete="current-password" />
+      <button type="submit">Войти</button>
+      <div id="login-error" class="error" hidden></div>
+    </form>
+  </section>
+
+  <!-- ОСНОВНОЙ ЭКРАН -->
+  <section id="app-view" class="app" hidden>
+    <header class="topbar">
+      <button id="btn-menu" class="icon-btn" title="Чаты">☰</button>
+      <div class="brand">AI CODER</div>
+      <select id="project-select" class="project-select" title="Проект"></select>
+      <button id="btn-git" class="icon-btn" title="Git">⑂</button>
+    </header>
+
+    <!-- Боковая панель чатов -->
+    <aside id="sidebar" class="sidebar" hidden>
+      <div class="sidebar-head">
+        <span>Чаты</span>
+        <button id="btn-new-chat" class="small">+ Новый</button>
+      </div>
+      <div id="chats-list" class="chats-list"></div>
+    </aside>
+    <div id="scrim" class="scrim" hidden></div>
+
+    <!-- Лента диалога -->
+    <main id="chat" class="chat"></main>
+
+    <!-- Панель ввода -->
+    <footer class="composer">
+      <button id="btn-stop" class="stop-btn" hidden>⏹ Стоп</button>
+      <div class="composer-row">
+        <textarea id="input" rows="1" placeholder="Что сделать?"></textarea>
+        <button id="btn-send" class="send-btn" title="Отправить">➤</button>
+      </div>
+      <div id="usage" class="usage muted" hidden></div>
+    </footer>
+  </section>
+
+  <!-- Модалка подтверждения опасного действия -->
+  <div id="confirm-modal" class="modal" hidden>
+    <div class="modal-card">
+      <div class="modal-title">⚠️ Требуется подтверждение</div>
+      <div id="confirm-reason" class="muted"></div>
+      <pre id="confirm-command" class="cmd"></pre>
+      <div class="modal-actions">
+        <button id="confirm-cancel" class="btn-ghost">Отменить</button>
+        <button id="confirm-allow" class="btn-danger">Разрешить</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Панель Git -->
+  <div id="git-modal" class="modal" hidden>
+    <div class="modal-card git-card">
+      <div class="modal-title">Git — <span id="git-project"></span></div>
+      <div class="git-tabs">
+        <button data-tab="status" class="git-tab active">Status</button>
+        <button data-tab="diff" class="git-tab">Diff</button>
+        <button data-tab="commit" class="git-tab">Commit</button>
+      </div>
+      <div id="git-body" class="git-body"></div>
+      <div class="modal-actions">
+        <button id="git-close" class="btn-ghost">Закрыть</button>
+        <button id="git-download-zip" class="btn-ghost">Создать ZIP</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
