@@ -25,14 +25,16 @@ description: >-
 
 ## Обязательно прочитай базу знаний
 
-Перед подготовкой ответа прочитай файлы из папки `knowledge/` проекта — это
-источник истины, из головы факты и цены не бери:
-- `knowledge/pricing.md` — **единственный** источник цен;
-- `knowledge/playbook.md` — боли по типам бизнеса → форматы → зацепки (главное);
-- `knowledge/sales-rules.md` — тон, запреты, механика ответа;
-- `knowledge/products.md`, `knowledge/editorial.md` — форматы и рубрики;
-- `knowledge/audience.md`, `knowledge/ekb-gid.md` — про ЕКБ ГИД;
-- `knowledge/objections.md` — если в сообщении уже есть возражение.
+База знаний лежит в папке `ekb-gid-sales-agent/knowledge/` (пути указаны от корня
+проекта). Перед подготовкой ответа прочитай эти файлы — это источник истины, из
+головы факты и цены не бери. Дальше по тексту файлы называю коротко (`pricing.md`
+и т.п.), но лежат они все в `ekb-gid-sales-agent/knowledge/`:
+- `ekb-gid-sales-agent/knowledge/pricing.md` — **единственный** источник цен;
+- `ekb-gid-sales-agent/knowledge/playbook.md` — боли по типам бизнеса → форматы → зацепки (главное);
+- `ekb-gid-sales-agent/knowledge/sales-rules.md` — тон, запреты, механика ответа;
+- `ekb-gid-sales-agent/knowledge/products.md`, `.../editorial.md` — форматы и рубрики;
+- `ekb-gid-sales-agent/knowledge/audience.md`, `.../ekb-gid.md` — про ЕКБ ГИД;
+- `ekb-gid-sales-agent/knowledge/objections.md` — если в сообщении уже есть возражение.
 
 ## Вход
 
