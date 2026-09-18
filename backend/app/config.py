@@ -64,7 +64,12 @@ class LLMConfig(BaseModel):
 
 class PricingConfig(BaseModel):
     currency: str = "USD"
-    per_million_tokens: dict[str, float] = {}
+    # Тарифы за 1M токенов по моделям (off-peak). Пиковые часы удваиваются.
+    models: dict[str, dict[str, float]] = {}
+    default: dict[str, float] = {"input": 0.15, "input_cache_hit": 0.003, "output": 0.60}
+    peak_multiplier: float = 2.0
+    # Пиковые окна в часах UTC (пн–пт).
+    peak_windows_utc: list[list[int]] = [[1, 4], [6, 10]]
 
 
 class AgentConfig(BaseModel):

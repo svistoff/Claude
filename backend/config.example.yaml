@@ -23,13 +23,29 @@ llm:
 
 # --- Тарифы DeepSeek (USD за 1M токенов) ------------------------------------
 # Вынесены в одно место (раздел 27 ТЗ). Обновляйте при смене тарифа.
-# cache_hit — цена входных токенов, попавших в контекст-кэш DeepSeek.
+# Значения — официальные off-peak на сентябрь 2026. Пиковые часы удваиваются.
+# input_cache_hit — цена входных токенов, попавших в контекст-кэш DeepSeek.
 pricing:
   currency: USD
-  per_million_tokens:
-    input: 0.27
-    input_cache_hit: 0.07
-    output: 1.10
+  models:
+    deepseek-flash:
+      input: 0.15
+      input_cache_hit: 0.003
+      output: 0.60
+    deepseek-v4-pro:
+      input: 0.66
+      input_cache_hit: 0.022
+      output: 1.98
+  # Тариф по умолчанию, если модель не найдена в списке выше.
+  default:
+    input: 0.15
+    input_cache_hit: 0.003
+    output: 0.60
+  # Пиковые часы (UTC, пн–пт) — стоимость ×peak_multiplier.
+  peak_multiplier: 2.0
+  peak_windows_utc:
+    - [1, 4]
+    - [6, 10]
 
 # --- Лимиты агента ----------------------------------------------------------
 agent:

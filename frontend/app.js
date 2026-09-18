@@ -477,7 +477,11 @@ $("#btn-stop").addEventListener("click", async () => {
   if (!state.conversationId) return;
   await api("/api/agent/stop", { method: "POST", body: JSON.stringify({ conversation_id: state.conversationId }) });
 });
-function showUsage(u) { const b = $("#usage"); b.hidden = false; b.textContent = `↑${u.input_tokens} ↓${u.output_tokens} · ≈ $${u.estimated_cost} ${u.currency} · ${state.model || ""}`; }
+function showUsage(u) {
+  const b = $("#usage"); b.hidden = false;
+  const peak = u.peak ? " · пик×2" : "";
+  b.textContent = `↑${u.input_tokens} ↓${u.output_tokens} · ≈ $${u.estimated_cost} ${u.currency} · ${u.model || state.model || ""}${peak}`;
+}
 
 // ---------- Подтверждение ----------
 function showConfirm(ev) {
