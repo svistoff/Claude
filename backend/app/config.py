@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-flash"
 
+    # GitHub (Фаза 2) — fine-grained PAT с минимальными правами.
+    github_token: str = ""
+
     # Auth
     admin_user: str = "admin"
     admin_password_hash: str = ""

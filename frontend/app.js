@@ -526,7 +526,7 @@ async function renderGitTab(tab) {
     const d = await (await api("/api/git/diff?" + pq)).json();
     body.innerHTML = ""; const pre = el("pre");
     if (d.diff) renderDiff(pre, d.diff); else pre.textContent = "Нет изменений."; body.appendChild(pre);
-  } else {
+  } else if (tab === "commit") {
     body.innerHTML = ""; const inp = el("input", "commit-input"); inp.placeholder = "fix: краткое описание";
     const btn = el("button", "btn-accent pressable", "Commit"); btn.style.marginTop = "10px";
     btn.addEventListener("click", async () => {
@@ -536,7 +536,47 @@ async function renderGitTab(tab) {
       btn.disabled = false;
     });
     body.appendChild(inp); body.appendChild(btn);
+  } else if (tab === "github") {
+    await renderGithub(body, pq);
   }
+}
+
+async function renderGithub(body, pq) {
+  const info = await (await api("/api/github/info?" + pq)).json();
+  body.innerHTML = "";
+  if (!info.github) { body.appendChild(el("div", "muted", info.reason || "Проект не на GitHub.")); return; }
+  if (!info.has_token) { body.appendChild(el("div", "muted", "GITHUB_TOKEN не задан на сервере — GitHub-функции выключены.")); }
+  body.appendChild(el("div", "muted", `${info.owner}/${info.repo} · ветка: ${info.current_branch || "?"}` + (info.default_branch ? ` · base: ${info.default_branch}` : "")));
+  if (info.token_error) body.appendChild(el("div", "error", info.token_error));
+
+  // Создать PR
+  const title = el("input", "commit-input"); title.placeholder = "Заголовок PR (напр. fix: webhook Megafon)"; title.style.marginTop = "10px";
+  const prBtn = el("button", "btn-accent pressable", "Создать Pull Request"); prBtn.style.marginTop = "10px";
+  prBtn.addEventListener("click", async () => {
+    if (!title.value.trim()) return; prBtn.disabled = true;
+    const res = await (await api("/api/github/pr", { method: "POST", body: JSON.stringify({ project: state.project, title: title.value.trim() }) })).json();
+    if (res.ok) { const a = el("a", null, `✓ PR #${res.number} создан — открыть`); a.href = res.url; a.target = "_blank"; a.rel = "noopener"; a.style.color = "var(--accent)"; const w = el("div"); w.style.marginTop = "8px"; w.appendChild(a); body.appendChild(w); }
+    else body.appendChild(el("div", "error", res.error || "Не удалось создать PR."));
+    prBtn.disabled = false;
+  });
+  body.appendChild(title); body.appendChild(prBtn);
+
+  // Статус CI
+  const ciBtn = el("button", "btn-ghost pressable", "Проверить CI"); ciBtn.style.marginTop = "10px";
+  const ciOut = el("div"); ciOut.style.marginTop = "8px";
+  ciBtn.addEventListener("click", async () => {
+    ciBtn.disabled = true; ciOut.innerHTML = "Загрузка…";
+    const r = await (await api("/api/github/ci?" + pq)).json();
+    ciOut.innerHTML = "";
+    if (!r.ok) { ciOut.appendChild(el("div", "muted", r.error || "Нет данных CI.")); }
+    else if (!r.total) { ciOut.appendChild(el("div", "muted", "Проверок CI нет для текущего коммита.")); }
+    else {
+      ciOut.appendChild(el("div", r.failure ? "error" : "muted", `CI: ✓${r.success} ✗${r.failure} ⏳${r.pending}`));
+      r.runs.forEach((run) => ciOut.appendChild(el("div", "gline", `${run.conclusion === "success" ? "✓" : run.conclusion === "failure" ? "✗" : "•"} ${run.name}`)));
+    }
+    ciBtn.disabled = false;
+  });
+  body.appendChild(ciBtn); body.appendChild(ciOut);
 }
 $("#btn-zip").addEventListener("click", async () => {
   const r = await api("/api/files/zip", { method: "POST", body: JSON.stringify({ project: state.project }) });

@@ -74,6 +74,13 @@ def classify(name: str, args: dict[str, Any], config: AppConfig) -> Decision:
                             _command_preview(name, args))
         return Decision(ALLOW, preview=_command_preview(name, args))
 
+    # GitHub: создание PR — внешнее действие, требует подтверждения.
+    if name == "github":
+        if str(args.get("action", "")).lower() == "create_pr":
+            return Decision(CONFIRM, "Создание Pull Request на GitHub.",
+                            f"PR: {args.get('title', '(без заголовка)')}")
+        return Decision(ALLOW)
+
     # Файловые/поисковые инструменты — разрешены (границы проверяются в самих tools).
     return Decision(ALLOW)
 

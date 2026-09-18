@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from . import filesystem, git, terminal
+from . import filesystem, git, github, terminal
 from .base import ToolContext, ToolResult
 
 # --- Схемы инструментов (function calling) ----------------------------------
@@ -106,6 +106,27 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "github",
+            "description": ("Операции с GitHub через API: info (remote/ветка), branches (список веток), "
+                            "ci_status (статус проверок CI по HEAD), create_pr (создать Pull Request — "
+                            "требует подтверждения). Работает, если у проекта есть remote на GitHub и задан токен."),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["info", "branches", "ci_status", "create_pr"]},
+                    "title": {"type": "string", "description": "Заголовок PR (для create_pr)"},
+                    "body": {"type": "string", "description": "Описание PR (для create_pr)"},
+                    "head": {"type": "string", "description": "Ветка-источник (по умолчанию текущая)"},
+                    "base": {"type": "string", "description": "Базовая ветка (по умолчанию default)"},
+                    "ref": {"type": "string", "description": "Ссылка/SHA для ci_status"},
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "git",
             "description": ("Git-операции: status, diff, log, branch, checkout, add, commit, push, remote, show. "
                             "push требует подтверждения. Передавайте args как массив, например ['status'] "
@@ -156,6 +177,12 @@ def _dispatch_git(ctx: ToolContext, a: dict) -> ToolResult:
     return git.git_tool(ctx, a["args"])
 
 
+def _dispatch_github(ctx: ToolContext, a: dict) -> ToolResult:
+    action = a.get("action", "info")
+    kwargs = {k: a[k] for k in ("title", "body", "head", "base", "ref") if k in a}
+    return github.github_tool(ctx, action, **kwargs)
+
+
 _DISPATCH: dict[str, Callable[[ToolContext, dict], ToolResult]] = {
     "read_file": _dispatch_read,
     "list_files": _dispatch_list,
@@ -164,6 +191,7 @@ _DISPATCH: dict[str, Callable[[ToolContext, dict], ToolResult]] = {
     "edit_file": _dispatch_edit,
     "terminal": _dispatch_terminal,
     "git": _dispatch_git,
+    "github": _dispatch_github,
 }
 
 

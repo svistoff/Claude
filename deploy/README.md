@@ -39,6 +39,8 @@ sudo -u aiagent nano /opt/ai-agent/.env
 
 Заполните в `.env`:
 - `DEEPSEEK_API_KEY` — ключ официального DeepSeek API;
+- `GITHUB_TOKEN` — (опц., Фаза 2) fine-grained PAT: Contents R/W, Pull requests R/W,
+  Checks/Commit statuses R — только на нужные репозитории;
 - `ADMIN_USER`, `ADMIN_PASSWORD_HASH` — хэш от `python -m app.scripts.hash_password '...'`;
 - `SECRET_KEY` — `python -c "import secrets; print(secrets.token_hex(32))"`;
 - `COOKIE_SECURE=true` (за HTTPS обязательно).
