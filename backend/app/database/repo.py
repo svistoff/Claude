@@ -103,7 +103,30 @@ def get_history_for_llm(conv_id: str) -> list[dict[str, Any]]:
                 out.append({"role": "tool", "tool_call_id": m.tool_call_id, "content": m.content})
             else:
                 out.append({"role": m.role, "content": m.content})
-        return out
+        return ensure_tool_results(out)
+
+
+def ensure_tool_results(msgs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Гарантировать, что каждый assistant с tool_calls сопровождается tool-ответом
+    на КАЖДЫЙ tool_call_id. Иначе DeepSeek API возвращает 400 (например, если агента
+    остановили посреди выполнения инструментов).
+    """
+    out: list[dict[str, Any]] = []
+    n = len(msgs)
+    for idx, m in enumerate(msgs):
+        out.append(m)
+        if m.get("role") == "assistant" and m.get("tool_calls"):
+            ids = [tc.get("id") for tc in m["tool_calls"] if tc.get("id")]
+            provided: set = set()
+            j = idx + 1
+            while j < n and msgs[j].get("role") == "tool":
+                provided.add(msgs[j].get("tool_call_id"))
+                j += 1
+            for cid in ids:
+                if cid not in provided:
+                    out.append({"role": "tool", "tool_call_id": cid,
+                                "content": "[инструмент прерван: результат отсутствует]"})
+    return out
 
 
 # --- Проекты, созданные через UI -------------------------------------------

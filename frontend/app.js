@@ -305,18 +305,33 @@ function appendAssistant(d) { if (!state.currentAssistant) startAssistant(); sta
 function addNote(t) { $("#chat").appendChild(el("div", "msg system-note", t)); scrollDown(); }
 
 const ICON = { read_file: "📄", list_files: "📁", search_files: "🔎", write_file: "✏️", edit_file: "✏️", terminal: "▶", git: "🔀" };
-function addTool(id, name, preview) {
+const VERB = { read_file: "Читаю", list_files: "Смотрю папку", search_files: "Ищу", write_file: "Пишу", edit_file: "Правлю", terminal: "Терминал", git: "Git" };
+// Человекочитаемая подпись действия из имени и аргументов инструмента.
+function toolLabel(name, args, preview) {
+  args = args || {};
+  if (name === "read_file" || name === "write_file" || name === "edit_file") return `${VERB[name]} ${args.path || ""}`.trim();
+  if (name === "list_files") return `${VERB[name]}: ${args.path || "."}`;
+  if (name === "search_files") return `${VERB[name]} «${args.query || ""}»`;
+  if (name === "terminal") return preview || args.command || "Терминал";
+  if (name === "git") return preview || ("git " + (Array.isArray(args.args) ? args.args.join(" ") : ""));
+  return preview || name || "Инструмент";
+}
+function addTool(id, name, preview, args) {
   const d = el("details", "tool"); const s = el("summary");
-  s.appendChild(el("span", null, ICON[name] || "🛠"));
-  s.appendChild(el("span", "t-name", preview || name));
+  s.appendChild(el("span", "t-ico", ICON[name] || "🛠"));
+  s.appendChild(el("span", "t-name", toolLabel(name, args, preview) || name || "инструмент"));
   const badge = el("span", "badge run", "…"); s.appendChild(badge);
-  d.appendChild(s); const pre = el("pre"); d.appendChild(pre);
+  d.appendChild(s); const pre = el("pre"); pre.hidden = true; d.appendChild(pre);
   d._badge = badge; d._pre = pre; $("#chat").appendChild(d); state.toolEls[id] = d; scrollDown(); return d;
 }
 function setToolResult(id, ok, summary, content, extra) {
   const d = state.toolEls[id]; if (!d) return;
   d._badge.textContent = ok ? "готово" : "ошибка"; d._badge.className = "badge " + (ok ? "ok" : "err");
-  if (extra && extra.diff) renderDiff(d._pre, extra.diff); else d._pre.textContent = content || summary || "";
+  if (summary) d.querySelector(".t-name").textContent = summary;   // точная подпись из бэкенда
+  const body = (extra && extra.diff) ? null : (content || "");
+  if (extra && extra.diff) { renderDiff(d._pre, extra.diff); d._pre.hidden = false; }
+  else if (body.trim()) { d._pre.textContent = body; d._pre.hidden = false; }
+  else { d._pre.hidden = true; }                                    // пустой вывод — не показываем
   scrollDown();
 }
 function renderDiff(pre, diff) {
@@ -403,7 +418,7 @@ function handleEvent(ev) {
     case "session": state.conversationId = ev.conversation_id; break;
     case "text": appendAssistant(ev.delta); break;
     case "assistant_message": case "final": state.currentAssistant = null; break;
-    case "tool_start": addTool(ev.id, ev.name, ev.preview); break;
+    case "tool_start": addTool(ev.id, ev.name, ev.preview, ev.args); break;
     case "tool_result": setToolResult(ev.id, ev.ok, ev.summary, ev.content, ev.extra); break;
     case "confirm_required": showConfirm(ev); break;
     case "blocked": addNote("⛔ Заблокировано: " + ev.reason + "\n" + (ev.preview || "")); break;

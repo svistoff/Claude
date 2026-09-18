@@ -95,8 +95,12 @@ async def run_agent(
             return
 
         # --- Исполняем инструменты ---
-        for tc in tool_calls:
+        for pos, tc in enumerate(tool_calls):
             if run.stop_requested:
+                # Заглушки для ещё не выполненных вызовов — иначе история станет
+                # невалидной (assistant.tool_calls без tool-ответов → DeepSeek 400).
+                for rest in tool_calls[pos:]:
+                    _append_tool_result(history, rest.id, "[остановлено пользователем]")
                 yield {"type": "stopped"}
                 return
 

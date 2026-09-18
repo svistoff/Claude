@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .api import auth_routes, chat, files, git_routes, projects, settings, uploads
@@ -57,9 +57,22 @@ async def _500(request: Request, exc: Exception):
 
 
 # --- Статика фронтенда (mobile-first SPA) -----------------------------------
+def _asset_version() -> str:
+    """Версия статики по mtime — чтобы браузер не держал старые CSS/JS в кэше."""
+    try:
+        mt = max((FRONTEND_DIR / f).stat().st_mtime
+                 for f in ("app.js", "styles.css", "index.html"))
+        return str(int(mt))
+    except OSError:
+        return "1"
+
+
 if FRONTEND_DIR.is_dir():
     app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
 
     @app.get("/")
     def index():
-        return FileResponse(str(FRONTEND_DIR / "index.html"))
+        html = (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
+        html = html.replace("{{V}}", _asset_version())
+        # index.html не кэшируем — он подставляет свежую версию ассетов.
+        return HTMLResponse(html, headers={"Cache-Control": "no-store"})
