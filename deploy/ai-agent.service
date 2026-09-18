@@ -17,7 +17,7 @@ Group=aiagent
 # Корень приложения на VPS.
 WorkingDirectory=/opt/ai-agent/backend
 Environment=ENV_FILE=/opt/ai-agent/.env
-ExecStart=/opt/ai-agent/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+ExecStart=/opt/ai-agent/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8770
 
 Restart=always
 RestartSec=3

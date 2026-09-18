@@ -43,8 +43,14 @@ sudo -u aiagent nano /opt/ai-agent/.env
 - `SECRET_KEY` — `python -c "import secrets; print(secrets.token_hex(32))"`;
 - `COOKIE_SECURE=true` (за HTTPS обязательно).
 
-Отредактируйте `backend/config.yaml` — впишите **фактические пути** к проектам на VPS
-и, при необходимости, id модели DeepSeek.
+Создайте рабочий конфиг из шаблона и впишите **фактические пути** к проектам на VPS
+(и при необходимости id модели DeepSeek). Рабочий `config.yaml` в git не хранится —
+обновления кода его не затрут:
+
+```bash
+sudo -u aiagent cp /opt/ai-agent/backend/config.example.yaml /opt/ai-agent/backend/config.yaml
+sudo -u aiagent nano /opt/ai-agent/backend/config.yaml
+```
 
 ### Workspace для новых проектов
 
@@ -72,7 +78,7 @@ sudo systemctl enable --now ai-agent
 systemctl status ai-agent
 ```
 
-Приложение слушает `127.0.0.1:8000` — **наружу не открыто**.
+Приложение слушает `127.0.0.1:8770` — **наружу не открыто**.
 
 ## 5. nginx + HTTPS
 

@@ -6,6 +6,9 @@ id_rsa
 id_rsa.*
 credentials*
 
+# Рабочая конфигурация (у каждого своя; шаблон — config.example.yaml)
+backend/config.yaml
+
 # Данные приложения
 data/
 *.db

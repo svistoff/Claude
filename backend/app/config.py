@@ -106,6 +106,12 @@ def get_settings() -> Settings:
 def get_app_config() -> AppConfig:
     settings = get_settings()
     cfg_path = _resolve_path(settings.config_path)
+    # Рабочий config.yaml (в git не хранится) имеет приоритет; при его отсутствии
+    # используем config.example.yaml (шаблон в репозитории, для dev/тестов).
+    if not cfg_path.exists():
+        example = _resolve_path("config.example.yaml")
+        if example.exists():
+            cfg_path = example
     data: dict[str, Any] = {}
     if cfg_path.exists():
         data = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
