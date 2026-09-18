@@ -287,7 +287,7 @@ async function openChat(id) {
   $("#chat").innerHTML = ""; state.currentAssistant = null;
   conv.messages.forEach((m) => {
     if (m.role === "user") addUser(m.content);
-    else if (m.role === "assistant" && m.content) { startAssistant().textContent = m.content; state.currentAssistant = null; }
+    else if (m.role === "assistant" && m.content) { const a = startAssistant(); a.innerHTML = mdToHtml(m.content); state.currentAssistant = null; }
   });
   closeSheet("chats"); scrollDown();
 }
@@ -301,7 +301,13 @@ function newChat() {
 // ============================================================================
 function addUser(text) { $("#chat").appendChild(el("div", "msg user", text)); scrollDown(); }
 function startAssistant() { const m = el("div", "msg assistant"); $("#chat").appendChild(m); state.currentAssistant = m; scrollDown(); return m; }
-function appendAssistant(d) { if (!state.currentAssistant) startAssistant(); state.currentAssistant.textContent += d; scrollDown(); }
+function appendAssistant(d) {
+  if (!state.currentAssistant) startAssistant();
+  const m = state.currentAssistant;
+  m._raw = (m._raw || "") + d;
+  m.innerHTML = mdToHtml(m._raw);
+  scrollDown();
+}
 function addNote(t) { $("#chat").appendChild(el("div", "msg system-note", t)); scrollDown(); }
 
 const ICON = { read_file: "📄", list_files: "📁", search_files: "🔎", write_file: "✏️", edit_file: "✏️", terminal: "▶", git: "🔀" };
@@ -344,6 +350,43 @@ function renderDiff(pre, diff) {
   });
 }
 function scrollDown() { const c = $("#chat"); c.scrollTop = c.scrollHeight; }
+
+// ---------- Компактный безопасный Markdown → HTML ----------
+function escapeHtml(s) { return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+function mdInline(s) {
+  s = escapeHtml(s);
+  s = s.replace(/`([^`]+)`/g, (m, c) => "<code>" + c + "</code>");
+  s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>").replace(/__([^_]+)__/g, "<strong>$1</strong>");
+  s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
+  s = s.replace(/(^|[^_\w])_([^_\n]+)_/g, "$1<em>$2</em>");
+  s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+  return s;
+}
+function mdToHtml(src) {
+  const blocks = [];
+  src = src.replace(/```(\w*)\n?([\s\S]*?)```/g, (m, lang, code) => {
+    blocks.push('<pre class="md-code"><code>' + escapeHtml(code.replace(/\n$/, "")) + "</code></pre>");
+    return " B" + (blocks.length - 1) + " ";
+  });
+  const lines = src.split("\n");
+  let html = "", listType = null, para = [];
+  const flushPara = () => { if (para.length) { html += "<p>" + mdInline(para.join(" ")) + "</p>"; para = []; } };
+  const flushList = () => { if (listType) { html += "</" + listType + ">"; listType = null; } };
+  for (const line of lines) {
+    const ph = line.match(/^ B(\d+) $/);
+    if (ph) { flushPara(); flushList(); html += blocks[+ph[1]]; continue; }
+    if (/^\s*$/.test(line)) { flushPara(); flushList(); continue; }
+    const h = line.match(/^(#{1,6})\s+(.*)$/);
+    if (h) { flushPara(); flushList(); const lvl = Math.min(h[1].length + 2, 6); html += "<h" + lvl + ">" + mdInline(h[2]) + "</h" + lvl + ">"; continue; }
+    const q = line.match(/^>\s?(.*)$/);
+    if (q) { flushPara(); flushList(); html += "<blockquote>" + mdInline(q[1]) + "</blockquote>"; continue; }
+    const ul = line.match(/^\s*[-*+]\s+(.*)$/), ol = line.match(/^\s*\d+\.\s+(.*)$/);
+    if (ul || ol) { flushPara(); const t = ul ? "ul" : "ol"; if (listType !== t) { flushList(); html += "<" + t + ">"; listType = t; } html += "<li>" + mdInline((ul || ol)[1]) + "</li>"; continue; }
+    para.push(line);
+  }
+  flushPara(); flushList();
+  return html;
+}
 
 // ============================================================================
 //  Отправка + стриминг

@@ -148,8 +148,32 @@ button:active, .pressable:active { transform: scale(0.96); }
 }
 .msg.assistant {
   align-self: flex-start; background: var(--surface-solid); border: 1px solid var(--border);
-  border-bottom-left-radius: 7px;
+  border-bottom-left-radius: 7px; white-space: normal;
 }
+/* Markdown внутри ответа ассистента */
+.msg.assistant > *:first-child { margin-top: 0; }
+.msg.assistant > *:last-child { margin-bottom: 0; }
+.msg.assistant p { margin: 0 0 8px; }
+.msg.assistant h3, .msg.assistant h4, .msg.assistant h5, .msg.assistant h6 {
+  margin: 12px 0 6px; line-height: 1.25; letter-spacing: -0.01em;
+}
+.msg.assistant h3 { font-size: 17px; } .msg.assistant h4 { font-size: 15px; }
+.msg.assistant ul, .msg.assistant ol { margin: 6px 0 8px; padding-left: 22px; }
+.msg.assistant li { margin: 3px 0; }
+.msg.assistant code {
+  font: 0.86em ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: var(--surface-2); padding: 1px 5px; border-radius: 6px;
+}
+.msg.assistant pre.md-code {
+  margin: 8px 0; padding: 12px; border-radius: 12px; overflow-x: auto;
+  background: rgba(0,0,0,0.06); border: 1px solid var(--border);
+}
+.msg.assistant pre.md-code code { background: none; padding: 0; font-size: 12px; line-height: 1.5; }
+.msg.assistant blockquote {
+  margin: 8px 0; padding: 4px 12px; border-left: 3px solid var(--border-strong); color: var(--muted);
+}
+.msg.assistant a { color: var(--accent); }
+@media (prefers-color-scheme: dark) { .msg.assistant pre.md-code { background: rgba(0,0,0,0.4); } }
 .msg.system-note {
   align-self: center; background: transparent; color: var(--muted);
   font-size: 13px; text-align: center; max-width: 92%;
