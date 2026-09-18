@@ -1,492 +1,453 @@
 "use strict";
 
-// ------- Состояние -------
-const state = {
-  csrf: null,
-  project: null,
-  conversationId: null,
-  running: false,
-  currentAssistant: null,
-  toolEls: {},        // call_id -> DOM элемент
-};
+/* ============================================================================
+   AI Coder — клиент. Мотион по apple-design: пружины (§4-6), 1:1 drag (§2),
+   velocity handoff (§5), momentum projection (§6), rubber-band (§9),
+   interruptible (§3 — springs стартуют от текущего значения).
+   ============================================================================ */
 
-// ------- Утилиты -------
-const $ = (sel) => document.querySelector(sel);
-const el = (tag, cls, text) => {
-  const e = document.createElement(tag);
-  if (cls) e.className = cls;
-  if (text != null) e.textContent = text;
-  return e;
-};
+const $ = (s) => document.querySelector(s);
+const el = (t, c, txt) => { const e = document.createElement(t); if (c) e.className = c; if (txt != null) e.textContent = txt; return e; };
+const reduceMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+const state = { csrf: null, project: null, conversationId: null, running: false,
+                currentAssistant: null, toolEls: {}, models: [], model: null };
+
+// ---------- API ----------
 async function api(path, opts = {}) {
   opts.headers = opts.headers || {};
   if (opts.method && opts.method !== "GET") {
     opts.headers["Content-Type"] = "application/json";
     if (state.csrf) opts.headers["x-csrf-token"] = state.csrf;
   }
-  const resp = await fetch(path, opts);
-  return resp;
+  return fetch(path, opts);
 }
 
-// ------- Инициализация -------
-async function boot() {
-  const resp = await fetch("/api/me");
-  const data = await resp.json();
-  if (data.authenticated) {
-    state.csrf = data.csrf;
-    showApp();
-  } else {
-    $("#login-view").hidden = false;
+// ============================================================================
+//  Пружина: анимирует скаляр от текущего значения к target, с учётом velocity.
+//  Прерываема — новый вызов начинается от актуального значения (§3).
+// ============================================================================
+function animateSpring({ from, to, velocity = 0, response = 0.4, damping = 1.0, onUpdate, onDone }) {
+  if (reduceMotion()) { onUpdate(to); onDone && onDone(); return () => {}; }
+  const omega = (2 * Math.PI) / response;
+  let x = from, v = velocity, last = performance.now(), raf = 0, cancelled = false;
+  function frame(now) {
+    if (cancelled) return;
+    const dt = Math.min((now - last) / 1000, 1 / 30); last = now;
+    const a = -omega * omega * (x - to) - 2 * damping * omega * v;  // §4 spring
+    v += a * dt; x += v * dt;
+    if (Math.abs(x - to) < 0.5 && Math.abs(v) < 0.5) { onUpdate(to); onDone && onDone(); return; }
+    onUpdate(x); raf = requestAnimationFrame(frame);
+  }
+  raf = requestAnimationFrame(frame);
+  return () => { cancelled = true; cancelAnimationFrame(raf); };
+}
+// §6 momentum projection (Apple's exponential-decay form)
+const project = (v, decel = 0.998) => (v / 1000) * decel / (1 - decel);
+// §9 rubber-band resistance beyond a boundary
+const rubberband = (over, dim, c = 0.55) => (over * dim * c) / (dim + c * Math.abs(over));
+
+// ============================================================================
+//  Scrim + Sheets (нижние/левый) с жестами
+// ============================================================================
+const scrim = $("#scrim");
+let activeSheet = null;
+function hideScrimIfIdle() { if (!activeSheet) { scrim.hidden = true; scrim.style.opacity = 0; } }
+
+class Sheet {
+  constructor(elm, side) { this.el = elm; this.side = side; this.size = 0; this.pos = 0; this._cancel = null; this._bindDrag(); }
+
+  _setPos(p) {
+    this.pos = p;
+    this.el.style.transform = this.side === "bottom" ? `translateY(${p}px)` : `translateX(${-p}px)`;
+    const progress = this.size ? 1 - p / this.size : 0;
+    scrim.style.opacity = Math.max(0, Math.min(1, progress)) * 0.4;
+  }
+  present() {
+    if (activeSheet && activeSheet !== this) activeSheet.dismiss(true);
+    activeSheet = this;
+    this.el.hidden = false; scrim.hidden = false;
+    this.size = (this.side === "bottom" ? this.el.offsetHeight : this.el.offsetWidth) || 320;
+    this._setPos(this.size);
+    requestAnimationFrame(() => this._to(0));
+  }
+  dismiss(immediate, velocity = 0) {
+    const done = () => { this.el.hidden = true; if (activeSheet === this) activeSheet = null; hideScrimIfIdle(); };
+    if (immediate) { this._cancelAnim(); this._setPos(this.size); done(); return; }
+    this._to(this.size, velocity, done);
+  }
+  _to(target, velocity = 0, onDone) {
+    this._cancelAnim();
+    const bounce = target !== 0 ? 1.0 : 0.86; // лёгкий overshoot при раскрытии
+    this._cancel = animateSpring({ from: this.pos, to: target, velocity, response: 0.42, damping: bounce,
+      onUpdate: (v) => this._setPos(v), onDone: () => { this._cancel = null; onDone && onDone(); } });
+  }
+  _cancelAnim() { if (this._cancel) { this._cancel(); this._cancel = null; } }
+
+  _bindDrag() {
+    const e = this.el;
+    let start = null, lastP = 0, lastT = 0, vel = 0, engaged = false;
+    const noDrag = (t) => t.closest("button, a, input, textarea, pre, .list, .git-body, .segment, .tabs, .sheet-scroll");
+
+    e.addEventListener("pointerdown", (ev) => {
+      if (this.side === "bottom" && noDrag(ev.target)) return;   // низ: тянем только за «шапку»
+      start = { x: ev.clientX, y: ev.clientY, pos: this.pos };
+      lastP = this.side === "bottom" ? ev.clientY : ev.clientX; lastT = ev.timeStamp; vel = 0;
+      engaged = this.side === "bottom";                          // низ — сразу, левый — по оси
+      if (engaged) { this._cancelAnim(); e.setPointerCapture(ev.pointerId); }
+    });
+    e.addEventListener("pointermove", (ev) => {
+      if (!start) return;
+      const dx = ev.clientX - start.x, dy = ev.clientY - start.y;
+      if (!engaged) { // левый лист: включаемся только на горизонтальном свайпе
+        if (Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy)) { engaged = true; this._cancelAnim(); e.setPointerCapture(ev.pointerId); }
+        else if (Math.abs(dy) > 10) { start = null; return; }
+        else return;
+      }
+      const cur = this.side === "bottom" ? ev.clientY : ev.clientX;
+      const dt = (ev.timeStamp - lastT) || 16;
+      vel = ((cur - lastP) / dt) * 1000 * (this.side === "bottom" ? 1 : -1);
+      lastP = cur; lastT = ev.timeStamp;
+      let raw = start.pos + (this.side === "bottom" ? dy : -dx);
+      if (raw < 0) raw = -rubberband(-raw, this.size);           // §9 сопротивление сверх открытого
+      this._setPos(raw);
+      ev.preventDefault();
+    });
+    const end = () => {
+      if (!start) return; const dragged = engaged; start = null; engaged = false;
+      if (!dragged) return;
+      const projected = this.pos + project(vel);                 // §6 куда «долетит»
+      if (projected > this.size * 0.35 || vel > 700) this.dismiss(false, vel); // §5 velocity handoff
+      else this._to(0, vel);
+    };
+    e.addEventListener("pointerup", end);
+    e.addEventListener("pointercancel", end);
   }
 }
 
-// ------- Вход -------
+let sheets = {};
+function openSheet(name) { sheets[name].present(); }
+function closeSheet(name) { sheets[name] && sheets[name].dismiss(false); }
+scrim.addEventListener("click", () => { if (activeSheet) activeSheet.dismiss(false); closeDialog(); });
+
+// ---------- Диалог (материализация blur+scale, §12) ----------
+let pendingCallId = null;
+function showDialog(elm) {
+  scrim.hidden = false; scrim.style.opacity = 0.4;
+  elm.hidden = false; elm.style.transition = "none";
+  elm.style.transform = "translate(-50%,-50%) scale(0.92)"; elm.style.opacity = "0";
+  requestAnimationFrame(() => {
+    elm.style.transition = reduceMotion() ? "opacity 180ms ease"
+      : "transform 320ms cubic-bezier(0.2,0,0,1), opacity 200ms ease";
+    elm.style.transform = "translate(-50%,-50%) scale(1)"; elm.style.opacity = "1";
+  });
+}
+function closeDialog() {
+  const d = $("#confirm-dialog"); if (d.hidden) return;
+  d.style.transform = "translate(-50%,-50%) scale(0.94)"; d.style.opacity = "0";
+  setTimeout(() => { d.hidden = true; hideScrimIfIdle(); }, 200);
+}
+
+// ============================================================================
+//  Boot / auth
+// ============================================================================
+async function boot() {
+  const data = await (await fetch("/api/me")).json();
+  if (data.authenticated) { state.csrf = data.csrf; showApp(); }
+  else $("#login-view").hidden = false;
+}
 $("#login-form").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const errBox = $("#login-error");
-  errBox.hidden = true;
-  const resp = await api("/api/login", {
-    method: "POST",
-    body: JSON.stringify({
-      username: $("#login-user").value.trim(),
-      password: $("#login-pass").value,
-    }),
-  });
-  const data = await resp.json();
-  if (data.ok) {
-    state.csrf = data.csrf;
-    $("#login-view").hidden = true;
-    showApp();
-  } else {
-    errBox.textContent = data.error || "Ошибка входа.";
-    errBox.hidden = false;
-  }
+  const errBox = $("#login-error"); errBox.hidden = true;
+  const r = await api("/api/login", { method: "POST", body: JSON.stringify({
+    username: $("#login-user").value.trim(), password: $("#login-pass").value }) });
+  const data = await r.json();
+  if (data.ok) { state.csrf = data.csrf; $("#login-view").hidden = true; showApp(); }
+  else { errBox.textContent = data.error || "Ошибка входа."; errBox.hidden = false; }
 });
 
 async function showApp() {
   $("#app-view").hidden = false;
+  sheets = {
+    chats: new Sheet($("#sheet-chats"), "left"),
+    projects: new Sheet($("#sheet-projects"), "bottom"),
+    settings: new Sheet($("#sheet-settings"), "bottom"),
+    git: new Sheet($("#sheet-git"), "bottom"),
+  };
   await loadProjects();
-  await loadChats();
+  await loadSettings();
+  if (state.project) newChat();
 }
 
-// ------- Проекты -------
-let projectsBound = false;
+// ============================================================================
+//  Проекты
+// ============================================================================
+let projectsCache = [], canCreate = false;
 async function loadProjects(selectName) {
-  const resp = await api("/api/projects");
-  const data = await resp.json();
-  const sel = $("#project-select");
-  sel.innerHTML = "";
-  data.projects.forEach((p) => {
-    const label = (p.kind === "custom" ? "• " : "") + p.name + (p.available ? "" : " (нет)");
-    const opt = el("option", null, label);
-    opt.value = p.name;
-    if (!p.available) opt.disabled = true;
-    sel.appendChild(opt);
+  const data = await (await api("/api/projects")).json();
+  projectsCache = data.projects; canCreate = data.can_create;
+  const wanted = selectName && projectsCache.find((p) => p.name === selectName);
+  const first = wanted || projectsCache.find((p) => p.available);
+  if (first) { state.project = first.name; $("#project-name").textContent = first.name; }
+}
+function renderProjectsSheet() {
+  const list = $("#projects-list"); list.innerHTML = "";
+  projectsCache.forEach((p) => {
+    const b = el("button", "list-item pressable");
+    b.appendChild(el("div", "title", p.name + (p.available ? "" : " · нет")));
+    if (p.kind === "custom") b.appendChild(el("div", "when", "создан в UI"));
+    if (!p.available) b.disabled = true;
+    b.addEventListener("click", () => { selectProject(p.name); });
+    list.appendChild(b);
   });
-  if (data.can_create) {
-    const opt = el("option", null, "➕ Новый проект…");
-    opt.value = "__new__";
-    sel.appendChild(opt);
-  }
-
-  const wanted = selectName && data.projects.find((p) => p.name === selectName);
-  const first = wanted || data.projects.find((p) => p.available);
-  if (first) {
-    sel.value = first.name;
-    state.project = first.name;
-  }
-
-  if (!projectsBound) {
-    projectsBound = true;
-    sel.addEventListener("change", onProjectChange);
+  if (canCreate) {
+    const b = el("button", "list-item pressable");
+    b.appendChild(el("div", "title", "＋ Новый проект"));
+    b.addEventListener("click", createProject);
+    list.appendChild(b);
   }
 }
-
-async function onProjectChange() {
-  const sel = $("#project-select");
-  if (sel.value === "__new__") {
-    sel.value = state.project || "";     // вернём выбор, пока создаём
-    await createProject();
-    return;
-  }
-  state.project = sel.value;
-  newChat();
+function selectProject(name) {
+  state.project = name; $("#project-name").textContent = name;
+  closeSheet("projects"); newChat();
 }
-
 async function createProject() {
   const name = prompt("Имя нового проекта (латиница, цифры, дефис):", "");
   if (!name) return;
-  const resp = await api("/api/projects/new", {
-    method: "POST",
-    body: JSON.stringify({ name: name.trim() }),
-  });
-  const data = await resp.json();
-  if (!resp.ok) {
-    alert("Не удалось создать проект: " + (data.detail || resp.status));
-    return;
-  }
-  await loadProjects(data.project.name);
-  newChat();
+  const r = await api("/api/projects/new", { method: "POST", body: JSON.stringify({ name: name.trim() }) });
+  const data = await r.json();
+  if (!r.ok) { alert("Не удалось: " + (data.detail || r.status)); return; }
+  await loadProjects(data.project.name); renderProjectsSheet();
+  selectProject(data.project.name);
 }
+$("#btn-project").addEventListener("click", () => { renderProjectsSheet(); openSheet("projects"); });
 
-// ------- Чаты -------
+// ============================================================================
+//  Настройки — переключатель модели (segmented control)
+// ============================================================================
+async function loadSettings() {
+  const data = await (await api("/api/settings")).json();
+  state.models = data.available_models; state.model = data.model;
+  buildSegment();
+}
+function buildSegment() {
+  const seg = $("#model-segment");
+  seg.querySelectorAll("button").forEach((b) => b.remove());
+  const n = state.models.length;
+  state.models.forEach((m, i) => {
+    const b = el("button", null, m.replace("deepseek-", ""));
+    b.setAttribute("aria-selected", String(m === state.model));
+    b.addEventListener("click", () => switchModel(m, i));
+    seg.appendChild(b);
+  });
+  positionPill();
+}
+function positionPill() {
+  const i = Math.max(0, state.models.indexOf(state.model));
+  const n = state.models.length || 1;
+  const pill = $("#seg-pill");
+  pill.style.width = `calc((100% - 6px) / ${n})`;
+  pill.style.transform = `translateX(calc(${i} * 100%))`;
+}
+async function switchModel(m, i) {
+  const prev = state.model; state.model = m;
+  $("#model-segment").querySelectorAll("button").forEach((b, idx) =>
+    b.setAttribute("aria-selected", String(idx === i)));
+  positionPill();
+  const r = await api("/api/settings/model", { method: "POST", body: JSON.stringify({ model: m }) });
+  if (!r.ok) { state.model = prev; buildSegment(); alert("Не удалось переключить модель."); }
+}
+$("#btn-settings").addEventListener("click", () => openSheet("settings"));
+$("#btn-logout").addEventListener("click", async () => {
+  await api("/api/logout", { method: "POST" }); location.reload();
+});
+
+// ============================================================================
+//  Чаты (история)
+// ============================================================================
+$("#btn-menu").addEventListener("click", async () => { await loadChats(); openSheet("chats"); });
+$("#btn-new-chat").addEventListener("click", () => { newChat(); closeSheet("chats"); });
 async function loadChats() {
-  const resp = await api("/api/chats");
-  const data = await resp.json();
-  const list = $("#chats-list");
-  list.innerHTML = "";
+  const data = await (await api("/api/chats")).json();
+  const list = $("#chats-list"); list.innerHTML = "";
   data.chats.forEach((c) => {
-    const item = el("div", "chat-item");
-    item.appendChild(el("div", null, c.title || "Без названия"));
-    item.appendChild(el("div", "when", `${c.project} · ${new Date(c.updated_at).toLocaleString()}`));
-    item.addEventListener("click", () => openChat(c.id));
-    list.appendChild(item);
+    const b = el("button", "list-item pressable");
+    b.appendChild(el("div", "title", c.title || "Без названия"));
+    b.appendChild(el("div", "when", `${c.project} · ${new Date(c.updated_at).toLocaleString()}`));
+    b.addEventListener("click", () => openChat(c.id));
+    list.appendChild(b);
   });
+  if (!data.chats.length) list.appendChild(el("div", "muted", "Пока нет чатов."));
 }
-
 async function openChat(id) {
-  const resp = await api("/api/chat/" + id);
-  if (!resp.ok) return;
-  const conv = await resp.json();
-  state.conversationId = conv.id;
-  state.project = conv.project;
-  $("#project-select").value = conv.project;
-  $("#chat").innerHTML = "";
+  const r = await api("/api/chat/" + id); if (!r.ok) return;
+  const conv = await r.json();
+  state.conversationId = conv.id; state.project = conv.project;
+  $("#project-name").textContent = conv.project;
+  $("#chat").innerHTML = ""; state.currentAssistant = null;
   conv.messages.forEach((m) => {
-    if (m.role === "user") addUserMsg(m.content);
-    else if (m.role === "assistant" && m.content) {
-      const a = startAssistant();
-      a.textContent = m.content;
-    }
-    // tool-сообщения истории показываем компактно
-    else if (m.role === "tool") {
-      const t = addTool("hist", "результат", "");
-      setToolResult("hist", true, "из истории", m.content, {});
-      delete state.toolEls["hist"];
-    }
+    if (m.role === "user") addUser(m.content);
+    else if (m.role === "assistant" && m.content) { startAssistant().textContent = m.content; state.currentAssistant = null; }
   });
-  closeSidebar();
-  scrollDown();
+  closeSheet("chats"); scrollDown();
 }
-
 function newChat() {
-  state.conversationId = null;
-  $("#chat").innerHTML = "";
-  const note = el("div", "msg system-note", "Новая задача. Опишите, что сделать в проекте " + (state.project || "") + ".");
-  $("#chat").appendChild(note);
+  state.conversationId = null; $("#chat").innerHTML = "";
+  addNote(`Новая задача в проекте «${state.project || "—"}». Опишите, что сделать.`);
 }
 
-$("#btn-new-chat").addEventListener("click", () => { newChat(); closeSidebar(); });
-$("#btn-menu").addEventListener("click", openSidebar);
-$("#scrim").addEventListener("click", closeSidebar);
-function openSidebar() { $("#sidebar").hidden = false; $("#scrim").hidden = false; loadChats(); }
-function closeSidebar() { $("#sidebar").hidden = true; $("#scrim").hidden = true; }
+// ============================================================================
+//  Рендер сообщений
+// ============================================================================
+function addUser(text) { $("#chat").appendChild(el("div", "msg user", text)); scrollDown(); }
+function startAssistant() { const m = el("div", "msg assistant"); $("#chat").appendChild(m); state.currentAssistant = m; scrollDown(); return m; }
+function appendAssistant(d) { if (!state.currentAssistant) startAssistant(); state.currentAssistant.textContent += d; scrollDown(); }
+function addNote(t) { $("#chat").appendChild(el("div", "msg system-note", t)); scrollDown(); }
 
-// ------- Рендер сообщений -------
-function addUserMsg(text) {
-  const m = el("div", "msg user", text);
-  $("#chat").appendChild(m);
-  scrollDown();
-}
-function startAssistant() {
-  const m = el("div", "msg assistant");
-  $("#chat").appendChild(m);
-  state.currentAssistant = m;
-  scrollDown();
-  return m;
-}
-function appendAssistant(delta) {
-  if (!state.currentAssistant) startAssistant();
-  state.currentAssistant.textContent += delta;
-  scrollDown();
-}
-function addSystemNote(text) {
-  $("#chat").appendChild(el("div", "msg system-note", text));
-  scrollDown();
-}
-
-const TOOL_ICONS = {
-  read_file: "📄", list_files: "📁", search_files: "🔎",
-  write_file: "✏️", edit_file: "✏️", terminal: "▶", git: "🔀",
-};
+const ICON = { read_file: "📄", list_files: "📁", search_files: "🔎", write_file: "✏️", edit_file: "✏️", terminal: "▶", git: "🔀" };
 function addTool(id, name, preview) {
-  const details = el("details", "tool");
-  const summary = el("summary");
-  summary.appendChild(el("span", null, TOOL_ICONS[name] || "🛠"));
-  summary.appendChild(el("span", null, preview || name));
-  const badge = el("span", "badge", "…");
-  summary.appendChild(badge);
-  details.appendChild(summary);
-  const pre = el("pre");
-  details.appendChild(pre);
-  details._badge = badge; details._pre = pre;
-  $("#chat").appendChild(details);
-  state.toolEls[id] = details;
-  scrollDown();
-  return details;
+  const d = el("details", "tool"); const s = el("summary");
+  s.appendChild(el("span", null, ICON[name] || "🛠"));
+  s.appendChild(el("span", "t-name", preview || name));
+  const badge = el("span", "badge run", "…"); s.appendChild(badge);
+  d.appendChild(s); const pre = el("pre"); d.appendChild(pre);
+  d._badge = badge; d._pre = pre; $("#chat").appendChild(d); state.toolEls[id] = d; scrollDown(); return d;
 }
 function setToolResult(id, ok, summary, content, extra) {
-  const d = state.toolEls[id];
-  if (!d) return;
-  d._badge.textContent = ok ? "ok" : "ошибка";
-  d._badge.className = "badge " + (ok ? "ok" : "err");
-  d._pre.textContent = content || summary || "";
-  if (extra && extra.diff) renderDiff(d._pre, extra.diff);
+  const d = state.toolEls[id]; if (!d) return;
+  d._badge.textContent = ok ? "готово" : "ошибка"; d._badge.className = "badge " + (ok ? "ok" : "err");
+  if (extra && extra.diff) renderDiff(d._pre, extra.diff); else d._pre.textContent = content || summary || "";
   scrollDown();
 }
 function renderDiff(pre, diff) {
   pre.textContent = "";
   diff.split("\n").forEach((line) => {
-    let cls = null;
-    if (line.startsWith("+") && !line.startsWith("+++")) cls = "diff-add";
-    else if (line.startsWith("-") && !line.startsWith("---")) cls = "diff-del";
-    pre.appendChild(el("span", cls, line + "\n"));
+    let c = null;
+    if (line.startsWith("+") && !line.startsWith("+++")) c = "diff-add";
+    else if (line.startsWith("-") && !line.startsWith("---")) c = "diff-del";
+    pre.appendChild(el("span", c, line + "\n"));
   });
 }
+function scrollDown() { const c = $("#chat"); c.scrollTop = c.scrollHeight; }
 
-function scrollDown() {
-  const c = $("#chat");
-  c.scrollTop = c.scrollHeight;
-}
-
-// ------- Отправка / стриминг -------
+// ============================================================================
+//  Отправка + стриминг
+// ============================================================================
 const input = $("#input");
-input.addEventListener("input", () => {
-  input.style.height = "auto";
-  input.style.height = Math.min(input.scrollHeight, 140) + "px";
-});
+input.addEventListener("input", () => { input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, window.innerHeight * 0.4) + "px"; });
 $("#btn-send").addEventListener("click", send);
-input.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
-});
+input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && !matchMedia("(pointer: coarse)").matches) { e.preventDefault(); send(); } });
 
 async function send() {
   if (state.running) return;
-  const text = input.value.trim();
-  if (!text || !state.project) return;
-  input.value = ""; input.style.height = "auto";
-  addUserMsg(text);
-  setRunning(true);
-  state.currentAssistant = null;
-
+  const text = input.value.trim(); if (!text || !state.project) return;
+  input.value = ""; input.style.height = "auto"; addUser(text);
+  setRunning(true); state.currentAssistant = null;
   try {
-    const resp = await api("/api/chat", {
-      method: "POST",
-      body: JSON.stringify({
-        project: state.project,
-        message: text,
-        conversation_id: state.conversationId,
-      }),
-    });
-    if (!resp.ok) {
-      addSystemNote("Ошибка запроса: " + resp.status);
-      setRunning(false);
-      return;
-    }
-    await consumeStream(resp);
-  } catch (err) {
-    addSystemNote("Сбой соединения: " + err.message);
-  } finally {
-    setRunning(false);
-  }
+    const r = await api("/api/chat", { method: "POST", body: JSON.stringify({
+      project: state.project, message: text, conversation_id: state.conversationId }) });
+    if (!r.ok) { addNote("Ошибка запроса: " + r.status); setRunning(false); return; }
+    await consume(r);
+  } catch (err) { addNote("Сбой соединения: " + err.message); }
+  finally { setRunning(false); }
 }
-
-async function consumeStream(resp) {
-  const reader = resp.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    let idx;
-    while ((idx = buffer.indexOf("\n\n")) >= 0) {
-      const block = buffer.slice(0, idx);
-      buffer = buffer.slice(idx + 2);
-      for (const line of block.split("\n")) {
-        if (line.startsWith("data:")) {
-          const json = line.slice(5).trim();
-          if (json) handleEvent(JSON.parse(json));
-        }
-      }
+async function consume(resp) {
+  const reader = resp.body.getReader(), dec = new TextDecoder(); let buf = "";
+  for (;;) {
+    const { done, value } = await reader.read(); if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let i;
+    while ((i = buf.indexOf("\n\n")) >= 0) {
+      const block = buf.slice(0, i); buf = buf.slice(i + 2);
+      for (const line of block.split("\n"))
+        if (line.startsWith("data:")) { const j = line.slice(5).trim(); if (j) handleEvent(JSON.parse(j)); }
     }
   }
 }
-
 function handleEvent(ev) {
   switch (ev.type) {
-    case "session":
-      state.conversationId = ev.conversation_id;
-      break;
-    case "text":
-      appendAssistant(ev.delta);
-      break;
-    case "assistant_message":
-      // следующий шаг начнётся с нового пузыря
-      state.currentAssistant = null;
-      break;
-    case "tool_start":
-      addTool(ev.id, ev.name, ev.preview);
-      break;
-    case "tool_result":
-      setToolResult(ev.id, ev.ok, ev.summary, ev.content, ev.extra);
-      break;
-    case "confirm_required":
-      showConfirm(ev);
-      break;
-    case "confirmed":
-      break;
-    case "blocked":
-      addSystemNote("⛔ Заблокировано: " + ev.reason + "\n" + (ev.preview || ""));
-      break;
-    case "usage":
-      showUsage(ev);
-      break;
-    case "final":
-      state.currentAssistant = null;
-      break;
-    case "stopped":
-      addSystemNote("⏹ Агент остановлен.");
-      break;
-    case "limit":
-      addSystemNote(ev.message);
-      break;
-    case "error":
-      addSystemNote("Ошибка: " + ev.message);
-      break;
-    case "end":
-      loadChats();
-      break;
+    case "session": state.conversationId = ev.conversation_id; break;
+    case "text": appendAssistant(ev.delta); break;
+    case "assistant_message": case "final": state.currentAssistant = null; break;
+    case "tool_start": addTool(ev.id, ev.name, ev.preview); break;
+    case "tool_result": setToolResult(ev.id, ev.ok, ev.summary, ev.content, ev.extra); break;
+    case "confirm_required": showConfirm(ev); break;
+    case "blocked": addNote("⛔ Заблокировано: " + ev.reason + "\n" + (ev.preview || "")); break;
+    case "usage": showUsage(ev); break;
+    case "stopped": addNote("⏹ Агент остановлен."); break;
+    case "limit": addNote(ev.message); break;
+    case "error": addNote("Ошибка: " + ev.message); break;
+    case "end": break;
   }
 }
-
-function setRunning(v) {
-  state.running = v;
-  $("#btn-stop").hidden = !v;
-  $("#btn-send").disabled = v;
-}
-
+function setRunning(v) { state.running = v; $("#btn-stop").hidden = !v; $("#btn-send").disabled = v; }
 $("#btn-stop").addEventListener("click", async () => {
   if (!state.conversationId) return;
-  await api("/api/agent/stop", {
-    method: "POST",
-    body: JSON.stringify({ conversation_id: state.conversationId }),
-  });
+  await api("/api/agent/stop", { method: "POST", body: JSON.stringify({ conversation_id: state.conversationId }) });
 });
+function showUsage(u) { const b = $("#usage"); b.hidden = false; b.textContent = `↑${u.input_tokens} ↓${u.output_tokens} · ≈ $${u.estimated_cost} ${u.currency} · ${state.model || ""}`; }
 
-function showUsage(u) {
-  const box = $("#usage");
-  box.hidden = false;
-  box.textContent = `Токены: ↑${u.input_tokens} ↓${u.output_tokens} · ≈ $${u.estimated_cost} ${u.currency}`;
-}
-
-// ------- Подтверждение опасного действия -------
-let pendingCallId = null;
+// ---------- Подтверждение ----------
 function showConfirm(ev) {
   pendingCallId = ev.id;
   $("#confirm-reason").textContent = ev.reason || "";
   $("#confirm-command").textContent = ev.preview || ev.name;
-  $("#confirm-modal").hidden = false;
+  showDialog($("#confirm-dialog"));
 }
 async function resolveConfirm(approved) {
-  $("#confirm-modal").hidden = true;
-  if (!pendingCallId) return;
-  await api("/api/chat/confirm", {
-    method: "POST",
-    body: JSON.stringify({
-      conversation_id: state.conversationId,
-      call_id: pendingCallId,
-      approved,
-    }),
-  });
+  closeDialog(); if (!pendingCallId) return;
+  await api("/api/chat/confirm", { method: "POST", body: JSON.stringify({
+    conversation_id: state.conversationId, call_id: pendingCallId, approved }) });
   pendingCallId = null;
 }
 $("#confirm-allow").addEventListener("click", () => resolveConfirm(true));
 $("#confirm-cancel").addEventListener("click", () => resolveConfirm(false));
 
-// ------- Git-панель -------
-$("#btn-git").addEventListener("click", () => openGit());
-$("#git-close").addEventListener("click", () => { $("#git-modal").hidden = true; });
-$("#git-download-zip").addEventListener("click", downloadZip);
-document.querySelectorAll(".git-tab").forEach((t) => {
-  t.addEventListener("click", () => {
-    document.querySelectorAll(".git-tab").forEach((x) => x.classList.remove("active"));
-    t.classList.add("active");
-    renderGitTab(t.dataset.tab);
-  });
-});
-
-function openGit() {
+// ============================================================================
+//  Git
+// ============================================================================
+$("#btn-git").addEventListener("click", () => {
   if (!state.project) return;
   $("#git-project").textContent = state.project;
-  $("#git-modal").hidden = false;
-  document.querySelectorAll(".git-tab").forEach((x) => x.classList.remove("active"));
-  document.querySelector('.git-tab[data-tab="status"]').classList.add("active");
-  renderGitTab("status");
-}
-
+  $("#sheet-git").querySelectorAll(".tabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === "status"));
+  renderGitTab("status"); openSheet("git");
+});
+$("#sheet-git").querySelectorAll(".tabs button").forEach((t) => t.addEventListener("click", () => {
+  $("#sheet-git").querySelectorAll(".tabs button").forEach((x) => x.classList.remove("active"));
+  t.classList.add("active"); renderGitTab(t.dataset.tab);
+}));
 async function renderGitTab(tab) {
-  const body = $("#git-body");
-  body.innerHTML = "Загрузка…";
+  const body = $("#git-body"); body.innerHTML = "Загрузка…";
+  const pq = "project=" + encodeURIComponent(state.project);
   if (tab === "status") {
-    const r = await api("/api/git/status?project=" + encodeURIComponent(state.project));
-    const s = await r.json();
-    body.innerHTML = "";
-    body.appendChild(el("div", "muted", "Ветка: " + (s.branch || "?")));
-    const render = (arr, code, cls) => arr.forEach((f) =>
-      body.appendChild(el("div", "git-status-line " + cls, code + " " + f)));
-    render(s.modified, "M", "m");
-    render(s.added, "A", "a");
-    render(s.deleted, "D", "d");
-    render(s.untracked, "?", "");
+    const s = await (await api("/api/git/status?" + pq)).json();
+    body.innerHTML = ""; body.appendChild(el("div", "muted", "Ветка: " + (s.branch || "?")));
+    const R = (arr, code, cls) => arr.forEach((f) => body.appendChild(el("div", "gline " + cls, code + " " + f)));
+    R(s.modified, "M", "m"); R(s.added, "A", "a"); R(s.deleted, "D", "d"); R(s.untracked, "?", "");
     if (!s.modified.length && !s.added.length && !s.deleted.length && !s.untracked.length)
       body.appendChild(el("div", "muted", "Нет изменений."));
   } else if (tab === "diff") {
-    const r = await api("/api/git/diff?project=" + encodeURIComponent(state.project));
-    const d = await r.json();
-    body.innerHTML = "";
-    const pre = el("pre");
-    if (d.diff) renderDiff(pre, d.diff); else pre.textContent = "Нет изменений.";
-    body.appendChild(pre);
-  } else if (tab === "commit") {
-    body.innerHTML = "";
-    const inp = el("input", "git-commit-input");
-    inp.placeholder = "fix: краткое описание изменений";
-    const btn = el("button", "btn-danger", "Commit");
-    btn.style.marginTop = "10px";
+    const d = await (await api("/api/git/diff?" + pq)).json();
+    body.innerHTML = ""; const pre = el("pre");
+    if (d.diff) renderDiff(pre, d.diff); else pre.textContent = "Нет изменений."; body.appendChild(pre);
+  } else {
+    body.innerHTML = ""; const inp = el("input", "commit-input"); inp.placeholder = "fix: краткое описание";
+    const btn = el("button", "btn-accent pressable", "Commit"); btn.style.marginTop = "10px";
     btn.addEventListener("click", async () => {
-      if (!inp.value.trim()) return;
-      btn.disabled = true;
-      const r = await api("/api/git/commit", {
-        method: "POST",
-        body: JSON.stringify({ project: state.project, message: inp.value.trim() }),
-      });
-      const res = await r.json();
-      body.appendChild(el("div", res.ok ? "muted" : "error",
-        res.ok ? "✓ " + (res.last_commit || "commit создан") : res.output));
+      if (!inp.value.trim()) return; btn.disabled = true;
+      const res = await (await api("/api/git/commit", { method: "POST", body: JSON.stringify({ project: state.project, message: inp.value.trim() }) })).json();
+      body.appendChild(el("div", res.ok ? "muted" : "error", res.ok ? "✓ " + (res.last_commit || "commit создан") : res.output));
       btn.disabled = false;
     });
-    body.appendChild(inp);
-    body.appendChild(btn);
+    body.appendChild(inp); body.appendChild(btn);
   }
 }
-
-async function downloadZip() {
-  const r = await api("/api/files/zip", {
-    method: "POST",
-    body: JSON.stringify({ project: state.project }),
-  });
+$("#btn-zip").addEventListener("click", async () => {
+  const r = await api("/api/files/zip", { method: "POST", body: JSON.stringify({ project: state.project }) });
   if (!r.ok) return;
-  const blob = await r.blob();
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = state.project + ".zip";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
+  const url = URL.createObjectURL(await r.blob());
+  const a = document.createElement("a"); a.href = url; a.download = state.project + ".zip";
+  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+});
 
 boot();

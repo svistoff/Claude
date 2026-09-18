@@ -81,8 +81,8 @@ reverse-proxy для `ai.svistoff.ru`, Let's Encrypt (HTTP→HTTPS), sandbox-п�
 | ✓ | Функция |
 |---|---------|
 | ✅ | Login (админ, bcrypt-хэш, secure cookie, session expiration) |
-| ✅ | Mobile-first web UI |
-| ✅ | DeepSeek API через LLM-абстракцию |
+| ✅ | Mobile-first web UI (Apple-style: стеклянные панели, пружины, light/dark) |
+| ✅ | DeepSeek API через LLM-абстракцию + переключатель моделей (flash / v4-pro) |
 | ✅ | Chat + streaming (SSE) |
 | ✅ | Выбор проекта |
 | ✅ | read / list / search / write / edit файлов (в пределах project root) |

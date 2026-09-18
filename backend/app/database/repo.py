@@ -8,7 +8,19 @@ from typing import Any
 from sqlalchemy import select
 
 from . import get_session
-from .models import Conversation, Message, Project, ToolCallLog
+from .models import AppSetting, Conversation, Message, Project, ToolCallLog
+
+
+def get_setting(key: str) -> str | None:
+    with get_session() as db:
+        s = db.get(AppSetting, key)
+        return s.value if s else None
+
+
+def set_setting(key: str, value: str) -> None:
+    with get_session() as db:
+        db.merge(AppSetting(key=key, value=value))
+        db.commit()
 
 
 def create_conversation(project: str, title: str = "Новый чат") -> str:

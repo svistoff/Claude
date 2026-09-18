@@ -68,6 +68,15 @@ class Project(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
 
+class AppSetting(Base):
+    """Рантайм-настройки приложения (key-value), напр. выбранная модель."""
+
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(String(512), default="")
+
+
 class ToolCallLog(Base):
     __tablename__ = "tool_calls"
 

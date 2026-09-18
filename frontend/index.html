@@ -2,84 +2,107 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#0b0f14" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+  <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
   <title>AI Coder</title>
   <link rel="stylesheet" href="/static/styles.css" />
 </head>
 <body>
-  <!-- ЭКРАН ВХОДА -->
+  <!-- ВХОД -->
   <section id="login-view" class="login" hidden>
     <form id="login-form" class="login-card" autocomplete="on">
-      <h1>AI Coder</h1>
+      <h1>AI&nbsp;Coder</h1>
       <p class="muted">Вход администратора</p>
       <input id="login-user" name="username" placeholder="Логин" autocomplete="username" />
       <input id="login-pass" name="password" type="password" placeholder="Пароль" autocomplete="current-password" />
-      <button type="submit">Войти</button>
+      <button type="submit" class="btn-primary pressable">Войти</button>
       <div id="login-error" class="error" hidden></div>
     </form>
   </section>
 
-  <!-- ОСНОВНОЙ ЭКРАН -->
+  <!-- ПРИЛОЖЕНИЕ -->
   <section id="app-view" class="app" hidden>
     <header class="topbar">
-      <button id="btn-menu" class="icon-btn" title="Чаты">☰</button>
-      <div class="brand">AI CODER</div>
-      <select id="project-select" class="project-select" title="Проект"></select>
-      <button id="btn-git" class="icon-btn" title="Git">⑂</button>
+      <button id="btn-menu" class="icon-btn" aria-label="Чаты">☰</button>
+      <div class="brand">AI&nbsp;CODER</div>
+      <div class="grow"></div>
+      <button id="btn-project" class="pill pressable"><span id="project-name">—</span><span class="chev">▼</span></button>
+      <button id="btn-git" class="icon-btn" aria-label="Git">⑂</button>
+      <button id="btn-settings" class="icon-btn" aria-label="Настройки">⚙</button>
     </header>
 
-    <!-- Боковая панель чатов -->
-    <aside id="sidebar" class="sidebar" hidden>
-      <div class="sidebar-head">
-        <span>Чаты</span>
-        <button id="btn-new-chat" class="small">+ Новый</button>
-      </div>
-      <div id="chats-list" class="chats-list"></div>
-    </aside>
-    <div id="scrim" class="scrim" hidden></div>
-
-    <!-- Лента диалога -->
     <main id="chat" class="chat"></main>
 
-    <!-- Панель ввода -->
     <footer class="composer">
-      <button id="btn-stop" class="stop-btn" hidden>⏹ Стоп</button>
+      <button id="btn-stop" class="stop-btn pressable" hidden>⏹ Остановить</button>
       <div class="composer-row">
         <textarea id="input" rows="1" placeholder="Что сделать?"></textarea>
-        <button id="btn-send" class="send-btn" title="Отправить">➤</button>
+        <button id="btn-send" class="send-btn" aria-label="Отправить">➤</button>
       </div>
       <div id="usage" class="usage muted" hidden></div>
     </footer>
   </section>
 
-  <!-- Модалка подтверждения опасного действия -->
-  <div id="confirm-modal" class="modal" hidden>
-    <div class="modal-card">
-      <div class="modal-title">⚠️ Требуется подтверждение</div>
-      <div id="confirm-reason" class="muted"></div>
-      <pre id="confirm-command" class="cmd"></pre>
-      <div class="modal-actions">
-        <button id="confirm-cancel" class="btn-ghost">Отменить</button>
-        <button id="confirm-allow" class="btn-danger">Разрешить</button>
-      </div>
+  <!-- Затемнение под листами/диалогами -->
+  <div id="scrim" class="scrim" hidden></div>
+
+  <!-- Лист: чаты (слева) -->
+  <aside id="sheet-chats" class="sheet left" hidden>
+    <div class="row-between">
+      <h2>Чаты</h2>
+      <button id="btn-new-chat" class="btn-accent pressable" style="padding:9px 14px;font-size:14px;">＋ Новый</button>
+    </div>
+    <div id="chats-list" class="list sheet-scroll"></div>
+  </aside>
+
+  <!-- Лист: выбор проекта (снизу) -->
+  <div id="sheet-projects" class="sheet bottom" hidden>
+    <div class="grabber"></div>
+    <h2>Проект</h2>
+    <div id="projects-list" class="list sheet-scroll"></div>
+  </div>
+
+  <!-- Лист: настройки (снизу) -->
+  <div id="sheet-settings" class="sheet bottom" hidden>
+    <div class="grabber"></div>
+    <h2>Настройки</h2>
+
+    <div class="field-label">Модель DeepSeek</div>
+    <div id="model-segment" class="segment">
+      <div class="seg-pill" id="seg-pill"></div>
+      <!-- кнопки моделей вставляются из JS -->
+    </div>
+    <div class="seg-note" id="model-note">flash — быстрая и дешёвая · v4-pro — мощнее и дороже</div>
+
+    <div class="sheet-actions">
+      <button id="btn-logout" class="btn-ghost pressable">Выйти</button>
     </div>
   </div>
 
-  <!-- Панель Git -->
-  <div id="git-modal" class="modal" hidden>
-    <div class="modal-card git-card">
-      <div class="modal-title">Git — <span id="git-project"></span></div>
-      <div class="git-tabs">
-        <button data-tab="status" class="git-tab active">Status</button>
-        <button data-tab="diff" class="git-tab">Diff</button>
-        <button data-tab="commit" class="git-tab">Commit</button>
-      </div>
-      <div id="git-body" class="git-body"></div>
-      <div class="modal-actions">
-        <button id="git-close" class="btn-ghost">Закрыть</button>
-        <button id="git-download-zip" class="btn-ghost">Создать ZIP</button>
-      </div>
+  <!-- Лист: Git (снизу) -->
+  <div id="sheet-git" class="sheet bottom" hidden>
+    <div class="grabber"></div>
+    <div class="row-between">
+      <h2>Git · <span id="git-project"></span></h2>
+      <button id="btn-zip" class="btn-ghost pressable" style="flex:none;padding:8px 12px;font-size:13px;">ZIP</button>
+    </div>
+    <div class="tabs">
+      <button data-tab="status" class="active">Status</button>
+      <button data-tab="diff">Diff</button>
+      <button data-tab="commit">Commit</button>
+    </div>
+    <div id="git-body" class="git-body"></div>
+  </div>
+
+  <!-- Диалог подтверждения опасного действия -->
+  <div id="confirm-dialog" class="dialog" hidden>
+    <div class="d-title">⚠️ Требуется подтверждение</div>
+    <div id="confirm-reason" class="muted" style="margin-top:6px;"></div>
+    <pre id="confirm-command" class="cmd"></pre>
+    <div class="sheet-actions">
+      <button id="confirm-cancel" class="btn-ghost pressable">Отменить</button>
+      <button id="confirm-allow" class="btn-danger pressable">Разрешить</button>
     </div>
   </div>
 

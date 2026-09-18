@@ -7,10 +7,15 @@
 # Абстракция позволяет заменить провайдера/модель без изменения agent loop.
 llm:
   provider: deepseek
-  # Имя модели. Может быть переопределено переменной DEEPSEEK_MODEL из .env.
-  # Официальные модели DeepSeek API: deepseek-chat, deepseek-reasoner.
-  # (V4.1-Flash: при появлении в официальном API указать её id здесь.)
-  model: deepseek-chat
+  # Имя модели по умолчанию. Переопределяется DEEPSEEK_MODEL из .env и
+  # выбором пользователя в UI (переключатель, хранится в БД).
+  # Актуальные имена официального API: deepseek-flash (быстрая/дешёвая),
+  # deepseek-v4-pro (мощнее/дороже).
+  model: deepseek-flash
+  # Модели, доступные для переключения в интерфейсе.
+  available_models:
+    - deepseek-flash
+    - deepseek-v4-pro
   temperature: 0.2
   max_tokens: 4096
   # request_timeout — таймаут одного запроса к API, сек.

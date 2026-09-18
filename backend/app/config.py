@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     # DeepSeek
     deepseek_api_key: str = ""
     deepseek_base_url: str = "https://api.deepseek.com"
-    deepseek_model: str = "deepseek-chat"
+    deepseek_model: str = "deepseek-flash"
 
     # Auth
     admin_user: str = "admin"
@@ -54,7 +54,9 @@ class ProjectConfig(BaseModel):
 
 class LLMConfig(BaseModel):
     provider: str = "deepseek"
-    model: str = "deepseek-chat"
+    model: str = "deepseek-flash"
+    # Модели, доступные для переключения в UI (раздел 43 ТЗ).
+    available_models: list[str] = ["deepseek-flash", "deepseek-v4-pro"]
     temperature: float = 0.2
     max_tokens: int = 4096
     request_timeout: int = 120
