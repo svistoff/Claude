@@ -9,7 +9,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from .api import auth_routes, chat, files, git_routes, projects, settings
+from .api import auth_routes, chat, files, git_routes, projects, settings, uploads
 from .config import BACKEND_DIR
 from .database import init_db
 
@@ -42,6 +42,7 @@ app.include_router(chat.router)
 app.include_router(git_routes.router)
 app.include_router(files.router)
 app.include_router(settings.router)
+app.include_router(uploads.router)
 
 
 @app.get("/api/health")

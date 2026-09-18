@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from .. import auth, projects_store
+from .. import auth, projects_store, uploads_store
 from ..agent.loop import run_agent
 from ..agent.prompts import SYSTEM_PROMPT
 from ..agent.runtime import registry
@@ -25,6 +25,8 @@ class ChatBody(BaseModel):
     project: str
     message: str
     conversation_id: str | None = None
+    # Приложенные файлы: [{token, name}] из /api/upload.
+    attachments: list[dict] | None = None
 
 
 class ConfirmBody(BaseModel):
@@ -53,7 +55,9 @@ def chat(body: ChatBody, user: str = Depends(auth.require_csrf)) -> StreamingRes
 
     # Conversation (= сессия задачи).
     conv_id = body.conversation_id or repo.create_conversation(body.project, body.message[:60])
-    repo.add_message(conv_id, "user", body.message)
+    # Содержимое приложенных файлов добавляем к сообщению, чтобы агент их «видел».
+    attach_ctx = uploads_store.build_attachments_context(body.attachments or [])
+    repo.add_message(conv_id, "user", body.message + attach_ctx)
 
     # История для LLM (уже включает только что добавленное сообщение пользователя).
     prior = repo.get_history_for_llm(conv_id)

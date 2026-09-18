@@ -338,14 +338,48 @@ input.addEventListener("input", () => { input.style.height = "auto"; input.style
 $("#btn-send").addEventListener("click", send);
 input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && !matchMedia("(pointer: coarse)").matches) { e.preventDefault(); send(); } });
 
+// ---------- Прикрепление файлов ----------
+let attachments = [];  // [{token, name, size}]
+$("#btn-attach").addEventListener("click", () => $("#file-input").click());
+$("#file-input").addEventListener("change", async (e) => {
+  for (const file of e.target.files) await uploadFile(file);
+  e.target.value = "";
+});
+async function uploadFile(file) {
+  const chip = renderChip(file.name, true);
+  const fd = new FormData(); fd.append("file", file);
+  try {
+    const r = await fetch("/api/upload", { method: "POST", headers: { "x-csrf-token": state.csrf }, body: fd });
+    const data = await r.json();
+    if (!r.ok) { alert("Не удалось загрузить " + file.name + ": " + (data.detail || r.status)); chip.remove(); return; }
+    attachments.push({ token: data.token, name: data.name, size: data.size });
+    chip.remove(); renderChip(data.name, false, data.token);
+  } catch (err) { chip.remove(); alert("Ошибка загрузки: " + err.message); }
+}
+function renderChip(name, pending, token) {
+  const box = $("#attach-chips"); box.hidden = false;
+  const chip = el("div", "chip" + (pending ? " pending" : ""));
+  chip.appendChild(el("span", null, "📄 " + name));
+  if (!pending) {
+    const x = el("span", "x", "✕");
+    x.addEventListener("click", () => { attachments = attachments.filter((a) => a.token !== token); chip.remove(); if (!attachments.length) box.hidden = true; });
+    chip.appendChild(x);
+  }
+  box.appendChild(chip); return chip;
+}
+function clearAttachments() { attachments = []; $("#attach-chips").innerHTML = ""; $("#attach-chips").hidden = true; }
+
 async function send() {
   if (state.running) return;
-  const text = input.value.trim(); if (!text || !state.project) return;
-  input.value = ""; input.style.height = "auto"; addUser(text);
+  const text = input.value.trim(); if ((!text && !attachments.length) || !state.project) return;
+  const atts = attachments.slice();
+  input.value = ""; input.style.height = "auto";
+  addUser(text + (atts.length ? "\n📎 " + atts.map((a) => a.name).join(", ") : ""));
+  clearAttachments();
   setRunning(true); state.currentAssistant = null;
   try {
     const r = await api("/api/chat", { method: "POST", body: JSON.stringify({
-      project: state.project, message: text, conversation_id: state.conversationId }) });
+      project: state.project, message: text, conversation_id: state.conversationId, attachments: atts }) });
     if (!r.ok) { addNote("Ошибка запроса: " + r.status); setRunning(false); return; }
     await consume(r);
   } catch (err) { addNote("Сбой соединения: " + err.message); }

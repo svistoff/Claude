@@ -91,6 +91,7 @@ reverse-proxy для `ai.svistoff.ru`, Let's Encrypt (HTTP→HTTPS), sandbox-п�
 | ✅ | git status / diff / commit |
 | ✅ | Stop agent |
 | ✅ | Скачивание файла / ZIP-архива |
+| ✅ | Прикрепление файлов к чату (📎, текст файла виден агенту) |
 | ⏳ | HTTPS — настраивается на VPS (см. `deploy/`) |
 | 🔜 | GitHub API, PR, CI (Фаза 2) |
 | 🔜 | Playwright browser agent (Фаза 3) |

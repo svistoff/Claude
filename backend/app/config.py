@@ -75,6 +75,14 @@ class AgentConfig(BaseModel):
     max_search_results: int = 100
 
 
+class UploadConfig(BaseModel):
+    # Загрузка файлов в чат (раздел 17 ТЗ).
+    max_file_bytes: int = 5_000_000         # максимум на файл
+    max_inline_per_file: int = 50_000       # сколько текста файла отдать модели
+    max_inline_total: int = 150_000         # суммарный лимит на сообщение
+    max_files: int = 10
+
+
 class TerminalPolicy(BaseModel):
     blocked: list[str] = []
     confirm: list[str] = []
@@ -86,6 +94,7 @@ class AppConfig(BaseModel):
     llm: LLMConfig = LLMConfig()
     pricing: PricingConfig = PricingConfig()
     agent: AgentConfig = AgentConfig()
+    uploads: UploadConfig = UploadConfig()
     projects: list[ProjectConfig] = []
     # Родительская папка, внутри которой агент может создавать новые проекты
     # (кнопка «+ Новый проект»). None — создание новых проектов отключено.

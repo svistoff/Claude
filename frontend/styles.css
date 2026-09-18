@@ -196,6 +196,20 @@ button:active, .pressable:active { transform: scale(0.96); }
   background: var(--danger); color: #fff; font-size: 16px; font-weight: 600;
 }
 .composer-row { display: flex; gap: 8px; align-items: flex-end; }
+.attach-btn {
+  width: 44px; height: 44px; flex: none; border: 1px solid var(--border);
+  border-radius: 50%; background: var(--surface-2); color: var(--text); font-size: 18px;
+  display: grid; place-items: center;
+}
+.attach-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 60vw;
+  padding: 6px 10px; border-radius: 999px; background: var(--surface-2);
+  border: 1px solid var(--border); font-size: 13px;
+}
+.chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip .x { color: var(--muted); font-weight: 700; padding: 0 2px; cursor: pointer; }
+.chip.pending { opacity: 0.55; }
 .composer textarea {
   flex: 1; resize: none; max-height: 40vh; padding: 11px 14px; border-radius: 20px;
   border: 1px solid var(--border); background: var(--surface-solid); color: var(--text);
