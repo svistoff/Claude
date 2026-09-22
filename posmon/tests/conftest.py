@@ -10,8 +10,8 @@ import posmon.models  # noqa: F401  -- регистрирует таблицы �
 
 
 @pytest_asyncio.fixture
-async def session():
-    """Изолированная in-memory БД на каждый тест."""
+async def db_maker():
+    """Фабрика сессий с общей in-memory БД (StaticPool держит одно соединение)."""
     engine = create_async_engine(
         "sqlite+aiosqlite://",
         connect_args={"check_same_thread": False},
@@ -20,6 +20,12 @@ async def session():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     maker = async_sessionmaker(engine, expire_on_commit=False)
-    async with maker() as s:
-        yield s
+    yield maker
     await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def session(db_maker):
+    """Одна сессия поверх общей in-memory БД."""
+    async with db_maker() as s:
+        yield s
