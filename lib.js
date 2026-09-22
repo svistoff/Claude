@@ -94,13 +94,18 @@ function getExcludedNumberSet() {
   return new Set(rows.map(r => normalizePhone(r.phone)).filter(Boolean));
 }
 
-// Карта "action_name (сценарий/группа в UIS) -> salon_id" — сопоставление
-// задаётся вручную в карточке салона (поле uis_action_name), т.к. в UIS эти
-// названия на латинице и не обязаны совпадать со внутренним названием салона.
+// Карта "метка UIS (employee_full_name из get.calls_report ИЛИ action_name
+// плеча из get.call_legs_report) -> salon_id". У одного салона бывает
+// несколько разных меток (разные источники трафика называют его по-разному,
+// например "Чайковского (Жара) (amoCRM)" и просто "Жара"), поэтому это
+// отдельная таблица salon_uis_labels, а не одно поле салона.
 function getActionNameSalonMap() {
   const map = new Map();
-  const salons = db.prepare(`SELECT id, uis_action_name FROM salons WHERE active = 1 AND uis_action_name IS NOT NULL AND uis_action_name != ''`).all();
-  for (const s of salons) map.set(s.uis_action_name.trim().toLowerCase(), s.id);
+  const rows = db.prepare(`
+    SELECT sl.label, sl.salon_id FROM salon_uis_labels sl
+    JOIN salons s ON s.id = sl.salon_id WHERE s.active = 1
+  `).all();
+  for (const r of rows) map.set(r.label.trim().toLowerCase(), r.salon_id);
   return map;
 }
 

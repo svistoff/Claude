@@ -544,6 +544,7 @@ RENDERERS.salons = async function renderSalons() {
           <td class="row">
             <button onclick="showSalonForm(${s.id})">Изменить</button>
             <button onclick="manageSalonPhones(${s.id})">Номера</button>
+            <button onclick="manageSalonLabels(${s.id})">Метки UIS</button>
             ${s.active ? `<button class="danger" onclick="archiveSalon(${s.id})">В архив</button>` : `<button class="ok" onclick="unarchiveSalon(${s.id})">Вернуть</button>`}
           </td>
         </tr>`).join('')}
@@ -565,11 +566,7 @@ function showSalonForm(id) {
           <input id="f-phone" placeholder="Телефон (номер UIS)" value="${s?esc(s.phone):''}">
           <input id="f-line" placeholder="ID виртуальной линии UIS (необязательно)" value="${s?esc(s.uis_line_id||''):''}">
           <select id="f-type"><option value="salon" ${s&&s.type==='salon'?'selected':''}>Салон</option><option value="sauna" ${s&&s.type==='sauna'?'selected':''}>Сауна</option></select>
-          <input id="f-action-name" placeholder="Название сценария/группы в UIS (только для общих номеров с меню)" value="${s?esc(s.uis_action_name||''):''}">
         </div>
-        <p class="muted">Название сценария нужно только если у вас есть общий номер с голосовым меню
-        на несколько салонов (см. «Настройки» → «Общие номера с меню») — впишите сюда точное
-        значение action_name из UIS для ветки этого салона (см. лог сервера при тестовом звонке).</p>
         <div class="row between" style="margin-top:16px">
           <button onclick="document.querySelector('.modal-bg').remove()">Отмена</button>
           <button class="primary" onclick="saveSalon(${id||'null'})">Сохранить</button>
@@ -583,8 +580,7 @@ async function saveSalon(id) {
     address: document.getElementById('f-address').value.trim(),
     phone: document.getElementById('f-phone').value.trim(),
     uis_line_id: document.getElementById('f-line').value.trim(),
-    type: document.getElementById('f-type').value,
-    uis_action_name: document.getElementById('f-action-name').value.trim()
+    type: document.getElementById('f-type').value
   };
   if (!body.name || !body.phone) return alert('Укажите название и телефон');
   try {
@@ -643,6 +639,49 @@ async function addSalonPhone(salonId) {
 async function deleteSalonPhone(salonId, phoneId) {
   await api(`/salons/${salonId}/phones/${phoneId}`, { method: 'DELETE' });
   manageSalonPhones(salonId);
+}
+
+// Метки, которыми UIS обозначает этот салон для звонков на общий номер
+// с голосовым меню — у одного салона их может быть несколько (разные
+// источники трафика называют его по-разному). Точное значение видно в логе
+// сервера при тестовом звонке ("метка UIS ..." / "плечо ушло в сценарий ...").
+async function manageSalonLabels(salonId) {
+  const salon = SALONS.find(s => s.id === salonId);
+  const labels = await api(`/salons/${salonId}/labels`);
+  document.getElementById('modal-root').innerHTML = `
+    <div class="modal-bg" onclick="if(event.target===this)this.remove()">
+      <div class="modal">
+        <h3>Метки UIS для «${esc(salon.name)}»</h3>
+        <p class="muted">Нужно только для номеров с общим голосовым меню на несколько салонов
+        (см. «Настройки» → «Общие номера с меню»). Точное значение метки — из лога сервера
+        после тестового звонка на такой номер.</p>
+        <table id="salon-labels-table">${renderSalonLabelsRows(labels)}</table>
+        <div class="row" style="margin-top:12px">
+          <input id="new-label" placeholder="Например: 8 марта (VIP) (amoCRM)" style="min-width:280px">
+          <button class="primary" onclick="addSalonLabel(${salonId})">+ Добавить метку</button>
+        </div>
+        <div class="row between" style="margin-top:16px">
+          <span></span>
+          <button onclick="document.querySelector('.modal-bg').remove()">Закрыть</button>
+        </div>
+      </div>
+    </div>`;
+}
+function renderSalonLabelsRows(labels) {
+  return `<tr><th>Метка</th><th></th></tr>` +
+    (labels.map(l => `<tr><td>${esc(l.label)}</td>
+      <td><button class="danger" onclick="deleteSalonLabel(${l.salon_id},${l.id})">Удалить</button></td></tr>`).join('')
+    || '<tr><td colspan="2" class="muted">Меток нет</td></tr>');
+}
+async function addSalonLabel(salonId) {
+  const label = document.getElementById('new-label').value.trim();
+  if (!label) return alert('Укажите метку');
+  await api(`/salons/${salonId}/labels`, { method: 'POST', body: { label } });
+  manageSalonLabels(salonId);
+}
+async function deleteSalonLabel(salonId, labelId) {
+  await api(`/salons/${salonId}/labels/${labelId}`, { method: 'DELETE' });
+  manageSalonLabels(salonId);
 }
 
 // ================= ЧЕК-ЛИСТЫ =================

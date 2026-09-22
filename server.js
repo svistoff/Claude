@@ -53,13 +53,12 @@ app.post('/api/salons', auth.requireAdmin, (req, res) => {
 app.put('/api/salons/:id', auth.requireAdmin, (req, res) => {
   const salon = db.prepare('SELECT * FROM salons WHERE id = ?').get(req.params.id);
   if (!salon) return res.status(404).json({ error: 'Объект не найден' });
-  const { name, address, phone, uis_line_id, type, active, uis_action_name } = req.body || {};
-  db.prepare('UPDATE salons SET name=?, address=?, phone=?, uis_line_id=?, type=?, active=?, uis_action_name=? WHERE id=?')
+  const { name, address, phone, uis_line_id, type, active } = req.body || {};
+  db.prepare('UPDATE salons SET name=?, address=?, phone=?, uis_line_id=?, type=?, active=? WHERE id=?')
     .run(
       name ?? salon.name, address ?? salon.address, phone ?? salon.phone,
       uis_line_id ?? salon.uis_line_id, type === 'sauna' || type === 'salon' ? type : salon.type,
       active === undefined ? salon.active : (active ? 1 : 0),
-      uis_action_name === undefined ? salon.uis_action_name : (uis_action_name || null),
       salon.id
     );
   res.json(db.prepare('SELECT * FROM salons WHERE id = ?').get(salon.id));
@@ -110,6 +109,24 @@ app.post('/api/salons/:id/phones', auth.requireAdmin, (req, res) => {
 
 app.delete('/api/salons/:salonId/phones/:phoneId', auth.requireAdmin, (req, res) => {
   db.prepare('DELETE FROM salon_phone_numbers WHERE id = ? AND salon_id = ?').run(req.params.phoneId, req.params.salonId);
+  res.json({ ok: true });
+});
+
+// метки UIS для этого салона (employee_full_name / action_name — см. telephony.js
+// resolveSalonByEmployees / resolveSalonByLegs), нужны только для номеров с общим меню
+app.get('/api/salons/:id/labels', auth.requireAdmin, (req, res) => {
+  res.json(db.prepare('SELECT * FROM salon_uis_labels WHERE salon_id = ? ORDER BY id').all(req.params.id));
+});
+
+app.post('/api/salons/:id/labels', auth.requireAdmin, (req, res) => {
+  const { label } = req.body || {};
+  if (!label) return res.status(400).json({ error: 'Укажите метку' });
+  const info = db.prepare('INSERT INTO salon_uis_labels (salon_id, label) VALUES (?, ?)').run(req.params.id, label.trim());
+  res.json(db.prepare('SELECT * FROM salon_uis_labels WHERE id = ?').get(info.lastInsertRowid));
+});
+
+app.delete('/api/salons/:salonId/labels/:labelId', auth.requireAdmin, (req, res) => {
+  db.prepare('DELETE FROM salon_uis_labels WHERE id = ? AND salon_id = ?').run(req.params.labelId, req.params.salonId);
   res.json({ ok: true });
 });
 

@@ -34,8 +34,6 @@ CREATE TABLE IF NOT EXISTS salons (
   type TEXT NOT NULL DEFAULT 'salon', -- salon | sauna
   checklist_mode TEXT NOT NULL DEFAULT 'template', -- template | custom (отвязан от шаблона)
   active INTEGER NOT NULL DEFAULT 1,  -- 0 = архив (удаление объекта = архивация)
-  uis_action_name TEXT, -- название сценария/группы в UIS (action_name из get.call_legs_report) —
-                        -- нужно только для номеров с общим голосовым меню на несколько объектов
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -51,10 +49,23 @@ CREATE TABLE IF NOT EXISTS salon_phone_numbers (
 );
 CREATE INDEX IF NOT EXISTS idx_salon_phone_numbers_salon ON salon_phone_numbers(salon_id);
 
+-- Текстовые метки, которыми UIS обозначает салон для звонков с номеров общего
+-- меню — источник метки может быть разный (поле employees[].employee_full_name
+-- из get.calls_report — бесплатно, тот же запрос; либо action_name успешного
+-- плеча из get.call_legs_report — запасной вариант, отдельный запрос за деньги
+-- дневного лимита). У одного салона может быть НЕСКОЛЬКО разных меток —
+-- разные источники трафика (amoCRM-группа, IVR-сценарий и т.п.) называют его по-разному.
+CREATE TABLE IF NOT EXISTS salon_uis_labels (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  salon_id INTEGER NOT NULL REFERENCES salons(id) ON DELETE CASCADE,
+  label TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_salon_uis_labels_salon ON salon_uis_labels(salon_id);
+
 -- Номера с общим голосовым меню на несколько объектов сразу (например,
 -- "нажмите 1 — Жара, нажмите 2 — VIP"): по такому номеру нельзя определить
--- объект напрямую — нужно смотреть плечи звонка (get.call_legs_report) и
--- искать успешное исходящее плечо, чьё action_name сопоставлено с salons.uis_action_name.
+-- объект напрямую — салон определяется по метке UIS (см. salon_uis_labels).
 CREATE TABLE IF NOT EXISTS shared_ivr_numbers (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   phone TEXT NOT NULL,
@@ -250,8 +261,13 @@ INSERT OR IGNORE INTO call_out_settings (id) VALUES (1);
 // миграции для баз, созданных до появления новых колонок —
 // CREATE TABLE IF NOT EXISTS не добавляет колонки в уже существующую таблицу
 const salonColumns = db.prepare("PRAGMA table_info(salons)").all().map(c => c.name);
-if (!salonColumns.includes('uis_action_name')) {
-  db.exec('ALTER TABLE salons ADD COLUMN uis_action_name TEXT');
+// на старых базах uis_action_name был единственной меткой на салон — переносим
+// накопленные значения в salon_uis_labels (там может быть несколько меток),
+// саму колонку не трогаем (DROP COLUMN не обязателен, просто больше не используется)
+if (salonColumns.includes('uis_action_name')) {
+  const old = db.prepare(`SELECT id, uis_action_name FROM salons WHERE uis_action_name IS NOT NULL AND uis_action_name != ''`).all();
+  const insertLabel = db.prepare(`INSERT INTO salon_uis_labels (salon_id, label) SELECT ?, ? WHERE NOT EXISTS (SELECT 1 FROM salon_uis_labels WHERE salon_id = ? AND label = ?)`);
+  for (const s of old) insertLabel.run(s.id, s.uis_action_name, s.id, s.uis_action_name);
 }
 const telephonyColumns = db.prepare("PRAGMA table_info(telephony_settings)").all().map(c => c.name);
 if (!telephonyColumns.includes('uis_timezone_offset_hours')) {

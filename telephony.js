@@ -67,7 +67,7 @@ async function fetchAllCalls(sinceStr, tillStr) {
     date_till: tillStr,
     fields: [
       'id', 'start_time', 'direction', 'is_lost', 'talk_duration',
-      'contact_phone_number', 'virtual_phone_number', 'communication_number', 'call_records'
+      'contact_phone_number', 'virtual_phone_number', 'communication_number', 'call_records', 'employees'
     ]
   });
   return (result && result.data) || [];
@@ -98,6 +98,21 @@ function extractRecordUrl(c) {
 // (salons.uis_action_name) в интерфейсе. Подтверждено на практике: campaign_id
 // для таких звонков всегда -1 (кампании в UIS не настроены), поэтому action_name
 // с плеча — единственный надёжный сигнал.
+// Бесплатный способ определить салон для звонка на общий номер меню: поле
+// employees уже приходит в основном запросе get.calls_report (не требует
+// доп. вызова API) и несёт метку вида "8 марта (VIP) (amoCRM)" — причём даже
+// для непринятых звонков (is_answered=false у самого элемента employees),
+// раз меню всё равно определило, в какую группу/очередь идёт звонок.
+// Подтверждено на практике: часть трафика размечена именно так, а не через
+// action_name плеча (см. resolveSalonByLegs ниже, используется как резерв).
+function resolveSalonByEmployees(c, actionNameMap, salonsById) {
+  const employees = Array.isArray(c.employees) ? c.employees : [];
+  const label = employees[0]?.employee_full_name;
+  if (!label) return { salon: null, label: null };
+  const salonId = actionNameMap.get(label.trim().toLowerCase());
+  return { salon: salonId ? salonsById.get(salonId) : null, label };
+}
+
 async function fetchCallLegs(callSessionId, startTimeStr) {
   const tillStr = toUisDateString(new Date(new Date(startTimeStr).getTime() + 10 * 60000));
   try {
@@ -165,14 +180,27 @@ async function ingestCalls(sinceStr, tillStr) {
     let salon = candidate ? salonsById.get(phoneMap.get(candidate)) : null;
 
     if (!salon && candidate && sharedIvrNumbers.has(candidate)) {
-      const resolved = await resolveSalonByLegs(c, actionNameMap, salonsById);
-      salon = resolved.salon;
-      if (!salon) {
-        const numberDesc = c.virtual_phone_number || c.communication_number;
-        if (resolved.actionName) {
-          console.log(`[telephony] Звонок на общий номер меню ${numberDesc} (id=${c.id}): плечо ушло в сценарий UIS "${resolved.actionName}", но ни один салон не сопоставлен с этим названием — впишите "${resolved.actionName}" в поле "Название сценария в UIS" нужного салона.`);
-        } else {
-          console.log(`[telephony] Звонок на общий номер меню ${numberDesc} (id=${c.id}): не нашлось успешного исходящего плеча с action_name (клиент мог положить трубку в меню, не дозвонившись до салона).`);
+      const numberDesc = c.virtual_phone_number || c.communication_number;
+
+      // сначала бесплатный способ — метка уже пришла в этом же запросе
+      const byEmployees = resolveSalonByEmployees(c, actionNameMap, salonsById);
+      salon = byEmployees.salon;
+
+      if (!salon && byEmployees.label) {
+        console.log(`[telephony] Звонок на общий номер меню ${numberDesc} (id=${c.id}): метка UIS "${byEmployees.label}", но ни один салон не сопоставлен — добавьте "${byEmployees.label}" в список меток нужного салона.`);
+      }
+
+      // если метки не было вовсе — пробуем платный резерв через плечи звонка
+      // (другой источник трафика может не заполнять employees, но иметь action_name)
+      if (!salon && !byEmployees.label) {
+        const resolved = await resolveSalonByLegs(c, actionNameMap, salonsById);
+        salon = resolved.salon;
+        if (!salon) {
+          if (resolved.actionName) {
+            console.log(`[telephony] Звонок на общий номер меню ${numberDesc} (id=${c.id}): плечо ушло в сценарий UIS "${resolved.actionName}", но ни один салон не сопоставлен — добавьте "${resolved.actionName}" в список меток нужного салона.`);
+          } else {
+            console.log(`[telephony] Звонок на общий номер меню ${numberDesc} (id=${c.id}): не удалось определить салон ни по employees, ни по плечам (клиент мог положить трубку в меню, не дозвонившись до салона).`);
+          }
         }
       }
     }
