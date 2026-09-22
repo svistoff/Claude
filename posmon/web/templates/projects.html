@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Проекты{% endblock %}
+{% block content %}
+<h1>Проекты</h1>
+
+<table class="grid">
+  <thead>
+    <tr><th>Название</th><th>Глубина</th><th class="center">Активен</th><th></th></tr>
+  </thead>
+  <tbody>
+    {% for p in projects %}
+    <tr class="{{ 'inactive' if not p.active }}">
+      <td>{{ p.name }}{% if p.description %}<br><small>{{ p.description }}</small>{% endif %}</td>
+      <td>ТОП-{{ p.depth }}</td>
+      <td class="center">{{ '✓' if p.active else '—' }}</td>
+      <td class="right">
+        {% if user.role == 'Admin' %}
+        <form method="post" action="/projects/{{ p.id }}/toggle" class="inline">
+          <button type="submit" class="link">{{ 'выключить' if p.active else 'включить' }}</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4" class="muted">Пока нет проектов</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% if user.role == 'Admin' %}
+<h2>Новый проект</h2>
+<form method="post" action="/projects" class="form-row">
+  <input type="text" name="name" placeholder="Название" required>
+  <input type="number" name="depth" value="50" min="1" max="100" title="Глубина (ТОП-N)">
+  <input type="text" name="description" placeholder="Описание (необязательно)">
+  <button type="submit">Создать</button>
+</form>
+{% endif %}
+{% endblock %}

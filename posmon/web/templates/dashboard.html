@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Дашборд{% endblock %}
+{% block content %}
+<h1>Мониторинг позиций</h1>
+<div class="cards">
+  <div class="card"><span class="num">{{ stats.projects }}</span><span class="label">Проектов</span></div>
+  <div class="card"><span class="num">{{ stats.queries }}</span><span class="label">Активных запросов</span></div>
+  <div class="card"><span class="num">{{ stats.sites }}</span><span class="label">Сайтов</span></div>
+  <div class="card"><span class="num">{{ stats.profiles }}</span><span class="label">Профилей</span></div>
+</div>
+<p class="hint">Регион: Екатеринбург (lr={{ settings.region_lr }}) · Глубина по умолчанию: ТОП-{{ settings.default_depth }}</p>
+{% endblock %}

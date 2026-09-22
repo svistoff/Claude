@@ -53,6 +53,13 @@ def get_sessionmaker() -> async_sessionmaker[AsyncSession]:
     return _sessionmaker
 
 
+def reset_engine_state() -> None:
+    """Сбросить кэш движка/фабрики (используется в тестах при смене DATABASE_URL)."""
+    global _engine, _sessionmaker
+    _engine = None
+    _sessionmaker = None
+
+
 async def get_session() -> AsyncIterator[AsyncSession]:
     """FastAPI-зависимость: выдаёт сессию на время запроса."""
     async with get_sessionmaker()() as session:
