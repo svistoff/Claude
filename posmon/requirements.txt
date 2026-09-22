@@ -1,0 +1,31 @@
+# Веб и API
+fastapi>=0.110,<1.0
+uvicorn[standard]>=0.29
+jinja2>=3.1
+python-multipart>=0.0.9
+itsdangerous>=2.1
+
+# БД
+sqlalchemy>=2.0,<2.1
+alembic>=1.13
+asyncpg>=0.29        # PostgreSQL (прод)
+aiosqlite>=0.19      # SQLite (локальная разработка/тесты)
+
+# Конфиг
+pydantic>=2.6
+pydantic-settings>=2.2
+python-dotenv>=1.0
+
+# Сбор выдачи
+httpx>=0.27          # Yandex Search API
+playwright>=1.42     # браузерный скрейпинг персонализированных профилей
+
+# Планировщик
+apscheduler>=3.10
+
+# Авторизация
+passlib[bcrypt]>=1.7
+
+# Тесты
+pytest>=8.0
+pytest-asyncio>=0.23

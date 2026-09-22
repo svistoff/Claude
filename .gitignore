@@ -8,3 +8,13 @@ bot/data/
 *.db-wal
 *.db-shm
 .DS_Store
+
+# posmon
+.venv/
+posmon/.env
+posmon/data/
+posmon/posmon.db
+posmon/browser_profiles/
+posmon/reports/
+posmon/screenshots/
+.pytest_cache/
