@@ -52,7 +52,24 @@
   .grid3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; }
   .guest-card { background:#fff; border-radius:12px; padding:16px; margin-bottom:12px; box-shadow:0 1px 4px rgba(0,0,0,.06); }
   .guest-card .time { font-size:20px; font-weight:700; }
-  @media (max-width:800px){ .layout{flex-direction:column;} nav.side{width:100%;} .grid2,.grid3{grid-template-columns:1fr;} main{padding:14px;} }
+  nav.bottom-nav { display:none; }
+  @media (max-width:800px){
+    .layout{flex-direction:column;}
+    .grid2,.grid3{grid-template-columns:1fr;}
+    main{padding:14px;}
+    nav.side{display:none;}
+    nav.bottom-nav{
+      display:flex; position:fixed; bottom:0; left:0; right:0; z-index:40;
+      background:#1c2230; border-top:1px solid #2c3345; padding-bottom:env(safe-area-inset-bottom);
+    }
+    nav.bottom-nav a{
+      flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
+      gap:2px; padding:8px 2px 6px; color:#8b93a7; text-decoration:none; font-size:10px; cursor:pointer;
+    }
+    nav.bottom-nav a .icon{ font-size:19px; line-height:1; }
+    nav.bottom-nav a.active{ color:#fff; }
+    #app.has-bottom-nav main{ padding-bottom:72px; }
+  }
 </style>
 </head>
 <body>
@@ -75,6 +92,7 @@
     </nav>
     <main id="main"></main>
   </div>
+  <nav class="bottom-nav" id="bottom-nav"></nav>
 </div>
 
 <script>
@@ -107,11 +125,18 @@ async function doLogin() {
 async function logout() { await api('/logout', { method: 'POST' }); location.reload(); }
 
 const OWNER_NAV = [
-  ['dashboard', 'Дашборд'], ['calls', 'Звонки'], ['missed', 'Пропущенные'],
-  ['clients', 'Клиенты'], ['admins', 'Администраторы'], ['salons', 'Салоны'],
-  ['checklist', 'Чек-листы'], ['reports', 'Отчёты'], ['settings', 'Настройки']
+  ['dashboard', 'Дашборд'], ['calls', 'Звонки'],
+  ['clients', 'Клиенты'], ['reports', 'Отчёты'], ['settings', 'Настройки']
 ];
 const STAFF_NAV = [['guest', 'Гости']];
+// Администраторы/Салоны/Чек-листы физически убраны из главного меню и живут
+// как вкладки внутри "Настройки" (см. settingsTabsHtml) — но остаются
+// самостоятельными route'ами, чтобы не переписывать их рендереры.
+const SETTINGS_GROUP = ['settings', 'admins', 'salons', 'checklist'];
+const MOBILE_NAV = [
+  ['dashboard', 'Дашборд', '📊'], ['calls', 'Звонки', '📞'],
+  ['clients', 'Клиенты', '👥'], ['reports', 'Отчёты', '📈'], ['settings', 'Настройки', '⚙️']
+];
 
 async function boot() {
   try { ME = await api('/me'); }
@@ -126,7 +151,14 @@ async function boot() {
 
   const nav = ME.role === 'admin' ? OWNER_NAV : STAFF_NAV;
   document.getElementById('nav-links').innerHTML = nav.map(([r, label]) => `<a data-route="${r}">${label}</a>`).join('');
-  document.querySelectorAll('nav.side a[data-route]').forEach(a => a.onclick = () => navigate(a.dataset.route));
+
+  const bottomNav = document.getElementById('bottom-nav');
+  bottomNav.innerHTML = ME.role === 'admin'
+    ? MOBILE_NAV.map(([r, label, icon]) => `<a data-route="${r}"><span class="icon">${icon}</span>${label}</a>`).join('')
+    : '';
+  document.getElementById('app').classList.toggle('has-bottom-nav', ME.role === 'admin');
+
+  document.querySelectorAll('nav.side a[data-route], nav.bottom-nav a[data-route]').forEach(a => a.onclick = () => navigate(a.dataset.route));
 
   SALONS = await api('/salons');
   if (ME.role === 'admin') ADMINS = await api('/admins');
@@ -137,8 +169,20 @@ async function boot() {
 const RENDERERS = {};
 function navigate(route) {
   location.hash = route;
-  document.querySelectorAll('nav.side a').forEach(a => a.classList.toggle('active', a.dataset.route === route));
+  document.querySelectorAll('nav.side a, nav.bottom-nav a').forEach(a => {
+    const r = a.dataset.route;
+    a.classList.toggle('active', r === route || (r === 'settings' && SETTINGS_GROUP.includes(route)));
+  });
   (RENDERERS[route] || RENDERERS[ME.role === 'admin' ? 'dashboard' : 'guest'])();
+}
+
+// Вкладки над Настройки/Администраторы/Салоны/Чек-листы — эти три раздела
+// физически убраны из главного меню и открываются только отсюда.
+function settingsTabsHtml(active) {
+  const tabs = [['settings', 'Основное'], ['admins', 'Администраторы'], ['salons', 'Салоны и сауна'], ['checklist', 'Чек-листы']];
+  return `<div class="row" style="margin-bottom:16px;border-bottom:1px solid var(--border);padding-bottom:12px">
+    ${tabs.map(([r, label]) => `<button class="${r===active?'primary':''}" onclick="navigate('${r}')">${label}</button>`).join('')}
+  </div>`;
 }
 
 function salonName(id) { return (SALONS.find(s => s.id === id) || {}).name || ('#' + id); }
@@ -162,6 +206,10 @@ RENDERERS.dashboard = async function renderDashboard() {
         </div>
       </div>
       <div id="dash-chart" style="margin-top:12px">Загрузка…</div>
+    </div>
+    <div class="card">
+      <h3>📈 Динамика звонков по дням</h3>
+      <div id="dash-timeseries" style="margin-top:12px">Загрузка…</div>
     </div>
     <div class="card">
       <h3>📞 Рейтинг номеров объектов</h3>
@@ -190,6 +238,7 @@ RENDERERS.dashboard = async function renderDashboard() {
     </div>
   `;
   loadDashboardStats();
+  loadDashboardTimeseries();
   loadDashboardRanking();
 };
 
@@ -201,6 +250,11 @@ function setDashboardPeriod(period) {
 async function loadDashboardStats() {
   const { stats } = await api('/dashboard/salon-stats?period=' + dashboardPeriod);
   document.getElementById('dash-chart').innerHTML = renderSalonStatsChart(stats);
+}
+
+async function loadDashboardTimeseries() {
+  const { days } = await api('/dashboard/calls-timeseries?period=' + dashboardPeriod);
+  document.getElementById('dash-timeseries').innerHTML = renderCallsTimeseriesChart(days);
 }
 
 async function loadDashboardRanking() {
@@ -255,15 +309,62 @@ function renderSalonStatsChart(stats) {
     </div>`;
 }
 
+// Линейный график динамики по дням (звонки/пропущено/перезвонили) за
+// выбранный период — те же цвета, что и в сгруппированном графике по
+// объектам, для единообразия. Подписи по оси X прореживаются на длинных
+// периодах (месяц), чтобы не слипались.
+function renderCallsTimeseriesChart(days) {
+  if (!days.length) return '<p class="muted">Нет данных</p>';
+  const w = Math.max(360, days.length * 32), h = 170, padL = 18, padR = 18, padBottom = 22;
+  const maxVal = Math.max(1, ...days.flatMap(d => [d.calls, d.missed, d.called_back]));
+  const stepX = days.length > 1 ? (w - padL - padR) / (days.length - 1) : 0;
+  const scaleY = v => (h - padBottom) - Math.round((v / maxVal) * (h - padBottom - 16));
+
+  const metrics = [
+    { key: 'calls', color: 'var(--accent)' },
+    { key: 'missed', color: 'var(--danger)' },
+    { key: 'called_back', color: 'var(--ok)' }
+  ];
+  const series = metrics.map(m => {
+    const points = days.map((d, i) => `${(padL + i*stepX).toFixed(1)},${scaleY(d[m.key])}`).join(' ');
+    const dots = days.map((d, i) => `<circle cx="${(padL + i*stepX).toFixed(1)}" cy="${scaleY(d[m.key])}" r="2.5" fill="${m.color}"></circle>`).join('');
+    return `<polyline points="${points}" fill="none" stroke="${m.color}" stroke-width="2"></polyline>${dots}`;
+  }).join('');
+
+  const labelEvery = Math.max(1, Math.ceil(days.length / 10));
+  const labels = days.map((d, i) => i % labelEvery !== 0 ? '' : `
+    <text x="${(padL + i*stepX).toFixed(1)}" y="${h - 4}" text-anchor="middle" font-size="10" fill="var(--muted)">${d.day.slice(8,10)}.${d.day.slice(5,7)}</text>`).join('');
+
+  return `
+    <svg viewBox="0 0 ${w} ${h}" style="width:100%;max-width:900px;height:auto;color:var(--text)">
+      <line x1="${padL}" y1="${h-padBottom}" x2="${w-padR}" y2="${h-padBottom}" stroke="var(--border)" stroke-width="1"></line>
+      ${series}
+      ${labels}
+    </svg>
+    <div class="row" style="gap:16px;margin-top:8px;font-size:12px">
+      <span><span style="display:inline-block;width:10px;height:10px;background:var(--accent);border-radius:2px;margin-right:4px"></span>Звонки</span>
+      <span><span style="display:inline-block;width:10px;height:10px;background:var(--danger);border-radius:2px;margin-right:4px"></span>Пропущено</span>
+      <span><span style="display:inline-block;width:10px;height:10px;background:var(--ok);border-radius:2px;margin-right:4px"></span>Перезвонили</span>
+    </div>`;
+}
+
 async function confirmAdmin(id) { await api(`/admins/${id}/confirm`, { method: 'POST' }); navigate('dashboard'); }
 async function rejectAdmin(id) { if (!confirm('Отклонить? Запись будет удалена.')) return; await api(`/admins/${id}`, { method: 'DELETE' }); navigate('dashboard'); }
 
 // ================= ЗВОНКИ =================
+// "Пропущенные" — не отдельный пункт меню, а переключатель вида на этой же
+// странице (см. callsView), чтобы не плодить лишние разделы в навигации.
 let callsFilter = {};
+let callsView = 'all'; // 'all' | 'missed'
 RENDERERS.calls = async function renderCalls() {
   const main = document.getElementById('main');
   main.innerHTML = `
     <h2>Звонки</h2>
+    <div class="row" style="margin-bottom:8px">
+      <button class="${callsView==='all'?'primary':''}" onclick="setCallsView('all')">Все звонки</button>
+      <button class="${callsView==='missed'?'primary':''}" onclick="setCallsView('missed')">Пропущенные и перезвоны</button>
+    </div>
+    ${callsView === 'all' ? `
     <div class="card row">
       <select id="f-salon"><option value="">Все объекты</option>${SALONS.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select>
       <select id="f-admin"><option value="">Все администраторы</option>${ADMINS.map(a=>`<option value="${a.id}">${esc(a.name)} (${esc(salonName(a.salon_id))})</option>`).join('')}</select>
@@ -272,12 +373,14 @@ RENDERERS.calls = async function renderCalls() {
         <option value="callback">Перезвонить</option><option value="refusal">Отказ</option><option value="spam">Спам</option></select>
       <select id="f-direction"><option value="">Вход/исход</option><option value="in">Входящие</option><option value="out">Исходящие</option></select>
       <button onclick="applyCallsFilter()">Показать</button>
-    </div>
+    </div>` : ''}
     <div class="card" id="calls-table">Загрузка…</div>
     <div id="modal-root"></div>
   `;
-  await loadCalls();
+  if (callsView === 'missed') await loadMissedCalls(); else await loadCalls();
 };
+
+function setCallsView(view) { callsView = view; RENDERERS.calls(); }
 
 function applyCallsFilter() {
   callsFilter = {
@@ -366,19 +469,17 @@ async function reprocessCall(id) {
   loadCalls();
 }
 
-// ================= ПРОПУЩЕННЫЕ =================
-RENDERERS.missed = async function renderMissed() {
-  const main = document.getElementById('main');
-  main.innerHTML = `<h2>Пропущенные и перезвоны</h2><div class="card" id="missed-table">Загрузка…</div>`;
+// Пропущенные и перезвоны — вид внутри страницы "Звонки" (см. setCallsView)
+async function loadMissedCalls() {
   const calls = await api('/calls?missed=1');
   const badge = { on_time: '🟢 вовремя', late: '🟡 позже', none: '🔴 не перезвонили' };
-  document.getElementById('missed-table').innerHTML = `
+  document.getElementById('calls-table').innerHTML = `
     <table><tr><th>Дата</th><th>Объект</th><th>Телефон</th><th>Клиент</th><th>Перезвон</th><th>Через</th></tr>
       ${calls.map(c => `<tr><td>${esc(c.started_at)}</td><td>${esc(c.salon_name)}</td><td>${esc(c.caller_phone||'—')}</td>
         <td>${esc(c.client_name||'—')}</td><td>${badge[c.callback_status] || '⏳ ожидание'}</td>
         <td>${c.callback_minutes!=null ? c.callback_minutes+' мин' : '—'}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">Пропущенных нет</td></tr>'}
     </table>`;
-};
+}
 
 // ================= КЛИЕНТЫ =================
 RENDERERS.clients = async function renderClients() {
@@ -433,6 +534,7 @@ RENDERERS.admins = async function renderAdmins() {
   ADMINS = await api('/admins');
   const main = document.getElementById('main');
   main.innerHTML = `
+    ${settingsTabsHtml('admins')}
     <div class="row between"><h2>Администраторы</h2><button class="primary" onclick="showAdminForm()">+ Добавить вручную</button></div>
     <div class="card">
       <table><tr><th>Имя</th><th>Объект</th><th>Статус</th><th>Логин</th><th>Телефон UIS</th><th></th></tr>
@@ -534,6 +636,7 @@ RENDERERS.salons = async function renderSalons() {
   SALONS = await api('/salons?all=1');
   const main = document.getElementById('main');
   main.innerHTML = `
+    ${settingsTabsHtml('salons')}
     <div class="row between"><h2>Салоны и сауна</h2><button class="primary" onclick="showSalonForm()">+ Добавить объект</button></div>
     <div class="card">
       <table><tr><th>Название</th><th>Тип</th><th>Телефон</th><th>Чек-лист</th><th>Статус</th><th></th></tr>
@@ -697,6 +800,7 @@ RENDERERS.checklist = async function renderChecklist() {
     </div>`;
 
   main.innerHTML = `
+    ${settingsTabsHtml('checklist')}
     <h2>Чек-листы контроля скрипта</h2>
     ${tplBlock('Салон', 'salon', salonTpl)}
     ${tplBlock('Сауна', 'sauna', saunaTpl)}
@@ -768,6 +872,7 @@ RENDERERS.settings = async function renderSettings() {
   ]);
   const main = document.getElementById('main');
   main.innerHTML = `
+    ${settingsTabsHtml('settings')}
     <h2>Настройки</h2>
     <div class="card">
       <h3>🤖 ИИ-обработка (OpenAI)</h3>

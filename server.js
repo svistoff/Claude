@@ -439,6 +439,33 @@ app.get('/api/dashboard/number-ranking', auth.requireAdmin, (req, res) => {
   res.json({ period, from, till, ranking });
 });
 
+// динамика звонков по дням за период — для линейного графика на дашборде
+app.get('/api/dashboard/calls-timeseries', auth.requireAdmin, (req, res) => {
+  const period = ['today', 'week', 'month'].includes(req.query.period) ? req.query.period : 'week';
+  const { from, till } = periodBounds(period, getTzOffset());
+  const rows = db.prepare(`
+    SELECT substr(started_at,1,10) AS day,
+      COUNT(*) AS calls,
+      SUM(CASE WHEN direction='in' AND is_answered=0 THEN 1 ELSE 0 END) AS missed,
+      SUM(CASE WHEN direction='in' AND is_answered=0 AND callback_status IN ('on_time','late') THEN 1 ELSE 0 END) AS called_back
+    FROM calls WHERE started_at >= ? AND started_at <= ?
+    GROUP BY day
+  `).all(from, till);
+  const byDay = new Map(rows.map(r => [r.day, r]));
+
+  // заполняем пропущенные дни нулями, чтобы график не "перепрыгивал"
+  const days = [];
+  const cur = new Date(from.slice(0, 10) + 'T00:00:00Z');
+  const end = new Date(till.slice(0, 10) + 'T00:00:00Z');
+  while (cur <= end) {
+    const key = cur.toISOString().slice(0, 10);
+    const r = byDay.get(key);
+    days.push({ day: key, calls: r ? r.calls : 0, missed: r ? r.missed : 0, called_back: r ? r.called_back : 0 });
+    cur.setUTCDate(cur.getUTCDate() + 1);
+  }
+  res.json({ period, from, till, days });
+});
+
 // ================= КЛИЕНТЫ =================
 app.get('/api/clients', auth.requireAdmin, (req, res) => {
   const q = req.query.q ? `%${req.query.q}%` : null;
