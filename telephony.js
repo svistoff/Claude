@@ -178,29 +178,34 @@ async function ingestCalls(sinceStr, tillStr) {
     if (candidate && excludedNumbers.has(candidate)) continue;
 
     let salon = candidate ? salonsById.get(phoneMap.get(candidate)) : null;
+    const numberDesc = c.virtual_phone_number || c.communication_number;
 
-    if (!salon && candidate && sharedIvrNumbers.has(candidate)) {
-      const numberDesc = c.virtual_phone_number || c.communication_number;
-
-      // сначала бесплатный способ — метка уже пришла в этом же запросе
+    // Метка employees — бесплатная (уже пришла в этом же запросе) и полезна
+    // не только на двух известных номерах общего меню: часть номеров
+    // динамического коллтрекинга тоже заводится на несколько салонов сразу
+    // (например, если один салон не берёт трубку — звонок уходит в другой),
+    // поэтому пробуем её для ЛЮБОГО ещё не сопоставленного звонка.
+    let employeesLabel = null;
+    if (!salon && candidate) {
       const byEmployees = resolveSalonByEmployees(c, actionNameMap, salonsById);
       salon = byEmployees.salon;
-
-      if (!salon && byEmployees.label) {
-        console.log(`[telephony] Звонок на общий номер меню ${numberDesc} (id=${c.id}): метка UIS "${byEmployees.label}", но ни один салон не сопоставлен — добавьте "${byEmployees.label}" в список меток нужного салона.`);
+      employeesLabel = byEmployees.label;
+      if (!salon && employeesLabel) {
+        console.log(`[telephony] Звонок на номер ${numberDesc} (id=${c.id}): метка UIS "${employeesLabel}", но ни один салон не сопоставлен — добавьте "${employeesLabel}" в список меток нужного салона.`);
       }
+    }
 
-      // если метки не было вовсе — пробуем платный резерв через плечи звонка
-      // (другой источник трафика может не заполнять employees, но иметь action_name)
-      if (!salon && !byEmployees.label) {
-        const resolved = await resolveSalonByLegs(c, actionNameMap, salonsById);
-        salon = resolved.salon;
-        if (!salon) {
-          if (resolved.actionName) {
-            console.log(`[telephony] Звонок на общий номер меню ${numberDesc} (id=${c.id}): плечо ушло в сценарий UIS "${resolved.actionName}", но ни один салон не сопоставлен — добавьте "${resolved.actionName}" в список меток нужного салона.`);
-          } else {
-            console.log(`[telephony] Звонок на общий номер меню ${numberDesc} (id=${c.id}): не удалось определить салон ни по employees, ни по плечам (клиент мог положить трубку в меню, не дозвонившись до салона).`);
-          }
+    // Платный резерв через плечи звонка — оставляем только для номеров,
+    // явно заведённых как общее меню (чтобы не расходовать лимит UIS API
+    // на десятки рекламных номеров, у которых просто нет метки employees).
+    if (!salon && candidate && sharedIvrNumbers.has(candidate) && !employeesLabel) {
+      const resolved = await resolveSalonByLegs(c, actionNameMap, salonsById);
+      salon = resolved.salon;
+      if (!salon) {
+        if (resolved.actionName) {
+          console.log(`[telephony] Звонок на общий номер меню ${numberDesc} (id=${c.id}): плечо ушло в сценарий UIS "${resolved.actionName}", но ни один салон не сопоставлен — добавьте "${resolved.actionName}" в список меток нужного салона.`);
+        } else {
+          console.log(`[telephony] Звонок на общий номер меню ${numberDesc} (id=${c.id}): не удалось определить салон ни по employees, ни по плечам (клиент мог положить трубку в меню, не дозвонившись до салона).`);
         }
       }
     }

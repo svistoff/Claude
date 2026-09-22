@@ -292,7 +292,7 @@ function applyCallsFilter() {
 async function loadCalls() {
   const qs = Object.entries(callsFilter).filter(([,v]) => v).map(([k,v]) => `${k}=${encodeURIComponent(v)}`).join('&');
   const calls = await api('/calls' + (qs ? '?' + qs : ''));
-  const statusLabel = { new:'новый', processing:'обработка', done:'готово', error:'ошибка', missed:'пропущен', skipped:'без ответа' };
+  const statusLabel = { new:'новый', processing:'обработка', done:'готово', error:'ошибка', missed:'пропущен', skipped:'без ответа', imported:'историческое (без ИИ)' };
   document.getElementById('calls-table').innerHTML = `
     <table>
       <tr><th>Дата</th><th>Объект</th><th>Напр.</th><th>Телефон</th><th>Клиент</th><th>Администратор</th><th>Чек-лист</th><th>Исход</th><th>Статус</th><th></th></tr>
