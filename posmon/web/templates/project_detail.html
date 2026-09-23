@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block title %}{{ project.name }}{% endblock %}
+{% block content %}
+<p class="crumbs"><a href="/projects">Проекты</a> / {{ project.name }}</p>
+<h1>{{ project.name }} <small class="muted">ТОП-{{ project.depth }}</small></h1>
+
+{% if user.role == 'Admin' %}
+<div class="runbar">
+  <form method="post" action="/projects/{{ project.id }}/run" class="inline">
+    <input type="hidden" name="mode" value="seo">
+    <button type="submit">▶ Проверить сейчас — SEO (ночной режим)</button>
+  </form>
+  <form method="post" action="/projects/{{ project.id }}/run" class="inline">
+    <input type="hidden" name="mode" value="battle">
+    <button type="submit" class="secondary">▶ Боевая выдача (с рекламой)</button>
+  </form>
+  <span class="muted small">Прогон идёт в фоне; обновите страницу через минуту.</span>
+</div>
+{% endif %}
+
+<h2>Позиции <span class="muted small">режим:
+  <a href="?mode=seo" class="{{ 'on' if mode=='seo' }}">SEO</a> ·
+  <a href="?mode=battle" class="{{ 'on' if mode=='battle' }}">боевой</a></span></h2>
+{% if active_profiles %}
+<div class="scroll-x">
+<table class="grid positions">
+  <thead>
+    <tr><th>Запрос</th><th>Сайт</th>{% for p in active_profiles %}<th class="num">{{ p.name }}</th>{% endfor %}</tr>
+  </thead>
+  <tbody>
+    {% for r in table_rows %}
+    <tr>
+      <td><a href="/queries/{{ r.query.id }}?site={{ r.site.id }}&mode={{ mode }}">{{ r.query.query }}</a></td>
+      <td><a href="/sites/{{ r.site.id }}?mode={{ mode }}">{{ r.site.name }}</a></td>
+      {% for c in r.cells %}
+      <td class="num">{% if c %}<span class="pos">{{ c }}</span>{% elif c == 0 %}0{% else %}<span class="muted">&gt;{{ project.depth }}</span>{% endif %}</td>
+      {% endfor %}
+    </tr>
+    {% else %}
+    <tr><td colspan="{{ active_profiles|length + 2 }}" class="muted">Пока нет данных. Добавьте запросы/сайты/профили и запустите проверку.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<p class="muted">Добавьте хотя бы один активный профиль, чтобы собирать позиции.</p>
+{% endif %}
+
+<div class="cols">
+  <section>
+    <h2>Запросы <span class="muted small">{{ queries|length }}</span></h2>
+    <ul class="chips">
+      {% for q in queries %}
+      <li class="{{ 'off' if not q.active }}">
+        {{ q.query }}{% if q.is_local %} <span class="tag">лок</span>{% endif %}
+        {% if user.role == 'Admin' %}
+        <form method="post" action="/queries/{{ q.id }}/toggle" class="inline"><button class="link">{{ '⏸' if q.active else '▶' }}</button></form>
+        <form method="post" action="/queries/{{ q.id }}/delete" class="inline"><button class="link danger">✕</button></form>
+        {% endif %}
+      </li>
+      {% else %}<li class="muted">нет запросов</li>{% endfor %}
+    </ul>
+    {% if user.role == 'Admin' %}
+    <form method="post" action="/projects/{{ project.id }}/queries" class="stack">
+      <textarea name="queries_text" rows="3" placeholder="Один запрос в строке&#10;ресторан Екатеринбург&#10;бар Екатеринбург" required></textarea>
+      <div class="form-row">
+        <input type="text" name="group_name" placeholder="Группа (необязательно)">
+        <label class="check"><input type="checkbox" name="is_local" value="true"> локальный (трекать Бизнес)</label>
+        <button type="submit">Добавить</button>
+      </div>
+    </form>
+    {% endif %}
+  </section>
+
+  <section>
+    <h2>Сайты <span class="muted small">{{ sites|length }}</span></h2>
+    <ul class="chips">
+      {% for s in sites %}
+      <li class="{{ 'off' if not s.active }}">
+        <a href="/sites/{{ s.id }}">{{ s.name }}</a> <span class="muted small">{{ s.domain }}</span>
+        {% if user.role == 'Admin' %}
+        <form method="post" action="/sites/{{ s.id }}/toggle" class="inline"><button class="link">{{ '⏸' if s.active else '▶' }}</button></form>
+        <form method="post" action="/sites/{{ s.id }}/delete" class="inline"><button class="link danger">✕</button></form>
+        {% endif %}
+      </li>
+      {% else %}<li class="muted">нет сайтов</li>{% endfor %}
+    </ul>
+    {% if user.role == 'Admin' %}
+    <form method="post" action="/projects/{{ project.id }}/sites" class="stack">
+      <div class="form-row">
+        <input type="text" name="name" placeholder="Название" required>
+        <input type="text" name="url" placeholder="https://example.ru/">
+        <select name="match_mode"><option value="domain">домен+поддомены</option><option value="exact_host">точный host</option></select>
+        <button type="submit">Добавить</button>
+      </div>
+    </form>
+    {% endif %}
+  </section>
+
+  <section>
+    <h2>Профили <span class="muted small">{{ profiles|length }}</span></h2>
+    <ul class="chips">
+      {% for p in profiles %}
+      <li class="{{ 'off' if not p.active }}">
+        {{ p.name }} <span class="muted small">{{ p.device }} · {{ p.source }}</span>
+        {% if user.role == 'Admin' %}
+        <form method="post" action="/profiles/{{ p.id }}/toggle" class="inline"><button class="link">{{ '⏸' if p.active else '▶' }}</button></form>
+        <form method="post" action="/profiles/{{ p.id }}/delete" class="inline"><button class="link danger">✕</button></form>
+        {% endif %}
+      </li>
+      {% else %}<li class="muted">нет профилей</li>{% endfor %}
+    </ul>
+    {% if user.role == 'Admin' %}
+    <form method="post" action="/projects/{{ project.id }}/profiles" class="stack">
+      <div class="form-row">
+        <input type="text" name="name" placeholder="Название (напр. Desktop)" required>
+        <select name="device"><option value="desktop">desktop</option><option value="mobile">mobile</option></select>
+        <select name="source"><option value="api">api (Search API)</option><option value="browser">browser (персонализ.)</option></select>
+        <button type="submit">Добавить</button>
+      </div>
+    </form>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

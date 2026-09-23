@@ -10,7 +10,7 @@
   <tbody>
     {% for p in projects %}
     <tr class="{{ 'inactive' if not p.active }}">
-      <td>{{ p.name }}{% if p.description %}<br><small>{{ p.description }}</small>{% endif %}</td>
+      <td><a href="/projects/{{ p.id }}">{{ p.name }}</a>{% if p.description %}<br><small>{{ p.description }}</small>{% endif %}</td>
       <td>ТОП-{{ p.depth }}</td>
       <td class="center">{{ '✓' if p.active else '—' }}</td>
       <td class="right">

@@ -1,5 +1,6 @@
 import httpx
 import pytest_asyncio
+from sqlalchemy import select
 
 from posmon import db
 from posmon.bootstrap import init_db_and_admin
@@ -47,6 +48,10 @@ async def test_bad_login_shows_error(client):
     assert "Неверный" in r.text
 
 
+async def _login(client):
+    await client.post("/login", data={"login": "admin", "password": "secret"})
+
+
 async def test_login_then_create_project(client):
     r = await client.get("/login")
     assert r.status_code == 200 and "Вход" in r.text
@@ -62,3 +67,49 @@ async def test_login_then_create_project(client):
 
     r = await client.get("/projects")
     assert r.status_code == 200 and "ЕКБ ГИД" in r.text
+
+
+async def test_full_config_flow_and_analytics(client):
+    from datetime import date
+
+    from posmon.db import get_sessionmaker
+    from posmon.models import PositionHistory, Profile, Query, Site
+
+    await _login(client)
+    await client.post("/projects", data={"name": "Проект1", "depth": "50", "description": ""})
+
+    # проект №1
+    r = await client.get("/projects/1")
+    assert r.status_code == 200 and "Проект1" in r.text
+
+    # добавляем запрос (массово), сайт, профиль
+    await client.post("/projects/1/queries", data={"queries_text": "ресторан екб\nбар екб", "group_name": "", "is_local": "true"})
+    await client.post("/projects/1/sites", data={"name": "Сайт A", "url": "https://a.ru/", "match_mode": "domain"})
+    await client.post("/projects/1/profiles", data={"name": "Desktop", "device": "desktop", "source": "api", "region": "Екатеринбург"})
+
+    r = await client.get("/projects/1")
+    assert "ресторан екб" in r.text and "Сайт A" in r.text and "Desktop" in r.text
+
+    # засеем историю позиции напрямую, затем проверим график
+    async with get_sessionmaker()() as s:
+        q = (await s.execute(select(Query))).scalars().first()
+        site = (await s.execute(select(Site))).scalars().first()
+        prof = (await s.execute(select(Profile))).scalars().first()
+        s.add(PositionHistory(project_id=1, query_id=q.id, site_id=site.id, profile_id=prof.id,
+                              date=date.today(), mode="seo", position=4, status="SUCCESS"))
+        await s.commit()
+        qid, sid = q.id, site.id
+
+    r = await client.get(f"/queries/{qid}?site={sid}&mode=seo")
+    assert r.status_code == 200 and "<svg" in r.text and "Desktop" in r.text
+
+    r = await client.get(f"/sites/{sid}?mode=seo")
+    assert r.status_code == 200 and "Средняя позиция" in r.text
+
+
+async def test_run_now_redirects(client):
+    await _login(client)
+    await client.post("/projects", data={"name": "P", "depth": "50", "description": ""})
+    r = await client.post("/projects/1/run", data={"mode": "seo"})
+    assert r.status_code == 303
+    assert "/projects/1" in r.headers["location"]

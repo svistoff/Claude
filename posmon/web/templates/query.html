@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}{{ query.query }}{% endblock %}
+{% block content %}
+<p class="crumbs"><a href="/projects/{{ query.project_id }}">← к проекту</a></p>
+<h1>{{ query.query }}</h1>
+
+<div class="controls">
+  <span class="muted small">Сайт:</span>
+  {% for s in sites %}
+    <a href="/queries/{{ query.id }}?site={{ s.id }}&mode={{ mode }}&days={{ days }}"
+       class="pill {{ 'on' if s.id == site_id }}">{{ s.name }}</a>
+  {% endfor %}
+  <span class="sep"></span>
+  <span class="muted small">Режим:</span>
+  <a href="/queries/{{ query.id }}?site={{ site_id }}&mode=seo&days={{ days }}" class="pill {{ 'on' if mode=='seo' }}">SEO (органика)</a>
+  <a href="/queries/{{ query.id }}?site={{ site_id }}&mode=battle&days={{ days }}" class="pill {{ 'on' if mode=='battle' }}">боевой (с рекламой)</a>
+  <span class="sep"></span>
+  <span class="muted small">Период:</span>
+  {% for d in [7, 30, 90] %}
+    <a href="/queries/{{ query.id }}?site={{ site_id }}&mode={{ mode }}&days={{ d }}" class="pill {{ 'on' if days==d }}">{{ d }}д</a>
+  {% endfor %}
+</div>
+
+{% if today_positions %}
+<div class="today">
+  <span class="muted small">Последнее:</span>
+  {% for t in today_positions %}
+    <span class="badge">{{ t.profile }} <b>#{{ t.value if t.value else '—' }}</b></span>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="chart-wrap">
+  {{ chart_svg | safe }}
+  <p class="muted small">Ось Y инвертирована: выше линия — лучше позиция.
+    {% if mode == 'battle' %}Боевой режим: позиция с учётом рекламы сверху.{% endif %}</p>
+</div>
+{% endblock %}

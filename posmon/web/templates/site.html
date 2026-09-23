@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}{{ site.name }}{% endblock %}
+{% block content %}
+<p class="crumbs"><a href="/projects/{{ site.project_id }}">← к проекту</a></p>
+<h1>{{ site.name }} <small class="muted">{{ site.domain }}</small></h1>
+
+<div class="controls">
+  <span class="muted small">Профиль:</span>
+  {% for p in profiles %}
+    <a href="/sites/{{ site.id }}?profile={{ p.id }}&mode={{ mode }}" class="pill {{ 'on' if p.id == profile_id }}">{{ p.name }}</a>
+  {% endfor %}
+  <span class="sep"></span>
+  <a href="/sites/{{ site.id }}?profile={{ profile_id }}&mode=seo" class="pill {{ 'on' if mode=='seo' }}">SEO</a>
+  <a href="/sites/{{ site.id }}?profile={{ profile_id }}&mode=battle" class="pill {{ 'on' if mode=='battle' }}">боевой</a>
+</div>
+
+{% if metrics %}
+<div class="cards">
+  <div class="card"><span class="num">{{ metrics.found }}/{{ metrics.total }}</span><span class="label">Запросов в выдаче (coverage {{ (metrics.coverage*100)|round(0)|int }}%)</span></div>
+  <div class="card"><span class="num">{{ metrics.average if metrics.average is not none else '—' }}</span><span class="label">Средняя позиция</span></div>
+  <div class="card"><span class="num">{{ metrics.median if metrics.median is not none else '—' }}</span><span class="label">Медиана</span></div>
+  <div class="card"><span class="num">{{ metrics.top[3] }}</span><span class="label">ТОП-3</span></div>
+  <div class="card"><span class="num">{{ metrics.top[10] }}</span><span class="label">ТОП-10</span></div>
+  <div class="card"><span class="num">{{ metrics.top[20] }}</span><span class="label">ТОП-20</span></div>
+  <div class="card"><span class="num">{{ metrics.top[50] }}</span><span class="label">ТОП-50</span></div>
+</div>
+<p class="muted small">Средняя и медиана считаются без не найденных запросов; coverage показывает долю запросов с позицией.</p>
+{% else %}
+<p class="muted">Нет данных для выбранного профиля.</p>
+{% endif %}
+{% endblock %}
