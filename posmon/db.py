@@ -37,9 +37,15 @@ def make_engine(database_url: str | None = None) -> AsyncEngine:
         # по умолчанию выключен). Нужно для чистого удаления проекта со всеми
         # связанными записями.
         @event.listens_for(engine.sync_engine, "connect")
-        def _sqlite_fk_on(dbapi_conn, _rec):  # pragma: no cover - тривиально
+        def _sqlite_pragmas(dbapi_conn, _rec):  # pragma: no cover - тривиально
             cur = dbapi_conn.cursor()
             cur.execute("PRAGMA foreign_keys=ON")
+            # Ждать освобождения блокировки до 15с вместо мгновенной ошибки
+            # "database is locked" при параллельной записи воркеров.
+            cur.execute("PRAGMA busy_timeout=15000")
+            # WAL: одновременное чтение во время записи, меньше конфликтов.
+            cur.execute("PRAGMA journal_mode=WAL")
+            cur.execute("PRAGMA synchronous=NORMAL")
             cur.close()
 
     return engine
