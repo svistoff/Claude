@@ -16,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from ..config import Settings
-from ..domain.results import CheckStatus
+from ..domain.results import CheckStatus, RunMode
 from ..models import CheckRun, Profile, Project, Query, Site
 from ..providers.base import SearchProvider
 from .collector import run_query_check
@@ -55,11 +55,12 @@ async def run_project_batch(
     settings: Settings,
     project_id: int,
     *,
+    mode: str = RunMode.SEO.value,
     provider_factory: ProviderFactory = build_provider,
     retry_delays: tuple[int, ...] = DEFAULT_RETRY_DELAYS,
     sleeper: Sleeper = asyncio.sleep,
 ) -> BatchSummary:
-    """Прогнать все активные запросы × профили проекта."""
+    """Прогнать все активные запросы × профили проекта в режиме ``mode``."""
     async with maker() as s:
         project = await s.get(Project, project_id)
         if project is None or not project.active:
@@ -87,7 +88,8 @@ async def run_project_batch(
         async with sem:
             status, run_id = await _run_pair_with_retry(
                 maker, settings, project_id, query_id, profile_id, depth,
-                provider_factory=provider_factory, retry_delays=retry_delays, sleeper=sleeper,
+                mode=mode, provider_factory=provider_factory,
+                retry_delays=retry_delays, sleeper=sleeper,
             )
         async with lock:
             summary.register(status, run_id)
@@ -109,6 +111,7 @@ async def _run_pair_with_retry(
     profile_id: int,
     depth: int,
     *,
+    mode: str,
     provider_factory: ProviderFactory,
     retry_delays: tuple[int, ...],
     sleeper: Sleeper,
@@ -137,7 +140,7 @@ async def _run_pair_with_retry(
             last_run = await run_query_check(
                 s, project_id=project_id, query=query, profile=profile, sites=list(sites),
                 provider=provider, depth=depth, region_lr=settings.region_lr,
-                timezone_name=settings.timezone, attempt=attempt,
+                timezone_name=settings.timezone, mode=mode, attempt=attempt,
             )
             status = CheckStatus(last_run.status)
             if status.is_confirmed:

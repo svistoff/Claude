@@ -115,6 +115,7 @@ class CheckRun(Base):
     query_id: Mapped[int] = mapped_column(ForeignKey("queries.id", ondelete="CASCADE"), index=True)
     profile_id: Mapped[int] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
     source: Mapped[str] = mapped_column(String(16), nullable=False)  # api|browser
+    mode: Mapped[str] = mapped_column(String(16), default="seo", nullable=False)  # seo|battle
     search_url: Mapped[str | None] = mapped_column(String(2048))
     status: Mapped[str] = mapped_column(String(16), default="QUEUED", nullable=False, index=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -176,6 +177,8 @@ class Check(Base):
     checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     position: Mapped[int | None] = mapped_column(Integer)           # органика, NULL если не найден
     business_position: Mapped[int | None] = mapped_column(Integer)  # блок Бизнеса, NULL/для локальных
+    visual_position: Mapped[int | None] = mapped_column(Integer)    # боевой режим: номер с учётом рекламы
+    ads_above: Mapped[int | None] = mapped_column(Integer)          # боевой режим: реклам над сайтом
     status: Mapped[str] = mapped_column(String(16), nullable=False)
 
     run: Mapped[CheckRun] = relationship(back_populates="checks")
@@ -192,13 +195,17 @@ class PositionHistory(Base):
     site_id: Mapped[int] = mapped_column(ForeignKey("sites.id", ondelete="CASCADE"), index=True)
     profile_id: Mapped[int] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
     date: Mapped[datetime] = mapped_column(Date, nullable=False, index=True)
+    mode: Mapped[str] = mapped_column(String(16), default="seo", nullable=False)  # seo|battle
     position: Mapped[int | None] = mapped_column(Integer)
     business_position: Mapped[int | None] = mapped_column(Integer)
+    visual_position: Mapped[int | None] = mapped_column(Integer)
+    ads_above: Mapped[int | None] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
 
     __table_args__ = (
         UniqueConstraint(
-            "query_id", "site_id", "profile_id", "date", name="uq_position_history_daily"
+            "query_id", "site_id", "profile_id", "date", "mode",
+            name="uq_position_history_daily",
         ),
     )
 

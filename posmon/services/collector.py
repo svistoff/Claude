@@ -17,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..domain.position import match_site
-from ..domain.results import CheckStatus
+from ..domain.results import CheckStatus, RunMode
 from ..models import Check, CheckRun, PositionHistory, Profile, Query, SearchResult, Site
 from ..providers.base import SearchProvider, SearchRequest
 
@@ -44,17 +44,22 @@ async def run_query_check(
     depth: int,
     region_lr: int,
     timezone_name: str = "Asia/Yekaterinburg",
+    mode: str = RunMode.SEO.value,
     attempt: int = 1,
 ) -> CheckRun:
     """Выполнить одну выборку выдачи и записать позиции сайтов.
 
+    ``mode`` — режим измерения (``seo`` или ``battle``, раздел 1.5 ТЗ). В боевом
+    режиме дополнительно считаются визуальная позиция и число реклам над сайтом.
     Возвращает сохранённый :class:`CheckRun` с проставленным статусом.
     """
+    is_battle = mode == RunMode.BATTLE.value
     run = CheckRun(
         project_id=project_id,
         query_id=query.id,
         profile_id=profile.id,
         source=getattr(provider, "source", "unknown"),
+        mode=mode,
         status=CheckStatus.RUNNING.value,
         started_at=_now(),
         attempt=attempt,
@@ -111,6 +116,7 @@ async def run_query_check(
             site.domain,
             site.match_mode,
             with_business=query.is_local,
+            with_visual=is_battle,
         )
         site_status = CheckStatus.SUCCESS if matched.found else CheckStatus.NOT_FOUND
         session.add(
@@ -123,6 +129,8 @@ async def run_query_check(
                 checked_at=checked_at,
                 position=matched.position,
                 business_position=matched.business_position,
+                visual_position=matched.visual_position,
+                ads_above=matched.ads_above,
                 status=site_status.value,
             )
         )
@@ -133,8 +141,11 @@ async def run_query_check(
             site_id=site.id,
             profile_id=profile.id,
             day=today,
+            mode=mode,
             position=matched.position,
             business_position=matched.business_position,
+            visual_position=matched.visual_position,
+            ads_above=matched.ads_above,
             status=site_status,
         )
 
@@ -151,14 +162,18 @@ async def _upsert_history(
     site_id: int,
     profile_id: int,
     day: date,
+    mode: str,
     position: int | None,
     business_position: int | None,
+    visual_position: int | None,
+    ads_above: int | None,
     status: CheckStatus,
 ) -> None:
     """Обновить/создать дневную запись истории позиции.
 
-    Одна запись на (запрос × сайт × профиль × дата): последняя проверка за день
-    перезаписывает значение. История прошлых дней не трогается (раздел 49 ТЗ).
+    Одна запись на (запрос × сайт × профиль × дата × режим): последняя проверка
+    за день перезаписывает значение, а seo- и battle-срезы хранятся раздельно.
+    История прошлых дней не трогается (раздел 49 ТЗ).
     """
     existing = (
         await session.execute(
@@ -167,6 +182,7 @@ async def _upsert_history(
                 PositionHistory.site_id == site_id,
                 PositionHistory.profile_id == profile_id,
                 PositionHistory.date == day,
+                PositionHistory.mode == mode,
             )
         )
     ).scalar_one_or_none()
@@ -179,12 +195,17 @@ async def _upsert_history(
                 site_id=site_id,
                 profile_id=profile_id,
                 date=day,
+                mode=mode,
                 position=position,
                 business_position=business_position,
+                visual_position=visual_position,
+                ads_above=ads_above,
                 status=status.value,
             )
         )
     else:
         existing.position = position
         existing.business_position = business_position
+        existing.visual_position = visual_position
+        existing.ads_above = ads_above
         existing.status = status.value

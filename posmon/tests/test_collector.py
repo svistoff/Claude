@@ -87,6 +87,52 @@ async def test_history_upsert_same_day(session):
     assert len(runs) == 2  # но оба прогона сохранены (история проверок не теряется)
 
 
+async def test_battle_mode_records_visual_and_ads(session):
+    project, query, sites, profile = await _setup(session)
+    serp = [
+        SerpResult("https://ad1.ru", ResultType.AD_TOP),
+        SerpResult("https://ad2.ru", ResultType.AD_TOP),
+        SerpResult("https://site-a.ru/x", ResultType.ORGANIC),  # органика #1, визуально #3
+    ]
+    provider = MockProvider(default_serp=serp)
+
+    await run_query_check(
+        session, project_id=project.id, query=query, profile=profile, sites=sites,
+        provider=provider, depth=50, region_lr=54, mode="battle",
+    )
+    await session.commit()
+
+    a = (await session.execute(
+        select(Check).where(Check.site_id == sites[0].id)
+    )).scalar_one()
+    assert a.position == 1          # органика
+    assert a.visual_position == 3   # с учётом 2 реклам сверху
+    assert a.ads_above == 2
+
+    hist = (await session.execute(
+        select(PositionHistory).where(PositionHistory.site_id == sites[0].id)
+    )).scalar_one()
+    assert hist.mode == "battle"
+    assert hist.visual_position == 3
+
+
+async def test_seo_and_battle_history_are_separate(session):
+    project, query, sites, profile = await _setup(session)
+    provider = MockProvider(default_serp=_serp())
+
+    await run_query_check(session, project_id=project.id, query=query, profile=profile,
+                          sites=sites, provider=provider, depth=50, region_lr=54, mode="seo")
+    await run_query_check(session, project_id=project.id, query=query, profile=profile,
+                          sites=sites, provider=provider, depth=50, region_lr=54, mode="battle")
+    await session.commit()
+
+    # для одного сайта за день — 2 записи истории: seo и battle раздельно
+    rows = (await session.execute(
+        select(PositionHistory).where(PositionHistory.site_id == sites[0].id)
+    )).scalars().all()
+    assert {r.mode for r in rows} == {"seo", "battle"}
+
+
 async def test_local_query_tracks_business_position(session):
     project, query, sites, profile = await _setup(session, is_local=True)
     serp = [
