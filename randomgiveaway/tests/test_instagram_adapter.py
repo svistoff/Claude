@@ -68,6 +68,28 @@ async def test_finds_media_by_permalink_with_pagination_and_flattens_replies(mon
     assert top.source_user_id == "alex"
 
 
+async def test_matches_post_by_shortcode_across_p_and_reel_url_forms(monkeypatch):
+    """Реальный кейс: пользователь даёт ссылку .../p/<code>/, а Graph API
+    отдаёт permalink Reels как .../reel/<code>/ — тот же пост, разный путь."""
+    adapter = InstagramAdapter(access_token="fake-token")
+
+    async def fake_get(client, url, params):
+        if "comments" in url:
+            return {"data": [{"id": "c1", "text": "привет", "username": "alex"}]}
+        return {
+            "data": [
+                {"id": "media-other", "permalink": "https://www.instagram.com/reel/OTHERCODE/"},
+                {"id": "media-match", "permalink": "https://www.instagram.com/reel/Ddk5XykIOXd/"},
+            ]
+        }
+
+    monkeypatch.setattr(InstagramAdapter, "_get", staticmethod(fake_get))
+
+    comments = await adapter.fetch_comments("https://www.instagram.com/p/Ddk5XykIOXd/")
+    assert len(comments) == 1
+    assert comments[0].username == "alex"
+
+
 async def test_raises_friendly_error_when_post_not_found(monkeypatch):
     adapter = InstagramAdapter(access_token="fake-token")
 

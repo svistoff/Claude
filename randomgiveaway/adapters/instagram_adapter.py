@@ -19,12 +19,27 @@ ekb_guide. Доступ — через собственный long-lived access-
 """
 from __future__ import annotations
 
+import re
+
 import httpx
 
 from randomgiveaway.adapters.base import RawComment, SourceAdapter, SourceAdapterError
 
 GRAPH_API_VERSION = "v21.0"
 GRAPH_BASE = f"https://graph.instagram.com/{GRAPH_API_VERSION}"
+
+# Instagram отдаёт один и тот же пост по разным путям в зависимости от типа
+# медиа и того, откуда скопирована ссылка: /p/<code>/, /reel/<code>/,
+# /tv/<code>/ — Graph API в поле permalink возвращает канонический вариант
+# (для Reels — всегда /reel/), который может не совпадать с тем, что
+# реально скопировал человек. Сравнивать нужно по shortcode, не по URL
+# целиком.
+_SHORTCODE_RE = re.compile(r"/(?:p|reel|tv)/([^/?#]+)")
+
+
+def _extract_shortcode(url: str) -> str | None:
+    match = _SHORTCODE_RE.search(url)
+    return match.group(1) if match else None
 
 
 class InstagramAdapter(SourceAdapter):
@@ -50,14 +65,20 @@ class InstagramAdapter(SourceAdapter):
         return await self._fetch_all_comments(media_id)
 
     async def _find_media_id_by_permalink(self, post_url: str) -> str | None:
-        target = post_url.strip().rstrip("/")
+        target_shortcode = _extract_shortcode(post_url)
+        target_url = post_url.strip().rstrip("/")
         url = f"{GRAPH_BASE}/me/media"
         params: dict | None = {"fields": "id,permalink", "access_token": self._access_token, "limit": 50}
         async with httpx.AsyncClient(timeout=15) as client:
             while url:
                 data = await self._get(client, url, params)
                 for item in data.get("data", []):
-                    if item.get("permalink", "").rstrip("/") == target:
+                    permalink = item.get("permalink", "")
+                    if target_shortcode is not None:
+                        if _extract_shortcode(permalink) == target_shortcode:
+                            return item["id"]
+                    elif permalink.rstrip("/") == target_url:
+                        # ссылка нестандартного вида, без /p//reel//tv/ — сравниваем как есть
                         return item["id"]
                 url = data.get("paging", {}).get("next")
                 params = None  # "next" уже содержит все параметры в самой ссылке
