@@ -333,7 +333,7 @@ app.get('/api/calls', (req, res) => {
 
 app.get('/api/calls/:id', (req, res) => {
   const call = db.prepare(`
-    SELECT c.*, s.name AS salon_name, a.name AS matched_admin_name, cl.name AS client_name, cl.phone AS client_phone_norm
+    SELECT c.*, s.name AS salon_name, s.type AS salon_type, a.name AS matched_admin_name, cl.name AS client_name, cl.phone AS client_phone_norm
     FROM calls c JOIN salons s ON s.id = c.salon_id
     LEFT JOIN admins a ON a.id = c.matched_admin_id
     LEFT JOIN clients cl ON cl.id = c.client_id

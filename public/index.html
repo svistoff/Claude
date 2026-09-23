@@ -434,6 +434,7 @@ async function openCall(id) {
           <button onclick="document.querySelector('.modal-bg').remove()">✕</button>
         </div>
         <p class="muted">Длительность: ${c.duration_sec}с · Направление: ${c.direction==='in'?'входящий':'исходящий'} · Клиент: ${esc(c.client_name || c.caller_phone || '—')}</p>
+        <p class="muted">Набранный номер: ${esc(c.dialed_number || '—')} · Тип объекта / чек-лист: ${c.salon_type==='sauna'?'сауна':'салон'}</p>
 
         <div class="row">
           <label>Администратор:
