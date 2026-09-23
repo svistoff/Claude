@@ -51,6 +51,11 @@ def test_full_flow_create_import_draw_result():
         assert resp.status_code == 200, resp.text
         assert resp.json()["participants_after_rules"] == 4
 
+        resp = client.get(f"/api/giveaways/{giveaway_id}/participants")
+        assert resp.status_code == 200, resp.text
+        participants = resp.json()
+        assert {p["username"] for p in participants} == {"alex", "ivan", "kate", "max"}
+
         resp = client.post(f"/api/giveaways/{giveaway_id}/draw")
         assert resp.status_code == 200, resp.text
         draw_result = resp.json()

@@ -85,6 +85,16 @@ class ParticipantsPreviewOut(BaseModel):
     participants_after_rules: int
 
 
+class ParticipantOut(BaseModel):
+    """Для анимации на фронтенде (§10.2 ТЗ: прокрутка реальных usernames
+    участников) — не сам механизм выбора, он уже завершён к этому моменту."""
+
+    source_user_id: str
+    username: str | None
+    display_name: str | None
+    comment_count: int
+
+
 class WinnerOut(BaseModel):
     position: int
     source_user_id: str

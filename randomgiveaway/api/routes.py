@@ -15,6 +15,7 @@ from randomgiveaway.api.schemas import (
     CreateGiveawayRequest,
     DrawResultOut,
     GiveawayOut,
+    ParticipantOut,
     ParticipantsPreviewOut,
     PublicResultOut,
     WinnerOut,
@@ -141,6 +142,23 @@ async def get_participants_preview(giveaway_id: int) -> ParticipantsPreviewOut:
         participants_before_rules=all_participants_count,
         participants_after_rules=len(active_participants),
     )
+
+
+@router.get("/giveaways/{giveaway_id}/participants", response_model=list[ParticipantOut])
+async def list_participants(giveaway_id: int) -> list[ParticipantOut]:
+    """Список участников для фронтенда (§10.2 ТЗ: прокрутка реальных
+    usernames в анимации) — выбор победителя тут ни при чём, он уже
+    зафиксирован на сервере до/во время вызова /draw."""
+    active = await giveaway_service.get_active_participants(giveaway_id)
+    return [
+        ParticipantOut(
+            source_user_id=p.source_user_id,
+            username=p.username,
+            display_name=p.display_name,
+            comment_count=p.comment_count,
+        )
+        for p in active
+    ]
 
 
 @router.post("/giveaways/{giveaway_id}/draw", response_model=DrawResultOut, dependencies=[Depends(require_admin)])

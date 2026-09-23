@@ -2,10 +2,11 @@
 
 Реализация Этапа 1 ("Ядро") из ТЗ: создание розыгрыша, импорт участников,
 нормализация, фильтрация по правилам, криптостойкий случайный выбор
-победителей и запасных, сохранение результата с хэш-фиксацией. Плюс часть
-Этапа 4 — живой Instagram-адаптер для собственных постов ekb_guide. Без
-фронтенда/анимации (Этап 2) и без VK/Telegram-адаптеров — см. раздел
-«Что не сделано» ниже.
+победителей и запасных, сохранение результата с хэш-фиксацией. Плюс
+Этап 2 — фронтенд с полноэкранной анимацией розыгрыша и конфетти
+(`randomgiveaway/frontend/`, React + Vite), и часть Этапа 4 — живой
+Instagram-адаптер для собственных постов ekb_guide. Без VK/Telegram-
+адаптеров и без админки — см. раздел «Что не сделано» ниже.
 
 ## Ключевое решение по скоупу (важно!)
 
@@ -47,6 +48,9 @@ services/
   giveaways.py      # жизненный цикл розыгрыша, персистентность
 database/         # aiosqlite, схема как в bot/database (без ORM)
 api/              # FastAPI-роуты, схемы, обработчики ошибок (§26 ТЗ)
+frontend/         # React + Vite + Framer Motion + canvas-confetti (Этап 2)
+  src/api/          # клиент к тому же backend API, типы
+  src/pages/         # HomePage (настройка) / DrawPage (анимация) / PublicResultPage
 ```
 
 Random Engine получает только нормализованный список участников и ничего
@@ -74,17 +78,26 @@ Random Engine получает только нормализованный сп�
   находит медиа по permalink, поддерживает пагинацию. Плюс разовая
   OAuth-привязка (`/api/instagram/oauth/start`) и автопродление
   long-lived токена по cron — см. «Подключение Instagram» ниже.
+- **Фронтенд (Этап 2)** — `randomgiveaway/frontend/` (React + Vite +
+  Framer Motion + canvas-confetti): выбор источника/импорт, настройка
+  правил, предпросмотр участников, полноэкранный экран розыгрыша
+  (прокрутка реальных usernames → замедление → победитель → конфетти,
+  последовательно для нескольких позиций), финальный экран, публичная
+  страница результата (`/result/:publicId`). Выбор победителя всегда
+  выполняется на сервере (`POST /draw`) до начала анимации — фронтенд
+  только визуализирует уже готовый результат (§9, §22 ТЗ), никогда не
+  выбирает сам.
 
 ## Что не сделано (следующие этапы)
 
-- **Этап 2** — фронтенд, полноэкранная анимация, конфетти
-- **Этап 3** — публичная HTML-страница результата (сейчас есть только JSON API)
+- **Этап 3** — брендирование, QR-код результата, экспорт в PNG (по желанию)
 - **Этап 4 (остальное)** — `VKAdapter`/`TelegramAdapter` — пока заглушки с
   понятным `NotImplementedError`, см. `adapters/`
 - **Этап 5** — админка, логи, история розыгрышей для пользователя
 
 ## Локальный запуск
 
+Бэкенд:
 ```bash
 cd randomgiveaway
 python3 -m venv venv
@@ -95,11 +108,28 @@ venv/bin/uvicorn randomgiveaway.main:app --reload --port 8001
 
 Открыть `http://127.0.0.1:8001/docs` — интерактивная документация API.
 
+Фронтенд (в отдельном терминале, Node.js 20+):
+```bash
+cd randomgiveaway/frontend
+npm install
+npm run dev
+```
+Открыть `http://127.0.0.1:5173` — dev-сервер сам проксирует `/api`, `/health`,
+`/privacy`, `/terms` на бэкенд (см. `vite.config.ts`), поднятый на 8001.
+
 ## Тесты
 
+Бэкенд:
 ```bash
 cd randomgiveaway
 venv/bin/pytest
+```
+
+Фронтенд — типы и сборка (тестов уровня unit пока нет, есть только ручная
+сквозная проверка через Playwright при разработке):
+```bash
+cd randomgiveaway/frontend
+npm run build
 ```
 
 ## Деплой на VPS (Supervisor + Nginx)
@@ -114,11 +144,18 @@ git clone https://github.com/svistoff/Claude.git random-giveaway
 cd random-giveaway
 git checkout claude/analyze-requirements-rqi4m3   # или main, после мерджа
 
-# 2. Окружение
+# 2. Окружение (бэкенд)
 python3 -m venv venv
 venv/bin/pip install -r randomgiveaway/requirements.txt
 cp randomgiveaway/.env.example randomgiveaway/.env
 nano randomgiveaway/.env   # задать ADMIN_TOKEN (случайная строка), остальное можно оставить по умолчанию
+
+# 2а. Сборка фронтенда (нужен Node.js 20+; если на сервере его нет —
+# https://github.com/nodesource/distributions, пакет nodejs включает npm)
+cd randomgiveaway/frontend
+npm install
+npm run build          # создаёт randomgiveaway/frontend/dist — это и отдаёт Nginx
+cd /root/random-giveaway
 
 # 3. Проверить руками перед Supervisor
 venv/bin/uvicorn randomgiveaway.main:app --host 127.0.0.1 --port 8001
@@ -160,13 +197,27 @@ IP этого VPS (`77.110.125.73`) — это настраивается у р�
 curl https://random.ekb-guide.ru/health   # {"status":"ok"}
 ```
 
-`https://random.ekb-guide.ru/docs` откроет интерактивную документацию API.
-Открыть в браузере сам `random.ekb-guide.ru` пока бессмысленно — фронтенда
-нет (Этап 2), есть только JSON API.
+`https://random.ekb-guide.ru/docs` откроет интерактивную документацию API,
+а сам `https://random.ekb-guide.ru` — интерфейс с анимацией розыгрыша.
 
-После обновления кода на сервере: `git pull`, при необходимости
-`venv/bin/pip install -r randomgiveaway/requirements.txt`, затем
-`sudo supervisorctl restart random-giveaway-api`.
+После обновления кода на сервере:
+```bash
+git pull
+venv/bin/pip install -r randomgiveaway/requirements.txt   # если менялся backend
+cd randomgiveaway/frontend && npm install && npm run build && cd /root/random-giveaway   # если менялся frontend
+sudo supervisorctl restart random-giveaway-api
+sudo nginx -t && sudo systemctl reload nginx   # если менялся deploy/nginx/random-giveaway.conf
+```
+
+**Если у вас уже настроен HTTPS через certbot** (сертификат уже выпущен
+на этот домен) — не заменяйте `/etc/nginx/sites-available/random-giveaway.conf`
+целиком файлом из репозитория: certbot дописал в него блок `listen 443 ssl`
+и пути к сертификату, которых нет в версии из репо. Вместо этого точечно
+добавьте в уже существующий файл (внутри блока `server { listen 443 ssl; ... }`)
+три вещи из актуального `deploy/nginx/random-giveaway.conf`: `root`/`index`,
+location `/api/`, location для `docs|openapi.json|health|privacy|terms`, и
+замените старый `location / { proxy_pass ...; }` на `location / { try_files
+$uri /index.html; }`.
 
 ## Подключение Instagram
 
@@ -301,6 +352,7 @@ GET  /api/giveaways/{id}
 POST /api/giveaways/{id}/import                # CSV/JSON/список (form-data: file, format)
 POST /api/giveaways/{id}/load-comments          # живой источник; для instagram — реализовано, vk/telegram — 501
 POST /api/giveaways/{id}/participants/process   # предпросмотр (§8 ТЗ)
+GET  /api/giveaways/{id}/participants           # список участников — для анимации на фронтенде
 POST /api/giveaways/{id}/draw
 GET  /api/giveaways/{id}/result
 GET  /api/results/{public_id}                   # публично, без авторизации
