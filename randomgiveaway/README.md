@@ -97,19 +97,71 @@ cd randomgiveaway
 venv/bin/pytest
 ```
 
-## Деплой
+## Деплой на VPS (Supervisor + Nginx)
 
 По конвенции этого репозитория (см. корневой `CLAUDE.md`) — через
-**Supervisor**, не systemd:
+**Supervisor**, не systemd, код в `/root/<имя>`, не в `/opt/...`.
 
-- Конфиг: `deploy/supervisor/random-giveaway-api.conf`
-- На сервере код в `/root/random-giveaway` (не `/opt/...`)
-- Логи: `/var/log/random-giveaway-api.out.log` / `.err.log`
-- После изменения конфига на сервере: `supervisorctl reread && supervisorctl update`
+```bash
+# 1. Клонировать репозиторий (отдельная папка под этот сервис)
+cd /root
+git clone https://github.com/svistoff/Claude.git random-giveaway
+cd random-giveaway
+git checkout claude/analyze-requirements-rqi4m3   # или main, после мерджа
 
-Сервис слушает `127.0.0.1:8001` — рассчитан на проксирование через Nginx
-(`random.ekb-guide.ru` → Nginx → этот процесс). Конфиг Nginx и выпуск
-HTTPS-сертификата — отдельная задача, пока не входит в Этап 1.
+# 2. Окружение
+python3 -m venv venv
+venv/bin/pip install -r randomgiveaway/requirements.txt
+cp randomgiveaway/.env.example randomgiveaway/.env
+nano randomgiveaway/.env   # задать ADMIN_TOKEN (случайная строка), остальное можно оставить по умолчанию
+
+# 3. Проверить руками перед Supervisor
+venv/bin/uvicorn randomgiveaway.main:app --host 127.0.0.1 --port 8001
+# в другом окне: curl http://127.0.0.1:8001/health  →  {"status":"ok"}
+# Ctrl+C после проверки
+
+# 4. Supervisor
+sudo apt update && sudo apt install -y supervisor   # если ещё не стоит
+sudo cp deploy/supervisor/random-giveaway-api.conf /etc/supervisor/conf.d/
+sudo supervisorctl reread
+sudo supervisorctl update
+sudo supervisorctl start random-giveaway-api
+sudo supervisorctl status random-giveaway-api
+tail -f /var/log/random-giveaway-api.out.log /var/log/random-giveaway-api.err.log
+
+# 5. Nginx (домен)
+sudo apt install -y nginx   # если ещё не стоит
+sudo cp deploy/nginx/random-giveaway.conf /etc/nginx/sites-available/
+sudo ln -s /etc/nginx/sites-available/random-giveaway.conf /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+
+# 6. HTTPS
+sudo apt install -y certbot python3-certbot-nginx   # если ещё не стоит
+sudo certbot --nginx -d random.ekb-guide.ru
+```
+
+Перед шагом 5 нужно, чтобы A-запись `random.ekb-guide.ru` уже указывала на
+IP этого VPS (`77.110.125.73`) — это настраивается у регистратора/DNS-
+провайдера домена `ekb-guide.ru`, не на самом сервере.
+
+Если в `/etc/nginx` уже используется другая структура (например, всё в
+`conf.d/`, без `sites-available`/`sites-enabled`) — положите файл туда же,
+где лежат остальные конфиги на этом сервере, схема из примера не единственно
+возможная.
+
+Проверка после выпуска сертификата:
+
+```bash
+curl https://random.ekb-guide.ru/health   # {"status":"ok"}
+```
+
+`https://random.ekb-guide.ru/docs` откроет интерактивную документацию API.
+Открыть в браузере сам `random.ekb-guide.ru` пока бессмысленно — фронтенда
+нет (Этап 2), есть только JSON API.
+
+После обновления кода на сервере: `git pull`, при необходимости
+`venv/bin/pip install -r randomgiveaway/requirements.txt`, затем
+`sudo supervisorctl restart random-giveaway-api`.
 
 ## API (§20 ТЗ, пути ориентировочные)
 
