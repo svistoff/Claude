@@ -14,6 +14,7 @@ from randomgiveaway.api.errors import (
     source_adapter_error_handler,
     unhandled_error_handler,
 )
+from randomgiveaway.api.legal import router as legal_router
 from randomgiveaway.api.routes import router
 from randomgiveaway.config import config
 from randomgiveaway.database.database import close_db, init_db
@@ -32,6 +33,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Random.ЕКБ ГИД API", lifespan=lifespan)
 app.include_router(router)
+app.include_router(legal_router)
 
 app.add_exception_handler(GiveawayError, giveaway_error_handler)
 app.add_exception_handler(DrawError, draw_error_handler)
