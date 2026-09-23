@@ -8,7 +8,8 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # .env лежит рядом с этим файлом (randomgiveaway/.env), независимо от cwd
-load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env")
+ENV_PATH = Path(__file__).resolve().parent / ".env"
+load_dotenv(dotenv_path=ENV_PATH)
 
 
 def _get_str(name: str, default: str | None = None, required: bool = False) -> str:
@@ -37,9 +38,16 @@ class Config:
     # регистрации пользователей (см. §17 ТЗ: для MVP допустима замена
     # полноценной auth простой авторизацией администратора).
     admin_token: str | None
-    # Плейсхолдеры под Этап 4 (см. randomgiveaway/adapters/*).
-    # На Этапе 1 не используются — источники живые не реализованы.
+    # Long-lived токен собственного аккаунта ekb_guide (Instagram API with
+    # Instagram Login) — см. randomgiveaway/adapters/instagram_adapter.py и
+    # README.md. Обновляется автоматически через
+    # randomgiveaway/scripts/refresh_instagram_token.py (cron), либо разово
+    # через /api/instagram/oauth/start.
     instagram_access_token: str | None
+    instagram_app_id: str | None
+    instagram_app_secret: str | None
+    instagram_oauth_redirect_uri: str | None
+    # Плейсхолдеры под Этап 4 — VK/Telegram ещё не реализованы.
     vk_community_token: str | None
     telegram_session: str | None
 
@@ -54,6 +62,9 @@ def load_config() -> Config:
         log_level=_get_str("LOG_LEVEL", default="INFO"),
         admin_token=os.getenv("ADMIN_TOKEN") or None,
         instagram_access_token=os.getenv("INSTAGRAM_ACCESS_TOKEN") or None,
+        instagram_app_id=os.getenv("INSTAGRAM_APP_ID") or None,
+        instagram_app_secret=os.getenv("INSTAGRAM_APP_SECRET") or None,
+        instagram_oauth_redirect_uri=os.getenv("INSTAGRAM_OAUTH_REDIRECT_URI") or None,
         vk_community_token=os.getenv("VK_COMMUNITY_TOKEN") or None,
         telegram_session=os.getenv("TELEGRAM_SESSION") or None,
     )

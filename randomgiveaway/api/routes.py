@@ -2,7 +2,10 @@
 их изменение при реализации."""
 from __future__ import annotations
 
+import secrets
+
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 from randomgiveaway.adapters.import_adapter import ImportAdapter
 from randomgiveaway.adapters.instagram_adapter import InstagramAdapter
@@ -16,9 +19,11 @@ from randomgiveaway.api.schemas import (
     PublicResultOut,
     WinnerOut,
 )
-from randomgiveaway.config import config
+from randomgiveaway.config import ENV_PATH, config
 from randomgiveaway.database.models import Participant, Winner
+from randomgiveaway.env_file import set_env_var
 from randomgiveaway.services import giveaways as giveaway_service
+from randomgiveaway.services import instagram_oauth
 
 router = APIRouter(prefix="/api")
 
@@ -184,4 +189,89 @@ async def get_public_result(public_id: str) -> PublicResultOut:
         result_hash=g.result_hash,
         winners=winners,
         backups=backups,
+    )
+
+
+# --- Instagram OAuth: разовая привязка собственного аккаунта ekb_guide ---
+# (см. services/instagram_oauth.py и README.md). Это не публичная кнопка
+# "Войти через Instagram" для организаторов — вызывается один раз
+# администратором, залогиненным как ekb_guide.
+#
+# /start защищён require_admin (нужен X-Admin-Token) — без этого кто угодно,
+# наткнувшись на ссылку, мог бы авторизовать приложение своим Instagram-
+# аккаунтом и подменить INSTAGRAM_ACCESS_TOKEN в .env своим токеном.
+# state дополнительно защищает сам /callback от CSRF/replay — принимается
+# только code, полученный в ответ на state, который мы сами сгенерировали
+# в /start (см. README.md, как пройти /start из браузера при включённом
+# ADMIN_TOKEN).
+
+INSTAGRAM_SCOPES = "instagram_business_basic,instagram_business_manage_comments"
+
+_pending_oauth_states: set[str] = set()
+
+
+@router.get("/instagram/oauth/start", dependencies=[Depends(require_admin)])
+async def instagram_oauth_start() -> RedirectResponse:
+    if not (config.instagram_app_id and config.instagram_oauth_redirect_uri):
+        raise HTTPException(
+            status_code=400,
+            detail="INSTAGRAM_APP_ID / INSTAGRAM_OAUTH_REDIRECT_URI не заданы в .env",
+        )
+    state = secrets.token_urlsafe(24)
+    _pending_oauth_states.add(state)
+    url = (
+        "https://www.instagram.com/oauth/authorize"
+        f"?client_id={config.instagram_app_id}"
+        f"&redirect_uri={config.instagram_oauth_redirect_uri}"
+        f"&response_type=code&scope={INSTAGRAM_SCOPES}"
+        f"&state={state}"
+    )
+    return RedirectResponse(url)
+
+
+@router.get("/instagram/oauth/callback")
+async def instagram_oauth_callback(
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+    error_description: str | None = None,
+) -> HTMLResponse:
+    if error:
+        return HTMLResponse(
+            f"<h1>Instagram отказал в авторизации</h1><p>{error}: {error_description}</p>",
+            status_code=400,
+        )
+    if not state or state not in _pending_oauth_states:
+        raise HTTPException(
+            status_code=400,
+            detail="Неизвестный или уже использованный state — начните заново с /api/instagram/oauth/start",
+        )
+    _pending_oauth_states.discard(state)
+    if not code:
+        raise HTTPException(status_code=400, detail="Instagram не вернул code")
+    if not (config.instagram_app_id and config.instagram_app_secret and config.instagram_oauth_redirect_uri):
+        raise HTTPException(
+            status_code=500,
+            detail="INSTAGRAM_APP_ID / INSTAGRAM_APP_SECRET / INSTAGRAM_OAUTH_REDIRECT_URI не заданы в .env",
+        )
+
+    try:
+        token, expires_in = await instagram_oauth.exchange_code_for_long_lived_token(
+            code,
+            config.instagram_app_id,
+            config.instagram_app_secret,
+            config.instagram_oauth_redirect_uri,
+        )
+    except instagram_oauth.InstagramOAuthError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    set_env_var(ENV_PATH, "INSTAGRAM_ACCESS_TOKEN", token)
+    days = expires_in // 86400
+    return HTMLResponse(
+        "<h1>Instagram подключён</h1>"
+        f"<p>Токен сохранён в .env, действителен ещё ~{days} дней.</p>"
+        "<p>Перезапустите сервис, чтобы он подхватил новый токен:<br>"
+        "<code>sudo supervisorctl restart random-giveaway-api</code></p>"
+        "<p>И настройте автопродление по cron — см. randomgiveaway/README.md "
+        "(scripts/refresh_instagram_token.py), иначе токен молча истечёт через ~60 дней.</p>"
     )

@@ -2,9 +2,10 @@
 
 Реализация Этапа 1 ("Ядро") из ТЗ: создание розыгрыша, импорт участников,
 нормализация, фильтрация по правилам, криптостойкий случайный выбор
-победителей и запасных, сохранение результата с хэш-фиксацией. Без
-фронтенда/анимации (Этап 2) и без живых интеграций с соцсетями (Этап 4) —
-см. раздел «Что не сделано» ниже.
+победителей и запасных, сохранение результата с хэш-фиксацией. Плюс часть
+Этапа 4 — живой Instagram-адаптер для собственных постов ekb_guide. Без
+фронтенда/анимации (Этап 2) и без VK/Telegram-адаптеров — см. раздел
+«Что не сделано» ниже.
 
 ## Ключевое решение по скоупу (важно!)
 
@@ -68,14 +69,18 @@ Random Engine получает только нормализованный сп�
 - Понятные тексты ошибок вместо HTTP 500 (§26 ТЗ)
 - Простая защита мутирующих ручек токеном администратора (без полноценной
   регистрации пользователей — допустимо для MVP по §17 ТЗ)
+- **Instagram-адаптер** (часть Этапа 4): читает комментарии + ответы к
+  постам самого ekb_guide через Instagram API with Instagram Login,
+  находит медиа по permalink, поддерживает пагинацию. Плюс разовая
+  OAuth-привязка (`/api/instagram/oauth/start`) и автопродление
+  long-lived токена по cron — см. «Подключение Instagram» ниже.
 
 ## Что не сделано (следующие этапы)
 
 - **Этап 2** — фронтенд, полноэкранная анимация, конфетти
 - **Этап 3** — публичная HTML-страница результата (сейчас есть только JSON API)
-- **Этап 4** — реализация `InstagramAdapter`/`VKAdapter`/`TelegramAdapter`
-  (сейчас — заглушки с понятным `NotImplementedError`, см. `adapters/`);
-  плюс фоновая задача обновления Instagram-токена (~60 дней)
+- **Этап 4 (остальное)** — `VKAdapter`/`TelegramAdapter` — пока заглушки с
+  понятным `NotImplementedError`, см. `adapters/`
 - **Этап 5** — админка, логи, история розыгрышей для пользователя
 
 ## Локальный запуск
@@ -163,15 +168,119 @@ curl https://random.ekb-guide.ru/health   # {"status":"ok"}
 `venv/bin/pip install -r randomgiveaway/requirements.txt`, затем
 `sudo supervisorctl restart random-giveaway-api`.
 
+## Подключение Instagram
+
+Часть шагов — только руками, через браузер, с логином в Meta for Developers
+и в сам Instagram как ekb_guide. Их не может сделать ассистент — только
+человек, у которого есть эти учётные данные.
+
+### 1. Создать Meta-приложение
+
+1. https://developers.facebook.com/apps → **Create App** → тип **Business**.
+2. В приложении добавить продукт **Instagram** → сценарий **API setup with
+   Instagram login** (это и есть "Instagram API with Instagram Login" —
+   не путать с устаревшим Instagram Basic Display, он не даёт доступа к
+   комментариям, и не нужен вариант через Facebook Login/привязанную
+   Facebook-страницу).
+3. В настройках продукта:
+   - **Add Instagram account** → указать ekb_guide как tester. ekb_guide
+     должен подтвердить приглашение: в самом Instagram →
+     Настройки → Apps and websites → Tester invites → Accept.
+   - **Valid OAuth Redirect URIs** — вписать ровно
+     `https://random.ekb-guide.ru/api/instagram/oauth/callback`
+   - Убедиться, что аккаунт ekb_guide — **Business или Creator**
+     (professional account), не личный — иначе Instagram Login не сработает.
+4. Скопировать **Instagram App ID** и **Instagram App Secret** — это
+   значения для `INSTAGRAM_APP_ID`/`INSTAGRAM_APP_SECRET`.
+
+Приложение остаётся в **Development mode** — App Review проходить не
+нужно, но авторизоваться через него смогут только аккаунты, добавленные
+тестировщиками (по нашему решению это только ekb_guide, см. раздел
+«Ключевое решение по скоупу» выше).
+
+### 2. Прописать .env и перезапустить сервис
+
+```bash
+nano /root/random-giveaway/randomgiveaway/.env
+```
+```
+INSTAGRAM_APP_ID=...
+INSTAGRAM_APP_SECRET=...
+INSTAGRAM_OAUTH_REDIRECT_URI=https://random.ekb-guide.ru/api/instagram/oauth/callback
+```
+```bash
+sudo supervisorctl restart random-giveaway-api
+```
+
+### 3. Пройти разовую авторизацию
+
+`/api/instagram/oauth/start` защищён тем же `ADMIN_TOKEN`, что и остальные
+мутирующие ручки — обычная ссылка в браузере кастомный заголовок не
+передаёт, поэтому редирект-URL сначала берём curl'ом, а открываем уже его:
+
+```bash
+curl -sI -H "X-Admin-Token: <ADMIN_TOKEN из .env>" \
+  https://random.ekb-guide.ru/api/instagram/oauth/start | grep -i '^location'
+```
+
+Полученную ссылку (`https://www.instagram.com/oauth/authorize?...`)
+открыть в браузере, залогинившись в Instagram как ekb_guide → **Allow**.
+Instagram редиректнёт на `/callback`, который сам обменяет код на
+long-lived токен и запишет его в `.env`. Страница ответит
+«Instagram подключён».
+
+Перезапустить сервис, чтобы он подхватил новый токен:
+```bash
+sudo supervisorctl restart random-giveaway-api
+```
+
+### 4. Настроить автопродление токена (cron)
+
+Long-lived токен живёт ~60 дней. Без продления он молча истечёт, и
+Instagram-адаптер начнёт падать с ошибкой авторизации.
+
+```bash
+crontab -e
+```
+добавить строку (раз в сутки в 4:00):
+```
+0 4 * * * cd /root/random-giveaway && venv/bin/python -m randomgiveaway.scripts.refresh_instagram_token >> /var/log/random-giveaway-token-refresh.log 2>&1
+```
+
+Проверить руками, что скрипт работает (после шага 3, когда токен уже есть):
+```bash
+cd /root/random-giveaway
+venv/bin/python -m randomgiveaway.scripts.refresh_instagram_token
+```
+
+### 5. Проверка
+
+```bash
+curl -X POST https://random.ekb-guide.ru/api/giveaways \
+  -H "X-Admin-Token: <ADMIN_TOKEN>" -H "Content-Type: application/json" \
+  -d '{"source":"instagram","post_url":"https://www.instagram.com/p/XXXXXXX/","settings":{"winners_count":1}}'
+```
+дальше вызвать `POST /api/giveaways/{id}/load-comments` с тем же
+заголовком — если всё настроено верно, вернётся тот же формат
+предпросмотра, что и для `/import`.
+
+**Важно:** это подключает только собственные посты ekb_guide. Ссылка на
+пост стороннего организатора вернёт понятную ошибку «Пост не найден среди
+публикаций ekb_guide» — это ожидаемое поведение (см. «Ключевое решение по
+скоупу» в начале файла), не баг.
+
 ## API (§20 ТЗ, пути ориентировочные)
 
 ```text
 POST /api/giveaways
 GET  /api/giveaways/{id}
 POST /api/giveaways/{id}/import                # CSV/JSON/список (form-data: file, format)
-POST /api/giveaways/{id}/load-comments          # живые источники — 501 на Этапе 1
+POST /api/giveaways/{id}/load-comments          # живой источник; для instagram — реализовано, vk/telegram — 501
 POST /api/giveaways/{id}/participants/process   # предпросмотр (§8 ТЗ)
 POST /api/giveaways/{id}/draw
 GET  /api/giveaways/{id}/result
 GET  /api/results/{public_id}                   # публично, без авторизации
+
+GET  /api/instagram/oauth/start                 # разовая привязка ekb_guide, требует ADMIN_TOKEN
+GET  /api/instagram/oauth/callback              # редирект от Instagram, вызывать вручную не нужно
 ```

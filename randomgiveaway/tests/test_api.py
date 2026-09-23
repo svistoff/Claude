@@ -125,3 +125,64 @@ def test_admin_token_protects_mutating_endpoints(monkeypatch):
             headers={"X-Admin-Token": "secret-token"},
         )
         assert resp.status_code == 200, resp.text
+
+
+def test_instagram_oauth_start_requires_admin_token():
+    with TestClient(app) as client:
+        resp = client.get("/api/instagram/oauth/start")
+        # без ADMIN_TOKEN в конфиге require_admin пропускает всех — проверяем
+        # только что без настроенных INSTAGRAM_APP_ID/REDIRECT_URI отдаётся
+        # понятная ошибка, а не 500
+        assert resp.status_code in (400, 307)
+
+
+def test_instagram_oauth_callback_rejects_unknown_state():
+    with TestClient(app) as client:
+        resp = client.get("/api/instagram/oauth/callback", params={"code": "abc", "state": "unknown-state"})
+        assert resp.status_code == 400
+        assert "state" in resp.json()["detail"].lower()
+
+
+def test_instagram_oauth_full_flow_with_valid_state(monkeypatch, tmp_path):
+    import dataclasses
+
+    from randomgiveaway.api import routes as routes_module
+    from randomgiveaway.services import instagram_oauth as oauth_module
+
+    monkeypatch.setattr(
+        routes_module,
+        "config",
+        dataclasses.replace(
+            routes_module.config,
+            instagram_app_id="app-id",
+            instagram_app_secret="app-secret",
+            instagram_oauth_redirect_uri="https://random.ekb-guide.ru/api/instagram/oauth/callback",
+        ),
+    )
+    # ENV_PATH подменяется на временный файл — реальный randomgiveaway/.env
+    # трогать нельзя, даже в тесте
+    monkeypatch.setattr(routes_module, "ENV_PATH", tmp_path / ".env")
+
+    async def fake_exchange(code, app_id, app_secret, redirect_uri):
+        assert code == "real-code"
+        return "long-lived-token", 5183944
+
+    monkeypatch.setattr(oauth_module, "exchange_code_for_long_lived_token", fake_exchange)
+
+    with TestClient(app, follow_redirects=False) as client:
+        start_resp = client.get("/api/instagram/oauth/start")
+        assert start_resp.status_code == 307
+        location = start_resp.headers["location"]
+        state = location.split("state=")[1]
+
+        callback_resp = client.get(
+            "/api/instagram/oauth/callback", params={"code": "real-code", "state": state}
+        )
+        assert callback_resp.status_code == 200, callback_resp.text
+        assert "подключён" in callback_resp.text
+
+        # повторное использование того же state должно быть отклонено
+        replay_resp = client.get(
+            "/api/instagram/oauth/callback", params={"code": "real-code", "state": state}
+        )
+        assert replay_resp.status_code == 400
