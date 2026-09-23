@@ -5,7 +5,7 @@ from ..config import Settings
 from ..models import Profile
 from ..providers.base import SearchProvider
 from ..providers.browser import BrowserProvider
-from ..providers.yandex_api import YandexApiProvider
+from ..providers.yandex_api import DEFAULT_ENDPOINT, YandexApiProvider
 
 
 def build_provider(profile: Profile, settings: Settings) -> SearchProvider:
@@ -35,4 +35,6 @@ def build_provider(profile: Profile, settings: Settings) -> SearchProvider:
     return YandexApiProvider(
         folder_id=settings.yandex_api_folder_id,
         api_key=settings.yandex_api_key,
+        endpoint=settings.yandex_api_endpoint or DEFAULT_ENDPOINT,
+        region_lr=settings.region_lr,
     )

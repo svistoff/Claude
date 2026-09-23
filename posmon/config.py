@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     # Yandex Search API
     yandex_api_folder_id: str = Field(default="", alias="YANDEX_API_FOLDER_ID")
     yandex_api_key: str = Field(default="", alias="YANDEX_API_KEY")
+    yandex_api_endpoint: str = Field(default="", alias="YANDEX_API_ENDPOINT")
 
     # Капча
     captcha_provider: str = Field(default="", alias="CAPTCHA_PROVIDER")

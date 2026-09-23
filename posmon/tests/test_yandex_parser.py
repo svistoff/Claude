@@ -58,3 +58,22 @@ def test_parse_broken_xml_is_error():
     status, results, code, msg = parse_yandex_xml(XML_BROKEN)
     assert status == CheckStatus.ERROR
     assert code == "parse_error"
+
+
+def test_parse_v2_response_base64_rawdata():
+    import base64
+
+    from posmon.providers.yandex_api import parse_v2_response
+
+    data = {"rawData": base64.b64encode(XML_OK.encode("utf-8")).decode("ascii")}
+    status, results, code, msg = parse_v2_response(data)
+    assert status == CheckStatus.SUCCESS
+    assert len(results) == 2
+
+
+def test_parse_v2_response_missing_rawdata_is_error():
+    from posmon.providers.yandex_api import parse_v2_response
+
+    status, results, code, msg = parse_v2_response({"foo": "bar"})
+    assert status == CheckStatus.ERROR
+    assert code == "no_rawdata"
