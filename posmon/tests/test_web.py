@@ -107,6 +107,29 @@ async def test_full_config_flow_and_analytics(client):
     assert r.status_code == 200 and "Средняя позиция" in r.text
 
 
+async def test_edit_and_delete_project_cascade(client):
+    from posmon.db import get_sessionmaker
+    from posmon.models import Project, Query
+
+    await _login(client)
+    await client.post("/projects", data={"name": "P", "depth": "50", "description": ""})
+
+    # переименование + глубина
+    r = await client.post("/projects/1/edit", data={"name": "P2", "depth": "20", "description": "d"})
+    assert r.status_code == 303
+    r = await client.get("/projects")
+    assert "P2" in r.text
+
+    # добавим запрос, затем удалим проект — должно каскадно снести запрос
+    await client.post("/projects/1/queries", data={"queries_text": "q1", "group_name": "", "is_local": "false"})
+    r = await client.post("/projects/1/delete")
+    assert r.status_code == 303 and r.headers["location"] == "/projects"
+
+    async with get_sessionmaker()() as s:
+        assert (await s.execute(select(Project))).scalars().first() is None
+        assert (await s.execute(select(Query))).scalars().first() is None  # каскад сработал
+
+
 async def test_run_now_redirects(client):
     await _login(client)
     await client.post("/projects", data={"name": "P", "depth": "50", "description": ""})

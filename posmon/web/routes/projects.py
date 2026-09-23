@@ -55,6 +55,43 @@ async def projects_create(
     return redirect("/projects")
 
 
+@router.post("/projects/{project_id}/edit")
+async def projects_edit(
+    project_id: int,
+    user: User | None = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+    name: str = Form(...),
+    depth: int = Form(50),
+    description: str = Form(""),
+):
+    if user is None:
+        return redirect("/login")
+    if is_admin(user):
+        project = await _get_project(session, project_id)
+        if project and name.strip():
+            project.name = name.strip()
+            project.depth = depth
+            project.description = description.strip() or None
+            await session.commit()
+    return redirect(f"/projects/{project_id}")
+
+
+@router.post("/projects/{project_id}/delete")
+async def projects_delete(
+    project_id: int,
+    user: User | None = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    if user is None:
+        return redirect("/login")
+    if is_admin(user):
+        project = await _get_project(session, project_id)
+        if project:
+            await session.delete(project)  # каскадно удаляет запросы/сайты/профили/историю
+            await session.commit()
+    return redirect("/projects")
+
+
 @router.post("/projects/{project_id}/toggle")
 async def projects_toggle(
     project_id: int,

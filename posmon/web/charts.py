@@ -15,9 +15,10 @@ from html import escape
 # Валидированный категориальный порядок (dark-шаги), до 5 профилей.
 SERIES_COLORS = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181"]
 
-_GRID = "#2a3947"
-_AXIS = "#8b98a5"
-_INK = "#c3c2b7"
+# Цвета сетки/осей/подписей — через CSS-переменные (тема light/dark из style.css).
+_GRID = "var(--chart-grid, #d7dbe0)"
+_AXIS = "var(--chart-axis, #9aa2ac)"
+_INK = "var(--chart-ink, #52514e)"
 
 
 @dataclass(slots=True)

@@ -4,7 +4,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime
+from sqlalchemy import DateTime, event
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -31,7 +31,18 @@ def make_engine(database_url: str | None = None) -> AsyncEngine:
     # SQLite (aiosqlite) требует check_same_thread=False для пула
     if url.startswith("sqlite"):
         connect_args["check_same_thread"] = False
-    return create_async_engine(url, echo=False, future=True, connect_args=connect_args)
+    engine = create_async_engine(url, echo=False, future=True, connect_args=connect_args)
+    if url.startswith("sqlite"):
+        # Включаем внешние ключи, чтобы ON DELETE CASCADE работал (в SQLite он
+        # по умолчанию выключен). Нужно для чистого удаления проекта со всеми
+        # связанными записями.
+        @event.listens_for(engine.sync_engine, "connect")
+        def _sqlite_fk_on(dbapi_conn, _rec):  # pragma: no cover - тривиально
+            cur = dbapi_conn.cursor()
+            cur.execute("PRAGMA foreign_keys=ON")
+            cur.close()
+
+    return engine
 
 
 _engine: AsyncEngine | None = None

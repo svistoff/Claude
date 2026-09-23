@@ -5,6 +5,20 @@
 <h1>{{ project.name }} <small class="muted">ТОП-{{ project.depth }}</small></h1>
 
 {% if user.role == 'Admin' %}
+<details class="editproj">
+  <summary>⚙ Настройки проекта</summary>
+  <form method="post" action="/projects/{{ project.id }}/edit" class="form-row">
+    <input type="text" name="name" value="{{ project.name }}" required>
+    <input type="number" name="depth" value="{{ project.depth }}" min="1" max="100" title="Глубина (ТОП-N)">
+    <input type="text" name="description" value="{{ project.description or '' }}" placeholder="Описание">
+    <button type="submit">Сохранить</button>
+  </form>
+  <form method="post" action="/projects/{{ project.id }}/delete"
+        onsubmit="return confirm('Удалить проект «{{ project.name }}» и ВСЕ его данные (запросы, сайты, история)? Это необратимо.');">
+    <button type="submit" class="danger-btn">Удалить проект</button>
+  </form>
+</details>
+
 <div class="runbar">
   <form method="post" action="/projects/{{ project.id }}/run" class="inline">
     <input type="hidden" name="mode" value="seo">
