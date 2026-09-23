@@ -13,9 +13,19 @@ ekb_guide. Доступ — через собственный long-lived access-
 один раз через /api/instagram/oauth/start (см. services/instagram_oauth.py),
 без App Review и без OAuth-экрана для внешних организаторов.
 
-Ограничение API: Graph API не отдаёт числовой user_id автора комментария —
-только username. Поэтому здесь username используется как source_user_id
-(в отличие от VK/Telegram, где обычно доступен числовой id).
+Важно (проверено вживую): пока Meta-приложение находится в режиме
+Development, /comments отдаёт "успешный" ответ с пустым data ([]) для
+ЛЮБОГО поста — даже своего, даже с ненулевым comments_count, без явной
+ошибки о нехватке прав. Причина оказалась не в правах/scope, а в том, что
+приложение не было опубликовано (переведено в Live) — после публикации
+тот же токен и тот же запрос начинает возвращать реальные данные.
+Публикация требует заполненных Privacy Policy / Terms URL в настройках
+приложения (см. randomgiveaway/api/legal.py — эндпоинты /privacy, /terms).
+
+Числовой id автора комментария и его username берутся из поля from —
+одного top-level поля "username" для этого недостаточно: оно приходит
+только когда комментирует сам владелец аккаунта (ekb_guide отвечает в
+своих комментариях), для остальных комментаторов пусто.
 """
 from __future__ import annotations
 
@@ -25,7 +35,7 @@ import httpx
 
 from randomgiveaway.adapters.base import RawComment, SourceAdapter, SourceAdapterError
 
-GRAPH_API_VERSION = "v21.0"
+GRAPH_API_VERSION = "v26.0"
 GRAPH_BASE = f"https://graph.instagram.com/{GRAPH_API_VERSION}"
 
 # Instagram отдаёт один и тот же пост по разным путям в зависимости от типа
@@ -88,7 +98,7 @@ class InstagramAdapter(SourceAdapter):
         comments: list[RawComment] = []
         url = f"{GRAPH_BASE}/{media_id}/comments"
         params: dict | None = {
-            "fields": "id,text,username,timestamp,replies{id,text,username,timestamp}",
+            "fields": "id,text,from,timestamp,replies{id,text,from,timestamp}",
             "access_token": self._access_token,
             "limit": 50,
         }
@@ -107,10 +117,12 @@ class InstagramAdapter(SourceAdapter):
 
     @staticmethod
     def _to_raw_comment(item: dict, is_reply: bool, parent_id: str | None = None) -> RawComment:
-        username = item.get("username")
+        author = item.get("from") or {}
+        user_id = author.get("id")
+        username = author.get("username")
         return RawComment(
             comment_id=item["id"],
-            source_user_id=username or item["id"],
+            source_user_id=user_id or username or item["id"],
             username=username,
             display_name=None,
             text=item.get("text", ""),
