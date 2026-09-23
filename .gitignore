@@ -4,6 +4,8 @@ __pycache__/
 venv/
 bot/.env
 bot/data/
+randomgiveaway/.env
+randomgiveaway/data/
 *.db
 *.db-wal
 *.db-shm
