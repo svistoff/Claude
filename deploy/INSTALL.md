@@ -71,10 +71,10 @@ DATABASE_URL=sqlite+aiosqlite:///./posmon.db
 
 ```bash
 cd /root/posmon
-.venv/bin/uvicorn posmon.asgi:app --host 127.0.0.1 --port 8000
+.venv/bin/uvicorn posmon.asgi:app --host 127.0.0.1 --port 8010
 ```
 
-Открыть с сервера `http://127.0.0.1:8000/healthz` — должно вернуть `{"status":"ok"}`.
+Открыть с сервера `http://127.0.0.1:8010/healthz` — должно вернуть `{"status":"ok"}`.
 Остановить (Ctrl+C) и перейти к шагу 4.
 
 ### Прод (PostgreSQL) — рекомендуется

@@ -55,7 +55,7 @@ python3 -m venv .venv
 ## Запуск (локально)
 
 ```bash
-.venv/bin/uvicorn posmon.asgi:app --host 127.0.0.1 --port 8000   # админка
+.venv/bin/uvicorn posmon.asgi:app --host 127.0.0.1 --port 8010   # админка
 .venv/bin/python -m posmon.scheduler                              # ежедневный прогон
 ```
 
