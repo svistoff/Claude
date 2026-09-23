@@ -30,3 +30,18 @@ def render(request: Request, name: str, user: User | None = None, **ctx) -> HTML
 
 def is_admin(user: User | None) -> bool:
     return user is not None and user.role == "Admin"
+
+
+def position_class(pos: int | None) -> str:
+    """CSS-класс ячейки по позиции: чем выше позиция, тем насыщеннее зелёный."""
+    if pos is None:
+        return "bmiss"
+    if pos <= 3:
+        return "b3"
+    if pos <= 10:
+        return "b10"
+    if pos <= 20:
+        return "b20"
+    if pos <= 50:
+        return "b50"
+    return "bmiss"

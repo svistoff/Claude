@@ -28,4 +28,33 @@
 {% else %}
 <p class="muted">Нет данных для выбранного профиля.</p>
 {% endif %}
+
+{% if hm_queries %}
+<h2>Тепловая карта <span class="muted small">запросы × даты, позиция цветом</span></h2>
+<div class="hm-legend">
+  <span><span class="sw" style="background:#1a8f2f"></span>ТОП-3</span>
+  <span><span class="sw" style="background:#56b268"></span>ТОП-10</span>
+  <span><span class="sw" style="background:#a7d9ab"></span>ТОП-20</span>
+  <span><span class="sw" style="background:#dcefd6"></span>ТОП-50</span>
+  <span><span class="sw" style="background:#eceef0"></span>&gt;50</span>
+</div>
+<div class="scroll-x">
+<table class="heatmap">
+  <thead>
+    <tr><th class="qname">Запрос</th>{% for d in hm_dates %}<th>{{ d.strftime('%d.%m') }}</th>{% endfor %}</tr>
+  </thead>
+  <tbody>
+    {% for qid, qtext in hm_queries %}
+    <tr>
+      <th class="qname" title="{{ qtext }}">{{ qtext }}</th>
+      {% for d in hm_dates %}
+        {% set p = hm_matrix.get(qid, {}).get(d) %}
+        <td class="cell {{ p|posclass }}" title="{{ qtext }} · {{ d.strftime('%d.%m.%Y') }}: {{ p if p else '>50' }}">{{ p if p else '·' }}</td>
+      {% endfor %}
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
 {% endblock %}

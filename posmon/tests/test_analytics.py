@@ -1,7 +1,12 @@
 from datetime import date, timedelta
 
 from posmon.models import PositionHistory, Profile, Project, Query, Site
-from posmon.services.analytics import history_series, latest_positions, site_metrics
+from posmon.services.analytics import (
+    heatmap_matrix,
+    history_series,
+    latest_positions,
+    site_metrics,
+)
 
 
 async def _seed(session):
@@ -57,3 +62,23 @@ async def test_site_metrics_excludes_not_found(session):
     assert m.found == 1
     assert m.average == 3.0
     assert m.top[3] == 1
+
+
+async def test_heatmap_matrix(session):
+    project, q, s, p = await _seed(session)
+    q2 = Query(project_id=project.id, query="a-query")
+    session.add(q2)
+    await session.flush()
+    today = date.today()
+    session.add(PositionHistory(project_id=project.id, query_id=q.id, site_id=s.id,
+                                profile_id=p.id, date=today, mode="seo", position=4, status="SUCCESS"))
+    session.add(PositionHistory(project_id=project.id, query_id=q2.id, site_id=s.id,
+                                profile_id=p.id, date=today, mode="seo", position=None, status="NOT_FOUND"))
+    await session.commit()
+
+    dates, queries, matrix = await heatmap_matrix(session, site_id=s.id, profile_id=p.id, mode="seo")
+    assert dates == [today]
+    # запросы отсортированы по тексту: "a-query" раньше "q1"
+    assert [name for _, name in queries] == ["a-query", "q1"]
+    assert matrix[q.id][today] == 4
+    assert matrix[q2.id][today] is None

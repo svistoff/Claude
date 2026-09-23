@@ -17,7 +17,7 @@ from ..config import Settings, get_settings
 from ..db import get_session
 from ..models import Profile, Project, Query, Site, User
 from ..security import verify_password
-from .deps import current_user, redirect, render
+from .deps import current_user, position_class, redirect, render
 from .routes import analytics, projects
 
 WEB_DIR = Path(__file__).resolve().parent
@@ -41,6 +41,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.mount("/static", StaticFiles(directory=WEB_DIR / "static"), name="static")
     app.state.settings = settings
     app.state.templates = Jinja2Templates(directory=str(WEB_DIR / "templates"))
+    app.state.templates.env.filters["posclass"] = position_class
 
     @app.get("/healthz")
     async def healthz():
