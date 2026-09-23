@@ -7,12 +7,12 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..domain.metrics import PositionMetrics, compute_metrics
 from ..domain.results import RunMode
-from ..models import PositionHistory, Query
+from ..models import PositionHistory, Query, Site
 
 
 async def latest_positions(
@@ -91,6 +91,57 @@ async def site_metrics(
     for r in rows:
         latest_by_query[r.query_id] = r.position
     return compute_metrics(list(latest_by_query.values()))
+
+
+async def avg_position_series(
+    session: AsyncSession,
+    *,
+    project_id: int,
+    profile_id: int,
+    mode: str = RunMode.SEO.value,
+    days: int = 30,
+    site_id: int | None = None,
+) -> tuple[list[date], dict[int, dict[date, float]], dict[int, str]]:
+    """Средняя позиция по дням для каждого сайта (динамика роста/падения).
+
+    Средняя считается по найденным позициям (NULL не учитывается — SQL AVG их
+    игнорирует). Возвращает (даты, {site_id: {дата: средняя}}, {site_id: имя}).
+    """
+    since = date.today() - timedelta(days=days)
+    conds = [
+        PositionHistory.project_id == project_id,
+        PositionHistory.profile_id == profile_id,
+        PositionHistory.mode == mode,
+        PositionHistory.date >= since,
+        PositionHistory.position.is_not(None),
+    ]
+    if site_id is not None:
+        conds.append(PositionHistory.site_id == site_id)
+
+    rows = (
+        await session.execute(
+            select(
+                PositionHistory.site_id,
+                PositionHistory.date,
+                func.avg(PositionHistory.position),
+            )
+            .where(*conds)
+            .group_by(PositionHistory.site_id, PositionHistory.date)
+        )
+    ).all()
+
+    dates = sorted({d for _, d, _ in rows})
+    matrix: dict[int, dict[date, float]] = {}
+    for sid, d, avg in rows:
+        matrix.setdefault(sid, {})[d] = round(float(avg), 1)
+
+    names: dict[int, str] = {}
+    if matrix:
+        nrows = (
+            await session.execute(select(Site.id, Site.name).where(Site.id.in_(list(matrix))))
+        ).all()
+        names = {i: n for i, n in nrows}
+    return dates, matrix, names
 
 
 async def heatmap_matrix(

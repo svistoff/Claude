@@ -32,6 +32,20 @@
 </div>
 {% endif %}
 
+<h2>Динамика <span class="muted small">средняя позиция по дням · выше линия = сайт растёт</span></h2>
+<div class="controls">
+  {% if active_profiles %}<span class="muted small">Профиль:</span>{% endif %}
+  {% for p in active_profiles %}
+    <a href="?mode={{ mode }}&profile={{ p.id }}&days={{ days }}" class="pill {{ 'on' if p.id == chart_profile_id }}">{{ p.name }}</a>
+  {% endfor %}
+  <span class="sep"></span>
+  <span class="muted small">Период:</span>
+  {% for d in [7, 30, 90] %}
+    <a href="?mode={{ mode }}&profile={{ chart_profile_id }}&days={{ d }}" class="pill {{ 'on' if days == d }}">{{ d }}д</a>
+  {% endfor %}
+</div>
+<div class="chart-wrap">{{ dyn_chart | safe }}</div>
+
 <h2>Позиции <span class="muted small">режим:
   <a href="?mode=seo" class="{{ 'on' if mode=='seo' }}">SEO</a> ·
   <a href="?mode=battle" class="{{ 'on' if mode=='battle' }}">боевой</a></span></h2>

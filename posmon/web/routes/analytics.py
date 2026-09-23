@@ -8,7 +8,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ...db import get_session
 from ...domain.results import RunMode
 from ...models import Profile, Project, Query, Site, User
-from ...services.analytics import heatmap_matrix, history_series, site_metrics
+from ...services.analytics import (
+    avg_position_series,
+    heatmap_matrix,
+    history_series,
+    site_metrics,
+)
 from ..charts import SERIES_COLORS, ChartOptions, Series, line_chart
 from ..deps import current_user, redirect, render
 
@@ -86,14 +91,23 @@ async def site_page(
     hm_dates: list = []
     hm_queries: list = []
     hm_matrix: dict = {}
+    trend_chart = ""
     if profile_id is not None:
         metrics = (await site_metrics(session, site_id=site_id, profile_id=profile_id, mode=mode)).as_dict()
         hm_dates, hm_queries, hm_matrix = await heatmap_matrix(
             session, site_id=site_id, profile_id=profile_id, mode=mode, days=14
         )
+        project = await session.get(Project, s.project_id)
+        depth = project.depth if project else 50
+        dates, matrix, _ = await avg_position_series(
+            session, project_id=s.project_id, profile_id=profile_id, mode=mode, days=30, site_id=site_id
+        )
+        pts = matrix.get(site_id, {})
+        series = [Series(label=s.name, points=[(d, pts.get(d)) for d in dates], color=SERIES_COLORS[2])]
+        trend_chart = line_chart(series, ChartOptions(y_max=depth))
 
     return render(
         request, "site.html", user=user, site=s, profiles=profiles,
-        profile_id=profile_id, mode=mode, metrics=metrics,
+        profile_id=profile_id, mode=mode, metrics=metrics, trend_chart=trend_chart,
         hm_dates=hm_dates, hm_queries=hm_queries, hm_matrix=hm_matrix,
     )

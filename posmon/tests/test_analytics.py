@@ -2,6 +2,7 @@ from datetime import date, timedelta
 
 from posmon.models import PositionHistory, Profile, Project, Query, Site
 from posmon.services.analytics import (
+    avg_position_series,
     heatmap_matrix,
     history_series,
     latest_positions,
@@ -82,3 +83,24 @@ async def test_heatmap_matrix(session):
     assert [name for _, name in queries] == ["a-query", "q1"]
     assert matrix[q.id][today] == 4
     assert matrix[q2.id][today] is None
+
+
+async def test_avg_position_series(session):
+    project, q, s, p = await _seed(session)
+    q2 = Query(project_id=project.id, query="q2")
+    session.add(q2)
+    await session.flush()
+    today = date.today()
+    # два запроса: позиции 4 и 6 -> средняя 5.0; один NOT_FOUND не учитывается
+    session.add(PositionHistory(project_id=project.id, query_id=q.id, site_id=s.id,
+                                profile_id=p.id, date=today, mode="seo", position=4, status="SUCCESS"))
+    session.add(PositionHistory(project_id=project.id, query_id=q2.id, site_id=s.id,
+                                profile_id=p.id, date=today, mode="seo", position=6, status="SUCCESS"))
+    await session.commit()
+
+    dates, matrix, names = await avg_position_series(
+        session, project_id=project.id, profile_id=p.id, mode="seo", days=30
+    )
+    assert dates == [today]
+    assert matrix[s.id][today] == 5.0
+    assert names[s.id] == "A"

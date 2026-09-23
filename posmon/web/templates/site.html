@@ -25,6 +25,9 @@
   <div class="card"><span class="num">{{ metrics.top[50] }}</span><span class="label">ТОП-50</span></div>
 </div>
 <p class="muted small">Средняя и медиана считаются без не найденных запросов; coverage показывает долю запросов с позицией.</p>
+
+<h2>Динамика <span class="muted small">средняя позиция по дням · выше = рост</span></h2>
+<div class="chart-wrap">{{ trend_chart | safe }}</div>
 {% else %}
 <p class="muted">Нет данных для выбранного профиля.</p>
 {% endif %}

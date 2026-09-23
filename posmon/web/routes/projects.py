@@ -12,8 +12,9 @@ from ...db import get_session, get_sessionmaker
 from ...domain.normalize import normalize_host
 from ...domain.results import RunMode
 from ...models import Profile, Project, Query, Site, User
-from ...services.analytics import latest_positions
+from ...services.analytics import avg_position_series, latest_positions
 from ...services.runner import run_project_batch
+from ..charts import SERIES_COLORS, ChartOptions, Series, line_chart
 from ..deps import current_user, is_admin, redirect, render
 
 logger = logging.getLogger("posmon.web")
@@ -113,6 +114,8 @@ async def project_detail(
     project_id: int,
     request: Request,
     mode: str = RunMode.SEO.value,
+    profile: int | None = None,
+    days: int = 30,
     user: User | None = Depends(current_user),
     session: AsyncSession = Depends(get_session),
 ):
@@ -135,6 +138,19 @@ async def project_detail(
     latest = await latest_positions(session, project_id, mode)
     active_profiles = [p for p in profiles if p.active]
 
+    # График динамики: средняя позиция по дням, линия на каждый сайт.
+    chart_profile_id = profile or (active_profiles[0].id if active_profiles else None)
+    dyn_chart = ""
+    if chart_profile_id is not None:
+        dates, matrix, names = await avg_position_series(
+            session, project_id=project_id, profile_id=chart_profile_id, mode=mode, days=days
+        )
+        series = []
+        for i, (sid, name) in enumerate(sorted(names.items(), key=lambda kv: kv[1])):
+            points = [(d, matrix[sid].get(d)) for d in dates]
+            series.append(Series(label=name, points=points, color=SERIES_COLORS[i % len(SERIES_COLORS)]))
+        dyn_chart = line_chart(series, ChartOptions(y_max=project.depth))
+
     # Таблица позиций: строки (запрос × сайт), колонки — профили.
     table_rows = []
     for q in queries:
@@ -153,6 +169,7 @@ async def project_detail(
         request, "project_detail.html", user=user, project=project,
         queries=queries, sites=sites, profiles=profiles,
         active_profiles=active_profiles, table_rows=table_rows, mode=mode,
+        dyn_chart=dyn_chart, chart_profile_id=chart_profile_id, days=days,
     )
 
 
