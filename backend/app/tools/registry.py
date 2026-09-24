@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from . import filesystem, git, github, terminal
+from . import browser, filesystem, git, github, terminal
 from .base import ToolContext, ToolResult
 
 # --- Схемы инструментов (function calling) ----------------------------------
@@ -106,6 +106,33 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "browser",
+            "description": ("Управление браузером (Playwright). Действия: open (перейти на url), "
+                            "click (по selector или text), type (ввести text в selector), select "
+                            "(выбрать value в selector), get_text (текст страницы/элемента — так ты "
+                            "«видишь» страницу), screenshot (снимок для пользователя + OCR), scroll, "
+                            "back, wait (selector или ms). Опасные действия (удаление/оплата/публикация/"
+                            "отправка) требуют подтверждения."),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string",
+                               "enum": ["open", "click", "type", "select", "get_text",
+                                        "screenshot", "scroll", "back", "wait"]},
+                    "url": {"type": "string"},
+                    "selector": {"type": "string", "description": "CSS-селектор"},
+                    "text": {"type": "string", "description": "Текст для ввода или поиска элемента"},
+                    "value": {"type": "string", "description": "Значение для select"},
+                    "ms": {"type": "integer"}, "dy": {"type": "integer"},
+                    "full_page": {"type": "boolean"},
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "github",
             "description": ("Операции с GitHub через API: info (remote/ветка), branches (список веток), "
                             "ci_status (статус проверок CI по HEAD), create_pr (создать Pull Request — "
@@ -183,6 +210,12 @@ def _dispatch_github(ctx: ToolContext, a: dict) -> ToolResult:
     return github.github_tool(ctx, action, **kwargs)
 
 
+def _dispatch_browser(ctx: ToolContext, a: dict) -> ToolResult:
+    action = a.get("action", "get_text")
+    kwargs = {k: a[k] for k in ("url", "selector", "text", "value", "ms", "dy", "full_page") if k in a}
+    return browser.browser_tool(ctx, action, **kwargs)
+
+
 _DISPATCH: dict[str, Callable[[ToolContext, dict], ToolResult]] = {
     "read_file": _dispatch_read,
     "list_files": _dispatch_list,
@@ -192,6 +225,7 @@ _DISPATCH: dict[str, Callable[[ToolContext, dict], ToolResult]] = {
     "terminal": _dispatch_terminal,
     "git": _dispatch_git,
     "github": _dispatch_github,
+    "browser": _dispatch_browser,
 }
 
 

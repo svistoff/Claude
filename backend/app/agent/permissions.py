@@ -74,6 +74,17 @@ def classify(name: str, args: dict[str, Any], config: AppConfig) -> Decision:
                             _command_preview(name, args))
         return Decision(ALLOW, preview=_command_preview(name, args))
 
+    # Браузер: клик/ввод по «опасным» элементам (удаление/оплата/публикация/отправка).
+    if name == "browser":
+        action = str(args.get("action", "")).lower()
+        if action in ("click", "type", "select"):
+            target = f"{args.get('text', '')} {args.get('selector', '')} {args.get('value', '')}".lower()
+            for kw in config.browser.dangerous_keywords:
+                if kw.lower() in target:
+                    return Decision(CONFIRM, f"Потенциально опасное действие в браузере ({kw}).",
+                                    f"browser {action}: {target.strip()[:80]}")
+        return Decision(ALLOW)
+
     # GitHub: создание PR — внешнее действие, требует подтверждения.
     if name == "github":
         if str(args.get("action", "")).lower() == "create_pr":

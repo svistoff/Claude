@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     # GitHub (Фаза 2) — fine-grained PAT с минимальными правами.
     github_token: str = ""
 
+    # Браузер (Фаза 3): путь к chromium, если не находится автоматически.
+    browser_executable_path: str = ""
+
     # Auth
     admin_user: str = "admin"
     admin_password_hash: str = ""
@@ -83,6 +86,20 @@ class AgentConfig(BaseModel):
     max_search_results: int = 100
 
 
+class BrowserConfig(BaseModel):
+    # Браузер-агент (Фаза 3). Playwright ставится отдельно на VPS.
+    enabled: bool = True
+    headless: bool = True
+    nav_timeout_ms: int = 30000
+    action_timeout_ms: int = 15000
+    # Слова, при которых клик/ввод требуют подтверждения пользователя.
+    dangerous_keywords: list[str] = [
+        "удалить", "удаление", "delete", "оплатить", "оплата", "pay", "checkout",
+        "опубликовать", "publish", "отправить", "send", "подтвердить оплату",
+        "remove", "deactivate", "деактивировать", "сбросить", "reset",
+    ]
+
+
 class UploadConfig(BaseModel):
     # Загрузка файлов в чат (раздел 17 ТЗ).
     max_file_bytes: int = 5_000_000         # максимум на файл
@@ -103,6 +120,7 @@ class AppConfig(BaseModel):
     pricing: PricingConfig = PricingConfig()
     agent: AgentConfig = AgentConfig()
     uploads: UploadConfig = UploadConfig()
+    browser: BrowserConfig = BrowserConfig()
     projects: list[ProjectConfig] = []
     # Родительская папка, внутри которой агент может создавать новые проекты
     # (кнопка «+ Новый проект»). None — создание новых проектов отключено.

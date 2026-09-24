@@ -322,7 +322,7 @@ function appendAssistant(d) {
 }
 function addNote(t) { $("#chat").appendChild(el("div", "msg system-note", t)); scrollDown(); }
 
-const ICON = { read_file: "📄", list_files: "📁", search_files: "🔎", write_file: "✏️", edit_file: "✏️", terminal: "▶", git: "🔀" };
+const ICON = { read_file: "📄", list_files: "📁", search_files: "🔎", write_file: "✏️", edit_file: "✏️", terminal: "▶", git: "🔀", github: "🐙", browser: "🌐" };
 const VERB = { read_file: "Читаю", list_files: "Смотрю папку", search_files: "Ищу", write_file: "Пишу", edit_file: "Правлю", terminal: "Терминал", git: "Git" };
 // Человекочитаемая подпись действия из имени и аргументов инструмента.
 function toolLabel(name, args, preview) {
@@ -332,6 +332,8 @@ function toolLabel(name, args, preview) {
   if (name === "search_files") return `${VERB[name]} «${args.query || ""}»`;
   if (name === "terminal") return preview || args.command || "Терминал";
   if (name === "git") return preview || ("git " + (Array.isArray(args.args) ? args.args.join(" ") : ""));
+  if (name === "browser") { const act = args.action || "browser"; return "Браузер: " + act + (args.url ? " " + args.url : args.text ? " «" + args.text + "»" : args.selector ? " " + args.selector : ""); }
+  if (name === "github") return "GitHub: " + (args.action || "");
   return preview || name || "Инструмент";
 }
 function addTool(id, name, preview, args) {
@@ -350,6 +352,12 @@ function setToolResult(id, ok, summary, content, extra) {
   if (extra && extra.diff) { renderDiff(d._pre, extra.diff); d._pre.hidden = false; }
   else if (body.trim()) { d._pre.textContent = body; d._pre.hidden = false; }
   else { d._pre.hidden = true; }                                    // пустой вывод — не показываем
+  // Скриншот браузера — показываем картинку пользователю.
+  if (extra && extra.screenshot_url && !d._shot) {
+    const img = el("img", "tool-shot"); img.src = extra.screenshot_url; img.loading = "lazy";
+    img.addEventListener("click", () => window.open(extra.screenshot_url, "_blank"));
+    d.appendChild(img); d._shot = true; d.open = true;
+  }
   scrollDown();
 }
 function renderDiff(pre, diff) {

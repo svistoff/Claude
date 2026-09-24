@@ -83,6 +83,24 @@ sudo -u aiagent /opt/ai-agent/backend/.venv/bin/pip install pytesseract pillow
 sudo systemctl restart ai-agent
 ```
 
+### (Опционально) Браузер-агент (Фаза 3)
+
+Чтобы работали browser-инструменты (открывать сайты, кликать, скриншоты), поставьте
+Playwright и Chromium. Без этого агент сообщит «Браузер недоступен».
+
+```bash
+sudo -u aiagent /opt/ai-agent/backend/.venv/bin/pip install playwright
+sudo -u aiagent /opt/ai-agent/backend/.venv/bin/playwright install chromium
+# системные библиотеки для Chromium (нужен root):
+sudo /opt/ai-agent/backend/.venv/bin/playwright install-deps chromium
+sudo systemctl restart ai-agent
+```
+
+Браузер запускается **по требованию** (когда агент им пользуется), headless,
+в изолированном профиле. Он расходует ~150–250 МБ RAM — с учётом swap это ок, но
+на нагруженном сервере не держите много параллельных сессий. Если Chromium не
+находится автоматически, укажите путь в `.env`: `BROWSER_EXECUTABLE_PATH=/путь/chrome`.
+
 ## 4. systemd-сервис
 
 ```bash

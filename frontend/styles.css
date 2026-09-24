@@ -208,6 +208,7 @@ button:active, .pressable:active { transform: scale(0.96); }
 @media (prefers-color-scheme: dark) { .tool pre { background: rgba(0,0,0,0.35); } }
 .diff-add { color: var(--ok); }
 .diff-del { color: var(--danger); }
+.tool-shot { display: block; width: 100%; border-radius: 0 0 15px 15px; cursor: zoom-in; border-top: 1px solid var(--border); }
 
 /* Композер — стеклянный, закреплён снизу (§12, §26) */
 .composer {
