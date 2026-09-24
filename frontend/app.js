@@ -271,13 +271,25 @@ async function loadChats() {
   const data = await (await api("/api/chats")).json();
   const list = $("#chats-list"); list.innerHTML = "";
   data.chats.forEach((c) => {
-    const b = el("button", "list-item pressable");
-    b.appendChild(el("div", "title", c.title || "Без названия"));
-    b.appendChild(el("div", "when", `${c.project} · ${new Date(c.updated_at).toLocaleString()}`));
-    b.addEventListener("click", () => openChat(c.id));
-    list.appendChild(b);
+    const row = el("div", "list-item pressable chat-row");
+    const main = el("div", "chat-main");
+    main.appendChild(el("div", "title", c.title || "Без названия"));
+    main.appendChild(el("div", "when", `${c.project} · ${new Date(c.updated_at).toLocaleString()}`));
+    main.addEventListener("click", () => openChat(c.id));
+    const edit = el("button", "chat-edit", "✎");
+    edit.title = "Переименовать";
+    edit.addEventListener("click", (e) => { e.stopPropagation(); renameChat(c); });
+    row.appendChild(main); row.appendChild(edit);
+    list.appendChild(row);
   });
   if (!data.chats.length) list.appendChild(el("div", "muted", "Пока нет чатов."));
+}
+async function renameChat(c) {
+  const name = prompt("Новое название чата:", c.title || "");
+  if (name === null) return;
+  const t = name.trim(); if (!t) return;
+  const r = await api("/api/chat/" + c.id + "/rename", { method: "POST", body: JSON.stringify({ title: t }) });
+  if (r.ok) loadChats();
 }
 async function openChat(id) {
   const r = await api("/api/chat/" + id); if (!r.ok) return;
@@ -351,6 +363,21 @@ function renderDiff(pre, diff) {
 }
 function scrollDown() { const c = $("#chat"); c.scrollTop = c.scrollHeight; }
 
+// ---------- Индикатор «агент думает» ----------
+let thinkingEl = null;
+function showThinking(label) {
+  if (!thinkingEl) {
+    thinkingEl = el("div", "thinking");
+    thinkingEl.innerHTML = '<span class="dots"><i></i><i></i><i></i></span>';
+    thinkingEl._label = el("span", "th-label");
+    thinkingEl.appendChild(thinkingEl._label);
+  }
+  thinkingEl._label.textContent = label || "думаю…";
+  $("#chat").appendChild(thinkingEl);   // всегда внизу
+  scrollDown();
+}
+function hideThinking() { if (thinkingEl && thinkingEl.parentNode) thinkingEl.remove(); }
+
 // ---------- Компактный безопасный Markdown → HTML ----------
 function escapeHtml(s) { return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
 function mdInline(s) {
@@ -402,6 +429,21 @@ $("#btn-attach").addEventListener("click", () => $("#file-input").click());
 $("#file-input").addEventListener("change", async (e) => {
   for (const file of e.target.files) await uploadFile(file);
   e.target.value = "";
+});
+// Вставка скриншотов из буфера обмена (Ctrl+V)
+input.addEventListener("paste", async (e) => {
+  const items = (e.clipboardData && e.clipboardData.items) || [];
+  for (const it of items) {
+    if (it.type && it.type.startsWith("image/")) {
+      const blob = it.getAsFile();
+      if (blob) {
+        e.preventDefault();
+        const ext = (it.type.split("/")[1] || "png").replace("jpeg", "jpg");
+        const named = new File([blob], `screenshot-${Date.now()}.${ext}`, { type: it.type });
+        await uploadFile(named);
+      }
+    }
+  }
 });
 async function uploadFile(file) {
   const chip = renderChip(file.name, true);
@@ -459,20 +501,26 @@ async function consume(resp) {
 function handleEvent(ev) {
   switch (ev.type) {
     case "session": state.conversationId = ev.conversation_id; break;
-    case "text": appendAssistant(ev.delta); break;
-    case "assistant_message": case "final": state.currentAssistant = null; break;
-    case "tool_start": addTool(ev.id, ev.name, ev.preview, ev.args); break;
-    case "tool_result": setToolResult(ev.id, ev.ok, ev.summary, ev.content, ev.extra); break;
-    case "confirm_required": showConfirm(ev); break;
+    case "text": hideThinking(); appendAssistant(ev.delta); break;
+    case "assistant_message": state.currentAssistant = null; if (state.running) showThinking("думаю…"); break;
+    case "final": state.currentAssistant = null; hideThinking(); break;
+    case "tool_start": addTool(ev.id, ev.name, ev.preview, ev.args); showThinking("работаю…"); break;
+    case "tool_result": setToolResult(ev.id, ev.ok, ev.summary, ev.content, ev.extra); if (state.running) showThinking("анализирую результат…"); break;
+    case "iteration": if (state.running) showThinking("думаю…"); break;
+    case "confirm_required": hideThinking(); showConfirm(ev); break;
+    case "confirmed": showThinking("выполняю…"); break;
     case "blocked": addNote("⛔ Заблокировано: " + ev.reason + "\n" + (ev.preview || "")); break;
     case "usage": showUsage(ev); break;
-    case "stopped": addNote("⏹ Агент остановлен."); break;
-    case "limit": addNote(ev.message); break;
-    case "error": addNote("Ошибка: " + ev.message); break;
-    case "end": break;
+    case "stopped": hideThinking(); addNote("⏹ Агент остановлен."); break;
+    case "limit": hideThinking(); addNote(ev.message); break;
+    case "error": hideThinking(); addNote("Ошибка: " + ev.message); break;
+    case "end": hideThinking(); break;
   }
 }
-function setRunning(v) { state.running = v; $("#btn-stop").hidden = !v; $("#btn-send").disabled = v; }
+function setRunning(v) {
+  state.running = v; $("#btn-stop").hidden = !v; $("#btn-send").disabled = v;
+  if (v) showThinking("думаю…"); else hideThinking();
+}
 $("#btn-stop").addEventListener("click", async () => {
   if (!state.conversationId) return;
   await api("/api/agent/stop", { method: "POST", body: JSON.stringify({ conversation_id: state.conversationId }) });

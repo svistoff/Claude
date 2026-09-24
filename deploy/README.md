@@ -71,6 +71,18 @@ sudo setfacl -R -d -m u:aiagent:rwx /var/www/ai-workspace   # и для буду
 управлять (по одной команде `setfacl` на проект). Новые проекты, созданные кнопкой,
 живут внутри `workspace` — песочница сохраняется.
 
+### (Опционально) OCR для скриншотов
+
+Чтобы агент **читал текст со вставленных скриншотов** (Ctrl+V в чат), поставьте
+tesseract и Python-обёртки. Без этого скриншоты просто прикрепляются, но текст с
+них не распознаётся.
+
+```bash
+sudo apt install -y tesseract-ocr tesseract-ocr-rus
+sudo -u aiagent /opt/ai-agent/backend/.venv/bin/pip install pytesseract pillow
+sudo systemctl restart ai-agent
+```
+
 ## 4. systemd-сервис
 
 ```bash

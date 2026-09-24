@@ -128,9 +128,23 @@ def confirm_action(body: ConfirmBody, user: str = Depends(auth.require_csrf)) ->
     return {"ok": ok}
 
 
+class RenameBody(BaseModel):
+    title: str
+
+
 @router.get("/chats")
 def list_chats(user: str = Depends(auth.require_user)) -> dict:
     return {"chats": repo.list_conversations()}
+
+
+@router.post("/chat/{conv_id}/rename")
+def rename_chat(conv_id: str, body: RenameBody, user: str = Depends(auth.require_csrf)) -> dict:
+    if not body.title.strip():
+        raise HTTPException(400, "Название не должно быть пустым.")
+    ok = repo.rename_conversation(conv_id, body.title.strip())
+    if not ok:
+        raise HTTPException(404, "Чат не найден.")
+    return {"ok": True}
 
 
 @router.get("/chat/{conv_id}")

@@ -76,6 +76,16 @@ def add_message(
         return msg.id
 
 
+def rename_conversation(conv_id: str, title: str) -> bool:
+    with get_session() as db:
+        conv = db.get(Conversation, conv_id)
+        if conv is None:
+            return False
+        conv.title = title[:120] or conv.title
+        db.commit()
+        return True
+
+
 def log_tool_call(conv_id: str, name: str, args: dict, ok: bool, summary: str) -> None:
     with get_session() as db:
         db.add(ToolCallLog(

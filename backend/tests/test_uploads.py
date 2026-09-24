@@ -61,3 +61,13 @@ def test_build_context_binary_note(ws: Path):
 def test_missing_attachment_skipped(ws: Path):
     ctx = uploads_store.build_attachments_context([{"token": "deadbeef", "name": "x.txt"}])
     assert ctx == ""
+
+
+def test_png_is_image(ws: Path):
+    png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 40
+    assert uploads_store._is_image(png) is True
+    a = uploads_store.save_upload("screenshot.png", png)
+    assert a["is_text"] is False
+    ctx = uploads_store.build_attachments_context([{"token": a["token"], "name": a["name"]}])
+    # без tesseract — помечается как скриншот-изображение (не «бинарный»)
+    assert "скриншот" in ctx

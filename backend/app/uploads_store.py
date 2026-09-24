@@ -68,6 +68,30 @@ def _is_text(data: bytes) -> bool:
         return False
 
 
+def _is_image(data: bytes) -> bool:
+    return (data[:8].startswith(b"\x89PNG") or data[:3] == b"\xff\xd8\xff"
+            or data[:6] in (b"GIF87a", b"GIF89a") or data[:2] == b"BM"
+            or (data[:4] == b"RIFF" and data[8:12] == b"WEBP"))
+
+
+def _ocr_image(path: Path) -> str | None:
+    """OCR изображения, если в системе есть tesseract + pytesseract. Иначе None."""
+    try:
+        import pytesseract  # type: ignore
+        from PIL import Image  # type: ignore
+    except ImportError:
+        return None
+    try:
+        return pytesseract.image_to_string(Image.open(path), lang="rus+eng")
+    except Exception:  # noqa: BLE001 — tesseract/язык может отсутствовать
+        try:
+            import pytesseract  # type: ignore
+            from PIL import Image  # type: ignore
+            return pytesseract.image_to_string(Image.open(path))
+        except Exception:  # noqa: BLE001
+            return None
+
+
 def read_upload(token: str, name: str) -> Path | None:
     safe = sanitize_name(name)
     folder = (uploads_root() / sanitize_name(token))
@@ -92,7 +116,16 @@ def build_attachments_context(attachments: list[dict]) -> str:
             continue
         data = path.read_bytes()
         if not _is_text(data):
-            parts.append(f"[файл: {name} — бинарный, сохранён, текст не извлекается]")
+            if _is_image(data):
+                ocr = _ocr_image(path)
+                if ocr and ocr.strip():
+                    clip = ocr.strip()[: cfg.max_inline_per_file]
+                    parts.append(f"[скриншот: {name} — распознанный текст (OCR)]\n{clip}")
+                else:
+                    parts.append(f"[скриншот: {name} — изображение приложено "
+                                 f"(текст не распознан; модель без vision его не видит)]")
+            else:
+                parts.append(f"[файл: {name} — бинарный, сохранён, текст не извлекается]")
             continue
         text = data.decode("utf-8", "replace")
         budget = min(cfg.max_inline_per_file, cfg.max_inline_total - total)

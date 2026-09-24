@@ -49,3 +49,15 @@ def test_me_endpoint():
     fresh = TestClient(app)
     r = fresh.get("/api/me")
     assert r.json()["authenticated"] is False
+
+
+def test_rename_chat():
+    from app.database import repo
+    c = TestClient(app)
+    c.post("/api/login", json={"username": "admin", "password": TEST_PASSWORD})
+    csrf = c.get("/api/me").json()["csrf"]
+    conv_id = repo.create_conversation("demo", "Старое имя")
+    r = c.post(f"/api/chat/{conv_id}/rename", json={"title": "Новое имя"},
+               headers={"x-csrf-token": csrf})
+    assert r.status_code == 200 and r.json()["ok"] is True
+    assert repo.get_conversation(conv_id)["title"] == "Новое имя"
