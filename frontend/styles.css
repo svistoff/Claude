@@ -26,6 +26,10 @@
   --glass-blur: blur(20px) saturate(180%);
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
+  /* Шрифты: UI — Inter, редакционный текст — Source Serif, код — JetBrains Mono */
+  --font-ui: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   color-scheme: light dark;
 }
 
@@ -65,7 +69,7 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font: 400 16px/1.47 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font: 400 16px/1.47 var(--font-ui);
   -webkit-text-size-adjust: 100%;
   overscroll-behavior: none;
 }
@@ -149,7 +153,9 @@ button:active, .pressable:active { transform: scale(0.96); }
 .msg.assistant {
   align-self: flex-start; background: var(--surface-solid); border: 1px solid var(--border);
   border-bottom-left-radius: 7px; white-space: normal;
+  font-family: var(--font-serif); font-size: 16px; line-height: 1.55;
 }
+.msg.assistant h3, .msg.assistant h4, .msg.assistant h5, .msg.assistant h6 { font-family: var(--font-ui); }
 /* Markdown внутри ответа ассистента */
 .msg.assistant > *:first-child { margin-top: 0; }
 .msg.assistant > *:last-child { margin-bottom: 0; }
@@ -161,14 +167,14 @@ button:active, .pressable:active { transform: scale(0.96); }
 .msg.assistant ul, .msg.assistant ol { margin: 6px 0 8px; padding-left: 22px; }
 .msg.assistant li { margin: 3px 0; }
 .msg.assistant code {
-  font: 0.86em ui-monospace, SFMono-Regular, Menlo, monospace;
+  font: 0.84em var(--font-mono);
   background: var(--surface-2); padding: 1px 5px; border-radius: 6px;
 }
 .msg.assistant pre.md-code {
   margin: 8px 0; padding: 12px; border-radius: 12px; overflow-x: auto;
   background: rgba(0,0,0,0.06); border: 1px solid var(--border);
 }
-.msg.assistant pre.md-code code { background: none; padding: 0; font-size: 12px; line-height: 1.5; }
+.msg.assistant pre.md-code code { background: none; padding: 0; font: 12px/1.5 var(--font-mono); }
 .msg.assistant blockquote {
   margin: 8px 0; padding: 4px 12px; border-left: 3px solid var(--border-strong); color: var(--muted);
 }
@@ -193,7 +199,7 @@ button:active, .pressable:active { transform: scale(0.96); }
 }
 .tool > summary::-webkit-details-marker { display: none; }
 .tool .t-ico { flex: none; font-size: 15px; }
-.tool .t-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, Menlo, monospace; font-size: 13px; }
+.tool .t-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: 13px; }
 .tool .badge {
   font-size: 11px; padding: 2px 8px; border-radius: 999px;
   background: var(--surface-2); color: var(--muted);
@@ -203,7 +209,7 @@ button:active, .pressable:active { transform: scale(0.96); }
 .tool .badge.err { background: rgba(255,59,48,0.18); color: var(--danger); }
 .tool pre {
   margin: 0; padding: 12px; background: rgba(0,0,0,0.04); overflow-x: auto;
-  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  font: 12px/1.5 var(--font-mono);
 }
 @media (prefers-color-scheme: dark) { .tool pre { background: rgba(0,0,0,0.35); } }
 .diff-add { color: var(--ok); }
@@ -314,6 +320,7 @@ button:active, .pressable:active { transform: scale(0.96); }
   background: var(--surface-solid); color: var(--muted); font-size: 14px;
 }
 .chat-edit:active { background: var(--border-strong); }
+.chat-del { color: var(--danger); }
 
 /* Индикатор «агент думает» */
 .thinking {
@@ -354,7 +361,7 @@ button:active, .pressable:active { transform: scale(0.96); }
 .dialog .cmd {
   margin: 12px 0 0; padding: 12px; border-radius: 12px; background: rgba(0,0,0,0.05);
   border: 1px solid var(--warn); overflow-x: auto;
-  font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  font: 13px/1.5 var(--font-mono);
 }
 @media (prefers-color-scheme: dark) { .dialog .cmd { background: rgba(0,0,0,0.4); } }
 
@@ -366,9 +373,9 @@ button:active, .pressable:active { transform: scale(0.96); }
   box-shadow: 0 1px 4px rgba(0,0,0,0.12); }
 .git-body { margin-top: 12px; max-height: 46vh; overflow: auto; }
 .git-body pre { background: rgba(0,0,0,0.05); padding: 12px; border-radius: 12px; overflow-x: auto;
-  font: 12px/1.5 ui-monospace, Menlo, monospace; }
+  font: 12px/1.5 var(--font-mono); }
 @media (prefers-color-scheme: dark) { .git-body pre { background: rgba(0,0,0,0.4); } }
-.gline { font: 13px/1.6 ui-monospace, Menlo, monospace; }
+.gline { font: 13px/1.6 var(--font-mono); }
 .gline.m { color: var(--warn); } .gline.a { color: var(--ok); } .gline.d { color: var(--danger); }
 .commit-input { width: 100%; padding: 12px; border-radius: 12px; background: var(--surface-2);
   color: var(--text); border: 1px solid var(--border); font-size: 16px; }

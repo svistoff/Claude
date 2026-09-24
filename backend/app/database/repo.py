@@ -76,6 +76,18 @@ def add_message(
         return msg.id
 
 
+def delete_conversation(conv_id: str) -> bool:
+    with get_session() as db:
+        conv = db.get(Conversation, conv_id)
+        if conv is None:
+            return False
+        # Удаляем логи инструментов (нет ORM-каскада), затем сам чат (сообщения — каскадом).
+        db.query(ToolCallLog).filter(ToolCallLog.conversation_id == conv_id).delete()
+        db.delete(conv)
+        db.commit()
+        return True
+
+
 def rename_conversation(conv_id: str, title: str) -> bool:
     with get_session() as db:
         conv = db.get(Conversation, conv_id)

@@ -147,6 +147,14 @@ def rename_chat(conv_id: str, body: RenameBody, user: str = Depends(auth.require
     return {"ok": True}
 
 
+@router.delete("/chat/{conv_id}")
+def delete_chat(conv_id: str, user: str = Depends(auth.require_csrf)) -> dict:
+    ok = repo.delete_conversation(conv_id)
+    if not ok:
+        raise HTTPException(404, "Чат не найден.")
+    return {"ok": True}
+
+
 @router.get("/chat/{conv_id}")
 def get_chat(conv_id: str, user: str = Depends(auth.require_user)) -> dict:
     conv = repo.get_conversation(conv_id)

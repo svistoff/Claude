@@ -61,3 +61,18 @@ def test_rename_chat():
                headers={"x-csrf-token": csrf})
     assert r.status_code == 200 and r.json()["ok"] is True
     assert repo.get_conversation(conv_id)["title"] == "Новое имя"
+
+
+def test_delete_chat():
+    from app.database import repo
+    c = TestClient(app)
+    c.post("/api/login", json={"username": "admin", "password": TEST_PASSWORD})
+    csrf = c.get("/api/me").json()["csrf"]
+    conv_id = repo.create_conversation("demo", "На удаление")
+    repo.add_message(conv_id, "user", "привет")
+    r = c.request("DELETE", f"/api/chat/{conv_id}", headers={"x-csrf-token": csrf})
+    assert r.status_code == 200 and r.json()["ok"] is True
+    assert repo.get_conversation(conv_id) is None
+    # повторное удаление — 404
+    r2 = c.request("DELETE", f"/api/chat/{conv_id}", headers={"x-csrf-token": csrf})
+    assert r2.status_code == 404

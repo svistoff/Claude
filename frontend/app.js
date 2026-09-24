@@ -279,7 +279,10 @@ async function loadChats() {
     const edit = el("button", "chat-edit", "✎");
     edit.title = "Переименовать";
     edit.addEventListener("click", (e) => { e.stopPropagation(); renameChat(c); });
-    row.appendChild(main); row.appendChild(edit);
+    const del = el("button", "chat-edit chat-del", "🗑");
+    del.title = "Удалить";
+    del.addEventListener("click", (e) => { e.stopPropagation(); deleteChat(c); });
+    row.appendChild(main); row.appendChild(edit); row.appendChild(del);
     list.appendChild(row);
   });
   if (!data.chats.length) list.appendChild(el("div", "muted", "Пока нет чатов."));
@@ -290,6 +293,14 @@ async function renameChat(c) {
   const t = name.trim(); if (!t) return;
   const r = await api("/api/chat/" + c.id + "/rename", { method: "POST", body: JSON.stringify({ title: t }) });
   if (r.ok) loadChats();
+}
+async function deleteChat(c) {
+  if (!confirm(`Удалить чат «${c.title || "Без названия"}»? Это необратимо.`)) return;
+  const r = await api("/api/chat/" + c.id, { method: "DELETE" });
+  if (r.ok) {
+    if (state.conversationId === c.id) newChat();
+    loadChats();
+  }
 }
 async function openChat(id) {
   const r = await api("/api/chat/" + id); if (!r.ok) return;
