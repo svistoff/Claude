@@ -94,6 +94,13 @@ function getExcludedNumberSet() {
   return new Set(rows.map(r => normalizePhone(r.phone)).filter(Boolean));
 }
 
+// Номера звонящих, чьи звонки вообще не учитываются (например, тестовые
+// звонки владельца проверить связь с админом) — см. excluded_caller_numbers.
+function getExcludedCallerNumberSet() {
+  const rows = db.prepare('SELECT phone FROM excluded_caller_numbers').all();
+  return new Set(rows.map(r => normalizePhone(r.phone)).filter(Boolean));
+}
+
 // Карта "метка UIS (employee_full_name из get.calls_report ИЛИ action_name
 // плеча из get.call_legs_report) -> salon_id". У одного салона бывает
 // несколько разных меток (разные источники трафика называют его по-разному,
@@ -122,5 +129,6 @@ function canAccessSalon(user, salonId) {
 
 module.exports = {
   normalizePhone, findOrCreateClient, getEffectiveChecklist, getSalonPhoneMap,
-  getSharedIvrNumberSet, getExcludedNumberSet, getActionNameSalonMap, adminForUser, canAccessSalon
+  getSharedIvrNumberSet, getExcludedNumberSet, getExcludedCallerNumberSet,
+  getActionNameSalonMap, adminForUser, canAccessSalon
 };

@@ -11,7 +11,7 @@
 
 const fetch = require('node-fetch');
 const db = require('./db');
-const { normalizePhone, findOrCreateClient, getSalonPhoneMap, getSharedIvrNumberSet, getExcludedNumberSet, getActionNameSalonMap } = require('./lib');
+const { normalizePhone, findOrCreateClient, getSalonPhoneMap, getSharedIvrNumberSet, getExcludedNumberSet, getExcludedCallerNumberSet, getActionNameSalonMap } = require('./lib');
 
 const DATA_API_URL = 'https://dataapi.uiscom.ru/v2.0';
 const LOOKBACK_MS_FOR_CALLBACK_MATCH = 48 * 60 * 60 * 1000; // окно поиска пары «пропущен → перезвон»
@@ -158,6 +158,7 @@ async function ingestCalls(sinceStr, tillStr) {
   const phoneMap = getSalonPhoneMap();
   const sharedIvrNumbers = getSharedIvrNumberSet();
   const excludedNumbers = getExcludedNumberSet();
+  const excludedCallerNumbers = getExcludedCallerNumberSet();
   const actionNameMap = getActionNameSalonMap();
 
   const calls = await fetchAllCalls(sinceStr, tillStr);
@@ -171,6 +172,11 @@ async function ingestCalls(sinceStr, tillStr) {
   const unmatchedNumbers = new Set();
   let matched = 0;
   for (const c of calls) {
+    // тестовые звонки (например, владелец проверяет связь с админом) — не
+    // реальное обращение клиента, не должны попадать ни в СРМ, ни в статистику
+    const callerNorm = normalizePhone(c.contact_phone_number);
+    if (callerNorm && excludedCallerNumbers.has(callerNorm)) continue;
+
     const candidate = normalizePhone(c.virtual_phone_number) || normalizePhone(c.communication_number);
 
     // аккаунт UIS общий с другим бизнесом — его номера пропускаем молча,

@@ -83,6 +83,31 @@ CREATE TABLE IF NOT EXISTS excluded_call_numbers (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Номера, с которых звонки не должны учитываться в статистике/отчётах
+-- (например, личный номер владельца для проверки связи с админами — такой
+-- звонок реален и доходит до салона, но не является обращением клиента и
+-- искажает чек-лист/статистику). В отличие от excluded_call_numbers (тот
+-- фильтрует по набранному номеру — чужой бизнес), здесь фильтр по номеру
+-- ЗВОНЯЩЕГО — звонок просто не сохраняется вовсе.
+CREATE TABLE IF NOT EXISTS excluded_caller_numbers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  phone TEXT NOT NULL,
+  note TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Пул номеров, размещённых в рекламе/анкетах/соцсетях — не для резолюции
+-- салона (см. salon_phone_numbers/shared_ivr_numbers), а для отчёта "сколько
+-- звонков дала каждая анкета/площадка". Сопоставление со звонками — по
+-- calls.dialed_number (тот же нормализованный формат, что отдаёт UIS).
+CREATE TABLE IF NOT EXISTS ad_phone_numbers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  phone TEXT NOT NULL UNIQUE,
+  label TEXT NOT NULL,   -- например "Анкета Алиса", "Телеграм-аккаунт"
+  note TEXT,             -- произвольное поле, например ссылка на анкету
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- ===== Администраторы =====
 -- Отдельно от users: администратор существует как метка для ИИ даже без логина.
 -- Привязан ровно к одному объекту. user_id заполняется, только если владелец

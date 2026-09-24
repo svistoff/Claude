@@ -24,7 +24,7 @@ const path = require('path');
 const db = require('../db');
 const {
   normalizePhone, findOrCreateClient, getSalonPhoneMap,
-  getExcludedNumberSet, getActionNameSalonMap
+  getExcludedNumberSet, getExcludedCallerNumberSet, getActionNameSalonMap
 } = require('../lib');
 
 function parseCsv(text) {
@@ -113,6 +113,7 @@ async function main() {
   const salonsById = new Map(db.prepare('SELECT * FROM salons WHERE active = 1').all().map(s => [s.id, s]));
   const phoneMap = getSalonPhoneMap();
   const excludedNumbers = getExcludedNumberSet();
+  const excludedCallerNumbers = getExcludedCallerNumberSet();
   const actionNameMap = getActionNameSalonMap();
 
   const insertStmt = db.prepare(`
@@ -129,6 +130,9 @@ async function main() {
   const runOne = (row) => {
     const uisCallId = row[idx.sessionId];
     if (existsStmt.get(uisCallId)) { duplicates++; return; }
+
+    const callerNorm = normalizePhone(row[idx.callerPhone]);
+    if (callerNorm && excludedCallerNumbers.has(callerNorm)) { excluded++; return; }
 
     const virtualNumber = row[idx.virtualNumber] || '';
     const candidate = normalizePhone(virtualNumber);

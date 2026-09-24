@@ -164,6 +164,77 @@ app.delete('/api/excluded-numbers/:id', auth.requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
+// номера, с которых звонки не учитываются в статистике (например, тестовые
+// звонки владельца проверить связь с админом) — фильтр по номеру ЗВОНЯЩЕГО
+app.get('/api/excluded-caller-numbers', auth.requireAdmin, (req, res) => {
+  res.json(db.prepare('SELECT * FROM excluded_caller_numbers ORDER BY id').all());
+});
+
+app.post('/api/excluded-caller-numbers', auth.requireAdmin, (req, res) => {
+  const { phone, note } = req.body || {};
+  if (!phone) return res.status(400).json({ error: 'Укажите номер' });
+  const info = db.prepare('INSERT INTO excluded_caller_numbers (phone, note) VALUES (?, ?)').run(phone.trim(), note || null);
+  res.json(db.prepare('SELECT * FROM excluded_caller_numbers WHERE id = ?').get(info.lastInsertRowid));
+});
+
+app.delete('/api/excluded-caller-numbers/:id', auth.requireAdmin, (req, res) => {
+  db.prepare('DELETE FROM excluded_caller_numbers WHERE id = ?').run(req.params.id);
+  res.json({ ok: true });
+});
+
+// Пул номеров из рекламы/анкет с произвольной меткой — только для отчёта
+// "сколько звонков дала каждая анкета", к резолюции салона отношения не имеет.
+app.get('/api/ad-numbers', auth.requireAdmin, (req, res) => {
+  res.json(db.prepare('SELECT * FROM ad_phone_numbers ORDER BY label, phone').all());
+});
+
+app.post('/api/ad-numbers', auth.requireAdmin, (req, res) => {
+  const { phone, label, note } = req.body || {};
+  if (!phone || !label) return res.status(400).json({ error: 'Укажите номер и метку (название анкеты)' });
+  const norm = normalizePhone(phone);
+  if (!norm) return res.status(400).json({ error: 'Некорректный номер' });
+  try {
+    const info = db.prepare('INSERT INTO ad_phone_numbers (phone, label, note) VALUES (?, ?, ?)').run(norm, label.trim(), note || null);
+    res.json(db.prepare('SELECT * FROM ad_phone_numbers WHERE id = ?').get(info.lastInsertRowid));
+  } catch (e) {
+    res.status(400).json({ error: 'Такой номер уже добавлен' });
+  }
+});
+
+app.put('/api/ad-numbers/:id', auth.requireAdmin, (req, res) => {
+  const row = db.prepare('SELECT * FROM ad_phone_numbers WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Не найдено' });
+  const { label, note } = req.body || {};
+  db.prepare('UPDATE ad_phone_numbers SET label=?, note=? WHERE id=?').run(label ?? row.label, note ?? row.note, row.id);
+  res.json(db.prepare('SELECT * FROM ad_phone_numbers WHERE id = ?').get(row.id));
+});
+
+app.delete('/api/ad-numbers/:id', auth.requireAdmin, (req, res) => {
+  db.prepare('DELETE FROM ad_phone_numbers WHERE id = ?').run(req.params.id);
+  res.json({ ok: true });
+});
+
+// отчёт "сколько звонков на какую анкету/площадку" — период today/week/month
+// либо произвольный диапазон дат (date_from/date_till), для взгляда назад
+app.get('/api/ad-numbers/report', auth.requireAdmin, (req, res) => {
+  let from, till;
+  if (req.query.date_from && req.query.date_till) {
+    from = req.query.date_from;
+    till = req.query.date_till;
+  } else {
+    const period = ['today', 'week', 'month'].includes(req.query.period) ? req.query.period : 'week';
+    ({ from, till } = periodBounds(period, getTzOffset()));
+  }
+  const rows = db.prepare(`
+    SELECT an.id, an.phone, an.label, an.note, COUNT(c.id) AS calls
+    FROM ad_phone_numbers an
+    LEFT JOIN calls c ON c.dialed_number = an.phone AND c.started_at >= ? AND c.started_at <= ?
+    GROUP BY an.id
+    ORDER BY calls DESC, an.label
+  `).all(from, till);
+  res.json({ from, till, rows });
+});
+
 // ================= АДМИНИСТРАТОРЫ =================
 app.get('/api/admins', (req, res) => {
   let salonId = req.query.salon_id ? Number(req.query.salon_id) : null;

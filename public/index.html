@@ -132,7 +132,7 @@ const STAFF_NAV = [['guest', 'Гости']];
 // Администраторы/Салоны/Чек-листы физически убраны из главного меню и живут
 // как вкладки внутри "Настройки" (см. settingsTabsHtml) — но остаются
 // самостоятельными route'ами, чтобы не переписывать их рендереры.
-const SETTINGS_GROUP = ['settings', 'admins', 'salons', 'checklist'];
+const SETTINGS_GROUP = ['settings', 'admins', 'salons', 'checklist', 'ad-numbers'];
 const MOBILE_NAV = [
   ['dashboard', 'Дашборд', '📊'], ['calls', 'Звонки', '📞'],
   ['clients', 'Клиенты', '👥'], ['reports', 'Отчёты', '📈'], ['settings', 'Настройки', '⚙️']
@@ -179,7 +179,7 @@ function navigate(route) {
 // Вкладки над Настройки/Администраторы/Салоны/Чек-листы — эти три раздела
 // физически убраны из главного меню и открываются только отсюда.
 function settingsTabsHtml(active) {
-  const tabs = [['settings', 'Основное'], ['admins', 'Администраторы'], ['salons', 'Салоны и сауна'], ['checklist', 'Чек-листы']];
+  const tabs = [['settings', 'Основное'], ['admins', 'Администраторы'], ['salons', 'Салоны и сауна'], ['checklist', 'Чек-листы'], ['ad-numbers', 'Номера и анкеты']];
   return `<div class="row" style="margin-bottom:16px;border-bottom:1px solid var(--border);padding-bottom:12px">
     ${tabs.map(([r, label]) => `<button class="${r===active?'primary':''}" onclick="navigate('${r}')">${label}</button>`).join('')}
   </div>`;
@@ -829,6 +829,123 @@ async function addSalonItem(salonId) {
 async function toggleItem(id, active) { await api('/checklist/' + id, { method: 'PUT', body: { active } }); RENDERERS.checklist(); }
 async function deleteItem(id) { if (!confirm('Удалить пункт?')) return; await api('/checklist/' + id, { method: 'DELETE' }); RENDERERS.checklist(); }
 
+// ================= НОМЕРА И АНКЕТЫ =================
+// Пул номеров из рекламы/анкет с произвольной меткой — не про резолюцию
+// салона, а про то, какая площадка/анкета реально даёт звонки. Отчёт
+// считается по calls.dialed_number, поэтому как только номер размечен,
+// отчёт сразу видит и уже накопленную историю звонков (в т.ч. импортированных
+// из CSV), а не только звонки с этого момента.
+let adNumbersState = { period: 'week', customFrom: null, customTill: null };
+
+RENDERERS['ad-numbers'] = async function renderAdNumbers() {
+  const numbers = await api('/ad-numbers');
+  const main = document.getElementById('main');
+  main.innerHTML = `
+    ${settingsTabsHtml('ad-numbers')}
+    <h2>Номера и анкеты</h2>
+    <div class="card">
+      <h3>Пул номеров</h3>
+      <p class="muted">Все ваши номера из рекламы/анкет/соцсетей со своей меткой (например,
+      «Анкета Алиса», «Телеграм-аккаунт») и произвольной заметкой (например, ссылка на анкету).
+      На то, к какому салону относится звонок, это не влияет — только для отчёта ниже.</p>
+      <table id="ad-numbers-table">${renderAdNumbersRows(numbers)}</table>
+      <div class="row" style="margin-top:8px;flex-wrap:wrap">
+        <input id="new-ad-phone" placeholder="Номер">
+        <input id="new-ad-label" placeholder="Метка, например «Анкета Алиса»">
+        <input id="new-ad-note" placeholder="Заметка/ссылка (необязательно)" style="min-width:220px">
+        <button class="primary" onclick="addAdNumber()">+ Добавить</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="row between" style="flex-wrap:wrap;gap:8px">
+        <h3 style="margin:0">Сколько звонков на какую анкету</h3>
+        <div class="row">
+          ${Object.entries(PERIOD_LABELS).map(([key, label]) =>
+            `<button class="${adNumbersState.period===key && !adNumbersState.customFrom ? 'primary' : ''}" onclick="setAdPeriod('${key}')">${label}</button>`).join('')}
+        </div>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <label>С <input id="ad-from" type="date"></label>
+        <label>По <input id="ad-till" type="date"></label>
+        <button onclick="applyAdCustomRange()">Показать за период</button>
+      </div>
+      <div id="ad-report-chart" style="margin-top:14px">Загрузка…</div>
+      <table id="ad-report-table" style="margin-top:14px"></table>
+    </div>
+  `;
+  await loadAdReport();
+};
+
+function setAdPeriod(period) {
+  adNumbersState = { period, customFrom: null, customTill: null };
+  RENDERERS['ad-numbers']();
+}
+async function applyAdCustomRange() {
+  const from = document.getElementById('ad-from').value;
+  const till = document.getElementById('ad-till').value;
+  if (!from || !till) return alert('Укажите обе даты');
+  adNumbersState.customFrom = from + ' 00:00:00';
+  adNumbersState.customTill = till + ' 23:59:59';
+  await loadAdReport();
+}
+async function loadAdReport() {
+  const qs = adNumbersState.customFrom
+    ? `date_from=${encodeURIComponent(adNumbersState.customFrom)}&date_till=${encodeURIComponent(adNumbersState.customTill)}`
+    : `period=${adNumbersState.period}`;
+  const { rows } = await api('/ad-numbers/report?' + qs);
+  document.getElementById('ad-report-chart').innerHTML = renderAdReportChart(rows);
+  document.getElementById('ad-report-table').innerHTML = `
+    <tr><th>Метка</th><th>Номер</th><th>Заметка</th><th>Звонков</th></tr>
+    ${rows.map(r => `<tr><td>${esc(r.label)}</td><td>${esc(r.phone)}</td><td>${noteOrLink(r.note)}</td><td>${r.calls}</td></tr>`).join('')
+      || '<tr><td colspan="4" class="muted">Номеров не добавлено</td></tr>'}`;
+}
+
+function noteOrLink(note) {
+  if (!note) return '—';
+  const trimmed = note.trim();
+  return /^https?:\/\//i.test(trimmed) ? `<a href="${esc(trimmed)}" target="_blank" rel="noopener">ссылка</a>` : esc(trimmed);
+}
+
+function renderAdNumbersRows(rows) {
+  return `<tr><th>Метка</th><th>Номер</th><th>Заметка</th><th></th></tr>` +
+    (rows.map(r => `<tr><td>${esc(r.label)}</td><td>${esc(r.phone)}</td><td>${noteOrLink(r.note)}</td>
+      <td><button class="danger" onclick="deleteAdNumber(${r.id})">Удалить</button></td></tr>`).join('')
+    || '<tr><td colspan="4" class="muted">Номеров не добавлено</td></tr>');
+}
+async function addAdNumber() {
+  const phone = document.getElementById('new-ad-phone').value.trim();
+  const label = document.getElementById('new-ad-label').value.trim();
+  const note = document.getElementById('new-ad-note').value.trim();
+  if (!phone || !label) return alert('Укажите номер и метку');
+  try {
+    await api('/ad-numbers', { method: 'POST', body: { phone, label, note } });
+    RENDERERS['ad-numbers']();
+  } catch (e) { alert(e.message); }
+}
+async function deleteAdNumber(id) {
+  if (!confirm('Удалить номер из пула?')) return;
+  await api('/ad-numbers/' + id, { method: 'DELETE' });
+  RENDERERS['ad-numbers']();
+}
+
+// Горизонтальные полоски вместо SVG-графика — при десятках анкет читается
+// заметно лучше, чем сгруппированные столбцы (не слипаются подписи), и сразу
+// видно и работающие, и "пустые" анкеты (серая, нулевая полоска).
+function renderAdReportChart(rows) {
+  if (!rows.length) return '<p class="muted">Список номеров пуст — добавьте номера выше</p>';
+  const maxVal = Math.max(1, ...rows.map(r => r.calls));
+  return rows.map(r => `
+    <div style="margin-bottom:10px">
+      <div class="row between" style="font-size:13px;margin-bottom:3px">
+        <span>${esc(r.label)} <span class="muted">(${esc(r.phone)})</span></span>
+        <b>${r.calls}</b>
+      </div>
+      <div style="background:var(--bg);border-radius:4px;overflow:hidden;height:10px">
+        <div style="width:${Math.round(r.calls/maxVal*100)}%;background:${r.calls>0?'var(--accent)':'var(--border)'};height:100%"></div>
+      </div>
+    </div>`).join('');
+}
+
 // ================= ОТЧЁТЫ =================
 RENDERERS.reports = async function renderReports() {
   const main = document.getElementById('main');
@@ -868,8 +985,9 @@ RENDERERS.reports = async function renderReports() {
 
 // ================= НАСТРОЙКИ =================
 RENDERERS.settings = async function renderSettings() {
-  const [ai, usage, tel, callout, ivrNumbers, excludedNumbers] = await Promise.all([
-    api('/settings/ai'), api('/settings/ai/usage'), api('/settings/telephony'), api('/settings/call-out'), api('/ivr-numbers'), api('/excluded-numbers')
+  const [ai, usage, tel, callout, ivrNumbers, excludedNumbers, excludedCallerNumbers] = await Promise.all([
+    api('/settings/ai'), api('/settings/ai/usage'), api('/settings/telephony'), api('/settings/call-out'),
+    api('/ivr-numbers'), api('/excluded-numbers'), api('/excluded-caller-numbers')
   ]);
   const main = document.getElementById('main');
   main.innerHTML = `
@@ -924,6 +1042,18 @@ RENDERERS.settings = async function renderSettings() {
         <input id="new-excluded-phone" placeholder="Чужой номер">
         <input id="new-excluded-note" placeholder="Заметка (например, «менеджер ЕКБ ГИД»)">
         <button class="primary" onclick="addExcludedNumber()">+ Добавить</button>
+      </div>
+    </div>
+    <div class="card">
+      <h3>🧪 Тестовые номера (не учитывать в статистике)</h3>
+      <p class="muted">Например, ваш личный номер, когда вы звоните проверить связь с админом —
+      это реальный звонок до салона, но не обращение клиента: чек-лист по нему не показателен и
+      портит статистику. Звонки с номеров из этого списка вообще не сохраняются в СРМ.</p>
+      <table id="excluded-caller-numbers-table">${renderExcludedCallerNumbersRows(excludedCallerNumbers)}</table>
+      <div class="row" style="margin-top:8px">
+        <input id="new-excluded-caller-phone" placeholder="Ваш/тестовый номер">
+        <input id="new-excluded-caller-note" placeholder="Заметка (например, «мой личный»)">
+        <button class="primary" onclick="addExcludedCallerNumber()">+ Добавить</button>
       </div>
     </div>
     <div class="card">
@@ -1024,6 +1154,23 @@ async function addExcludedNumber() {
 }
 async function deleteExcludedNumber(id) {
   await api('/excluded-numbers/' + id, { method: 'DELETE' });
+  RENDERERS.settings();
+}
+function renderExcludedCallerNumbersRows(rows) {
+  return `<tr><th>Номер</th><th>Заметка</th><th></th></tr>` +
+    (rows.map(r => `<tr><td>${esc(r.phone)}</td><td>${esc(r.note||'—')}</td>
+      <td><button class="danger" onclick="deleteExcludedCallerNumber(${r.id})">Удалить</button></td></tr>`).join('')
+    || '<tr><td colspan="3" class="muted">Тестовых номеров не добавлено</td></tr>');
+}
+async function addExcludedCallerNumber() {
+  const phone = document.getElementById('new-excluded-caller-phone').value.trim();
+  const note = document.getElementById('new-excluded-caller-note').value.trim();
+  if (!phone) return alert('Укажите номер');
+  await api('/excluded-caller-numbers', { method: 'POST', body: { phone, note } });
+  RENDERERS.settings();
+}
+async function deleteExcludedCallerNumber(id) {
+  await api('/excluded-caller-numbers/' + id, { method: 'DELETE' });
   RENDERERS.settings();
 }
 async function saveCallOutSettings() {
