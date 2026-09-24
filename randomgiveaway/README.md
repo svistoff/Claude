@@ -80,7 +80,10 @@ Random Engine получает только нормализованный сп�
   long-lived токена по cron — см. «Подключение Instagram» ниже.
 - **VK-адаптер** (часть Этапа 4): читает комментарии + вложенные ответы
   (до 10 на ветку) к постам сообщества ЕКБ ГИД через `wall.getComments`,
-  токеном сообщества — без OAuth, см. «Подключение VK» ниже.
+  пользовательским токеном (токен сообщества для этого не подходит —
+  см. «Подключение VK» ниже), с разовой OAuth-привязкой
+  (`/api/vk/oauth/start`) — при scope `offline` токен бессрочный, cron
+  не нужен.
 - **Фронтенд (Этап 2)** — `randomgiveaway/frontend/` (React + Vite +
   Framer Motion + canvas-confetti): выбор источника/импорт, настройка
   правил, предпросмотр участников, полноэкранный экран розыгрыша
@@ -349,25 +352,31 @@ curl -X POST https://random.ekb-guide.ru/api/giveaways \
 
 ## Подключение VK
 
-Сильно проще Instagram: не нужен ни OAuth, ни аналог App Review, ни
-публикация приложения — токен сообщества создаётся прямо в настройках
-группы ЕКБ ГИД, действует бессрочно (пока не отозван вручную) и не
-требует продления по cron.
+**Важно (найдено вживую, не по документации):** токен сообщества для
+чтения комментариев НЕ подходит — `wall.getComments` отвечает ошибкой
+`27 "Group authorization failed: method is unavailable with group auth"`
+при вызове с групповым токеном, независимо от выданных прав. Нужен
+именно пользовательский access-токен, полученный через OAuth. Плюс: при
+запросе scope `offline` такой токен не истекает — автопродление по cron,
+в отличие от Instagram, не требуется.
 
-### 1. Создать ключ доступа сообщества
+### 1. Создать VK-приложение
 
-С компьютера (не в мобильном приложении — раздел там обычно недоступен):
-
-1. Зайти в сообщество ЕКБ ГИД на vk.com → **Управление сообществом**
-   (шестерёнка/три точки рядом с названием группы).
-2. В левом меню управления найти **«Работа с API»** → **«Ключи доступа»**.
-3. Нажать **«Создать ключ»**.
-4. В списке прав отметить **«Стена»** (Wall) — это единственное право,
-   которое нужно для чтения комментариев. Остальные можно не трогать.
-5. Подтвердить (может попросить код из SMS/приложения VK ID, если
-   включена двухфакторная аутентификация).
-6. Скопировать токен — он показывается один раз; если не сохранить,
-   ключ можно только пересоздать заново (старый перестанет действовать).
+1. Зайти на https://dev.vk.com/apps (под тем же VK-аккаунтом, который
+   является администратором сообщества ЕКБ ГИД) → **Создать приложение**.
+2. Тип — **Standalone-приложение** (десктопное/треугольник — именно этот
+   тип поддерживает классический OAuth-обмен с client_secret, который
+   мы используем).
+3. В настройках приложения найти и скопировать:
+   - **ID приложения** (Application ID) — это `VK_APP_ID`
+   - **Защищённый ключ** (Secure key / Service key) — это `VK_APP_SECRET`
+4. Там же должно быть поле для **Redirect URI** (может называться
+   «Доверенный redirect URI» или быть в настройках OAuth) — указать
+   `https://random.ekb-guide.ru/api/vk/oauth/callback`. Если такого поля
+   не найдётся в интерфейсе — это, скорее всего, означает, что для
+   Standalone-приложений VK ожидает фиксированный
+   `https://oauth.vk.com/blank.html`; в этом случае напишите об этом,
+   разберёмся по месту и поправим `VK_OAUTH_REDIRECT_URI` соответственно.
 
 ### 2. Прописать .env и перезапустить сервис
 
@@ -375,17 +384,38 @@ curl -X POST https://random.ekb-guide.ru/api/giveaways \
 nano /root/random-giveaway/randomgiveaway/.env
 ```
 ```
-VK_COMMUNITY_TOKEN=...
+VK_APP_ID=...
+VK_APP_SECRET=...
+VK_OAUTH_REDIRECT_URI=https://random.ekb-guide.ru/api/vk/oauth/callback
 ```
 ```bash
 sudo supervisorctl restart random-giveaway-api
 ```
 
-### 3. Проверка
+### 3. Пройти разовую авторизацию
+
+Как и с Instagram, `/api/vk/oauth/start` защищён `ADMIN_TOKEN` — берём
+ссылку curl'ом, открываем в браузере:
 
 ```bash
+cd /root/random-giveaway
 ADMIN=$(grep '^ADMIN_TOKEN=' randomgiveaway/.env | cut -d= -f2)
+curl -si -H "X-Admin-Token: $ADMIN" https://random.ekb-guide.ru/api/vk/oauth/start | grep -i '^location'
+```
 
+Открыть полученную ссылку в браузере, залогинившись в VK тем аккаунтом,
+что администрирует ЕКБ ГИД → разрешить доступ. VK редиректнёт на
+`/callback`, который сам обменяет код на токен и запишет его в `.env`.
+Страница ответит «VK подключён».
+
+Перезапустить сервис:
+```bash
+sudo supervisorctl restart random-giveaway-api
+```
+
+### 4. Проверка
+
+```bash
 curl -s -X POST https://random.ekb-guide.ru/api/giveaways \
   -H "X-Admin-Token: $ADMIN" -H "Content-Type: application/json" \
   -d '{"source":"vk","post_url":"https://vk.com/wall-XXXXXXX_YYY","settings":{"winners_count":1}}'
@@ -401,8 +431,9 @@ curl -s -X POST https://random.ekb-guide.ru/api/giveaways \
 
 **Если VK ответит ошибкой про версию API** (`error_code` про
 устаревший/неподдерживаемый `v`) — версия API захардкожена в
-`randomgiveaway/adapters/vk_adapter.py` (`VK_API_VERSION`), актуальный
-список версий смотреть на `dev.vk.com`, поправить константу на свежую.
+`randomgiveaway/adapters/vk_adapter.py` и `services/vk_oauth.py`
+(`VK_API_VERSION`), актуальный список версий смотреть на `dev.vk.com`,
+поправить константу на свежую.
 
 ## API (§20 ТЗ, пути ориентировочные)
 
@@ -419,4 +450,6 @@ GET  /api/results/{public_id}                   # публично, без ав�
 
 GET  /api/instagram/oauth/start                 # разовая привязка ekb_guide, требует ADMIN_TOKEN
 GET  /api/instagram/oauth/callback              # редирект от Instagram, вызывать вручную не нужно
+GET  /api/vk/oauth/start                        # разовая привязка ekb_guide, требует ADMIN_TOKEN
+GET  /api/vk/oauth/callback                     # редирект от VK, вызывать вручную не нужно
 ```

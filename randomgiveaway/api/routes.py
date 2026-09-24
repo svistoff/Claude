@@ -25,12 +25,13 @@ from randomgiveaway.database.models import Participant, Winner
 from randomgiveaway.env_file import set_env_var
 from randomgiveaway.services import giveaways as giveaway_service
 from randomgiveaway.services import instagram_oauth
+from randomgiveaway.services import vk_oauth
 
 router = APIRouter(prefix="/api")
 
 _LIVE_ADAPTERS = {
     "instagram": lambda: InstagramAdapter(config.instagram_access_token),
-    "vk": lambda: VKAdapter(config.vk_community_token),
+    "vk": lambda: VKAdapter(config.vk_access_token),
     "telegram": lambda: TelegramAdapter(config.telegram_session),
 }
 
@@ -292,4 +293,89 @@ async def instagram_oauth_callback(
         "<code>sudo supervisorctl restart random-giveaway-api</code></p>"
         "<p>И настройте автопродление по cron — см. randomgiveaway/README.md "
         "(scripts/refresh_instagram_token.py), иначе токен молча истечёт через ~60 дней.</p>"
+    )
+
+
+# --- VK OAuth: разовая привязка пользовательского токена ---
+# (см. services/vk_oauth.py и README.md). wall.getComments не работает с
+# токеном сообщества (ошибка 27 "method is unavailable with group auth",
+# проверено вживую) — нужен именно пользовательский токен. При
+# scope=offline он не истекает, автопродление не требуется.
+#
+# /start защищён require_admin по тем же причинам, что и у Instagram —
+# без этого кто угодно мог бы авторизовать сервис своим VK-аккаунтом и
+# подменить VK_ACCESS_TOKEN в .env. state защищает /callback от CSRF/replay.
+
+VK_SCOPES = "wall,offline"
+
+_vk_pending_oauth_states: set[str] = set()
+
+
+@router.get("/vk/oauth/start", dependencies=[Depends(require_admin)])
+async def vk_oauth_start() -> RedirectResponse:
+    if not (config.vk_app_id and config.vk_oauth_redirect_uri):
+        raise HTTPException(
+            status_code=400,
+            detail="VK_APP_ID / VK_OAUTH_REDIRECT_URI не заданы в .env",
+        )
+    state = secrets.token_urlsafe(24)
+    _vk_pending_oauth_states.add(state)
+    url = (
+        "https://oauth.vk.com/authorize"
+        f"?client_id={config.vk_app_id}"
+        f"&redirect_uri={config.vk_oauth_redirect_uri}"
+        f"&scope={VK_SCOPES}"
+        "&response_type=code"
+        "&display=page"
+        f"&v={vk_oauth.VK_API_VERSION}"
+        f"&state={state}"
+    )
+    return RedirectResponse(url)
+
+
+@router.get("/vk/oauth/callback")
+async def vk_oauth_callback(
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+    error_description: str | None = None,
+) -> HTMLResponse:
+    if error:
+        return HTMLResponse(
+            f"<h1>VK отказал в авторизации</h1><p>{error}: {error_description}</p>",
+            status_code=400,
+        )
+    if not state or state not in _vk_pending_oauth_states:
+        raise HTTPException(
+            status_code=400,
+            detail="Неизвестный или уже использованный state — начните заново с /api/vk/oauth/start",
+        )
+    _vk_pending_oauth_states.discard(state)
+    if not code:
+        raise HTTPException(status_code=400, detail="VK не вернул code")
+    if not (config.vk_app_id and config.vk_app_secret and config.vk_oauth_redirect_uri):
+        raise HTTPException(
+            status_code=500,
+            detail="VK_APP_ID / VK_APP_SECRET / VK_OAUTH_REDIRECT_URI не заданы в .env",
+        )
+
+    try:
+        token, expires_in = await vk_oauth.exchange_code_for_token(
+            code, config.vk_app_id, config.vk_app_secret, config.vk_oauth_redirect_uri
+        )
+    except vk_oauth.VKOAuthError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    set_env_var(ENV_PATH, "VK_ACCESS_TOKEN", token)
+    lifetime_note = (
+        "токен бессрочный (запрошен scope offline)."
+        if expires_in is None
+        else f"действителен ещё ~{expires_in // 86400} дней — обратите внимание, "
+        "scope offline не сработал как ожидалось, потребуется продумать продление."
+    )
+    return HTMLResponse(
+        "<h1>VK подключён</h1>"
+        f"<p>Токен сохранён в .env. {lifetime_note}</p>"
+        "<p>Перезапустите сервис, чтобы он подхватил новый токен:<br>"
+        "<code>sudo supervisorctl restart random-giveaway-api</code></p>"
     )

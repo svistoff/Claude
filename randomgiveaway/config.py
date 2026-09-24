@@ -47,8 +47,16 @@ class Config:
     instagram_app_id: str | None
     instagram_app_secret: str | None
     instagram_oauth_redirect_uri: str | None
-    # Плейсхолдеры под Этап 4 — VK/Telegram ещё не реализованы.
-    vk_community_token: str | None
+    # Пользовательский access-токен VK (НЕ токен сообщества — wall.getComments
+    # с групповым токеном отдаёт ошибку 27 "method is unavailable with group
+    # auth", проверено вживую). Получается через /api/vk/oauth/start (см.
+    # services/vk_oauth.py и README.md). При scope=offline токен не
+    # истекает — отдельного автопродления по cron не требуется.
+    vk_access_token: str | None
+    vk_app_id: str | None
+    vk_app_secret: str | None
+    vk_oauth_redirect_uri: str | None
+    # Плейсхолдер под Этап 4 — Telegram ещё не реализован.
     telegram_session: str | None
 
 
@@ -65,7 +73,10 @@ def load_config() -> Config:
         instagram_app_id=os.getenv("INSTAGRAM_APP_ID") or None,
         instagram_app_secret=os.getenv("INSTAGRAM_APP_SECRET") or None,
         instagram_oauth_redirect_uri=os.getenv("INSTAGRAM_OAUTH_REDIRECT_URI") or None,
-        vk_community_token=os.getenv("VK_COMMUNITY_TOKEN") or None,
+        vk_access_token=os.getenv("VK_ACCESS_TOKEN") or None,
+        vk_app_id=os.getenv("VK_APP_ID") or None,
+        vk_app_secret=os.getenv("VK_APP_SECRET") or None,
+        vk_oauth_redirect_uri=os.getenv("VK_OAUTH_REDIRECT_URI") or None,
         telegram_session=os.getenv("TELEGRAM_SESSION") or None,
     )
 

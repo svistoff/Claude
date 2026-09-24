@@ -1,13 +1,17 @@
-"""VK-адаптер: wall.getComments через токен сообщества.
+"""VK-адаптер: wall.getComments через пользовательский access-токен.
 
-В отличие от Instagram, VK API не требует авторизации от автора поста —
-достаточно токена сообщества ЕКБ ГИД (создаётся прямо в настройках
-группы, без OAuth и без аналога App Review), чтобы читать комментарии к
-публичным постам этого сообщества. Скоуп по факту совпадает с общим
-решением (см. README.md, «Ключевое решение по скоупу»): розыгрыши
-проводятся в постах самого ekb_guide, не сторонних организаторов —
-здесь это ограничение естественное (токен сообщества и так не даёт
-доступа к чужим сообществам).
+Важно (проверено вживую): токен сообщества для этого НЕ подходит — VK
+отвечает ошибкой 27 "Group authorization failed: method is unavailable
+with group auth" при вызове wall.getComments с групповым токеном,
+независимо от выданных прав. Нужен именно пользовательский токен,
+полученный через /api/vk/oauth/start (см. services/vk_oauth.py) — с
+scope=wall,offline он не истекает, отдельного продления по cron не
+требуется.
+
+Скоуп по факту совпадает с общим решением (см. README.md, «Ключевое
+решение по скоупу»): розыгрыши проводятся в постах самого ekb_guide —
+здесь это не enforced техническим ограничением API (в отличие от
+Instagram), а просто согласованная граница использования сервиса.
 
 Как получить токен — см. README.md, раздел «Подключение VK».
 
@@ -49,14 +53,15 @@ def _parse_post_url(post_url: str) -> tuple[int, int]:
 class VKAdapter(SourceAdapter):
     name = "vk"
 
-    def __init__(self, community_token: str | None):
-        self._token = community_token
+    def __init__(self, access_token: str | None):
+        self._token = access_token
 
     async def fetch_comments(self, post_url: str) -> list[RawComment]:
         if not self._token:
             raise SourceAdapterError(
-                "VK не подключён: не задан VK_COMMUNITY_TOKEN. "
-                "Создайте токен сообщества с правом «Стена» — см. randomgiveaway/README.md."
+                "VK не подключён: не задан VK_ACCESS_TOKEN. "
+                "Пройдите разовую авторизацию через /api/vk/oauth/start "
+                "(см. randomgiveaway/README.md)."
             )
 
         owner_id, post_id = _parse_post_url(post_url)

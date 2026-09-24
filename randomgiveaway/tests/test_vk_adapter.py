@@ -30,13 +30,13 @@ def test_parse_post_url_raises_friendly_error_for_unrecognized_link():
 
 
 async def test_raises_friendly_error_without_token():
-    adapter = VKAdapter(community_token=None)
+    adapter = VKAdapter(access_token=None)
     with pytest.raises(SourceAdapterError, match="не подключён"):
         await adapter.fetch_comments("https://vk.com/wall-1_1")
 
 
 async def test_fetches_with_pagination_and_flattens_thread_replies(monkeypatch):
-    adapter = VKAdapter(community_token="fake-token")
+    adapter = VKAdapter(access_token="fake-token")
 
     page1 = {
         "count": 2,
@@ -92,7 +92,7 @@ async def test_fetches_with_pagination_and_flattens_thread_replies(monkeypatch):
 
 
 async def test_maps_community_author_when_from_id_negative(monkeypatch):
-    adapter = VKAdapter(community_token="fake-token")
+    adapter = VKAdapter(access_token="fake-token")
 
     page = {
         "count": 1,
@@ -114,7 +114,7 @@ async def test_maps_community_author_when_from_id_negative(monkeypatch):
 
 
 async def test_skips_deleted_comments(monkeypatch):
-    adapter = VKAdapter(community_token="fake-token")
+    adapter = VKAdapter(access_token="fake-token")
 
     page = {
         "count": 2,
@@ -137,7 +137,7 @@ async def test_skips_deleted_comments(monkeypatch):
 
 
 async def test_falls_back_when_profile_not_found(monkeypatch):
-    adapter = VKAdapter(community_token="fake-token")
+    adapter = VKAdapter(access_token="fake-token")
 
     page = {
         "count": 1,
@@ -158,7 +158,7 @@ async def test_falls_back_when_profile_not_found(monkeypatch):
 
 
 async def test_raises_friendly_error_on_vk_api_error(monkeypatch):
-    adapter = VKAdapter(community_token="fake-token")
+    adapter = VKAdapter(access_token="fake-token")
 
     async def fake_call(client, method, params):
         raise SourceAdapterError("VK API: Access denied (код 15)")
