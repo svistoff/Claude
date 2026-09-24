@@ -179,6 +179,10 @@ button:active, .pressable:active { transform: scale(0.96); }
   margin: 8px 0; padding: 4px 12px; border-left: 3px solid var(--border-strong); color: var(--muted);
 }
 .msg.assistant a { color: var(--accent); }
+.msg.assistant .md-table { overflow-x: auto; margin: 8px 0; -webkit-overflow-scrolling: touch; }
+.msg.assistant table { border-collapse: collapse; width: 100%; font-family: var(--font-ui); font-size: 14px; }
+.msg.assistant th, .msg.assistant td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; vertical-align: top; }
+.msg.assistant th { background: var(--surface-2); font-weight: 600; white-space: nowrap; }
 @media (prefers-color-scheme: dark) { .msg.assistant pre.md-code { background: rgba(0,0,0,0.4); } }
 .msg.system-note {
   align-self: center; background: transparent; color: var(--muted);

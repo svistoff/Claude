@@ -412,25 +412,41 @@ function mdInline(s) {
 }
 function mdToHtml(src) {
   const blocks = [];
+  const M = "";
   src = src.replace(/```(\w*)\n?([\s\S]*?)```/g, (m, lang, code) => {
     blocks.push('<pre class="md-code"><code>' + escapeHtml(code.replace(/\n$/, "")) + "</code></pre>");
-    return " B" + (blocks.length - 1) + " ";
+    return M + (blocks.length - 1) + M;
   });
   const lines = src.split("\n");
   let html = "", listType = null, para = [];
   const flushPara = () => { if (para.length) { html += "<p>" + mdInline(para.join(" ")) + "</p>"; para = []; } };
   const flushList = () => { if (listType) { html += "</" + listType + ">"; listType = null; } };
-  for (const line of lines) {
-    const ph = line.match(/^ B(\d+) $/);
-    if (ph) { flushPara(); flushList(); html += blocks[+ph[1]]; continue; }
-    if (/^\s*$/.test(line)) { flushPara(); flushList(); continue; }
+  const isSep = (l) => l.includes("-") && /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$/.test(l);
+  const cells = (l) => { let s = l.trim(); if (s.startsWith("|")) s = s.slice(1); if (s.endsWith("|")) s = s.slice(0, -1); return s.split("|").map((x) => x.trim()); };
+  const phRe = new RegExp("^" + M + "(\\d+)" + M + "$");
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    // GFM-таблица: строка с '|' и следующая строка-разделитель (|---|---|)
+    if (line.includes("|") && line.trim() && i + 1 < lines.length && isSep(lines[i + 1])) {
+      flushPara(); flushList();
+      const header = cells(line); i += 2; const rows = [];
+      while (i < lines.length && lines[i].includes("|") && lines[i].trim()) { rows.push(cells(lines[i])); i++; }
+      let t = '<div class="md-table"><table><thead><tr>' +
+        header.map((h) => "<th>" + mdInline(h) + "</th>").join("") + "</tr></thead><tbody>";
+      for (const r of rows) t += "<tr>" + r.map((c) => "<td>" + mdInline(c) + "</td>").join("") + "</tr>";
+      html += t + "</tbody></table></div>"; continue;
+    }
+    const ph = line.match(phRe);
+    if (ph) { flushPara(); flushList(); html += blocks[+ph[1]]; i++; continue; }
+    if (/^\s*$/.test(line)) { flushPara(); flushList(); i++; continue; }
     const h = line.match(/^(#{1,6})\s+(.*)$/);
-    if (h) { flushPara(); flushList(); const lvl = Math.min(h[1].length + 2, 6); html += "<h" + lvl + ">" + mdInline(h[2]) + "</h" + lvl + ">"; continue; }
+    if (h) { flushPara(); flushList(); const lvl = Math.min(h[1].length + 2, 6); html += "<h" + lvl + ">" + mdInline(h[2]) + "</h" + lvl + ">"; i++; continue; }
     const q = line.match(/^>\s?(.*)$/);
-    if (q) { flushPara(); flushList(); html += "<blockquote>" + mdInline(q[1]) + "</blockquote>"; continue; }
+    if (q) { flushPara(); flushList(); html += "<blockquote>" + mdInline(q[1]) + "</blockquote>"; i++; continue; }
     const ul = line.match(/^\s*[-*+]\s+(.*)$/), ol = line.match(/^\s*\d+\.\s+(.*)$/);
-    if (ul || ol) { flushPara(); const t = ul ? "ul" : "ol"; if (listType !== t) { flushList(); html += "<" + t + ">"; listType = t; } html += "<li>" + mdInline((ul || ol)[1]) + "</li>"; continue; }
-    para.push(line);
+    if (ul || ol) { flushPara(); const t = ul ? "ul" : "ol"; if (listType !== t) { flushList(); html += "<" + t + ">"; listType = t; } html += "<li>" + mdInline((ul || ol)[1]) + "</li>"; i++; continue; }
+    para.push(line); i++;
   }
   flushPara(); flushList();
   return html;
