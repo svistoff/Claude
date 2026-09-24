@@ -128,7 +128,9 @@ class Sheet {
 let sheets = {};
 function openSheet(name) { sheets[name].present(); }
 function closeSheet(name) { sheets[name] && sheets[name].dismiss(false); }
-scrim.addEventListener("click", () => { if (activeSheet) activeSheet.dismiss(false); closeDialog(); });
+// Клик по фону закрывает только листы. Диалог подтверждения — строго модальный:
+// закрыть можно лишь кнопкой «Отменить»/«Разрешить», чтобы случайный тап не терял ответ.
+scrim.addEventListener("click", () => { if (activeSheet) activeSheet.dismiss(false); });
 
 // ---------- Диалог (материализация blur+scale, §12) ----------
 let pendingCallId = null;
