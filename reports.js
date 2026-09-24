@@ -270,4 +270,36 @@ async function renderClientsReport(period) {
   return page('Отчёт по клиентам', `Период: ${period === 'month' ? 'месяц' : 'неделя'}`, body);
 }
 
-module.exports = { renderAdminReport, renderSalonReport, renderNetworkReport, renderClientsReport };
+async function renderAdNumbersReport(period) {
+  const since = periodStart(period);
+  const rows = db.prepare(`
+    SELECT an.phone, an.label, an.note, COUNT(c.id) AS calls
+    FROM ad_phone_numbers an
+    LEFT JOIN calls c ON c.dialed_number = an.phone AND c.started_at >= ?
+    GROUP BY an.id
+    ORDER BY calls DESC, an.label
+  `).all(since);
+
+  const totalCalls = rows.reduce((s, r) => s + r.calls, 0);
+  const working = rows.filter(r => r.calls > 0).length;
+  const maxVal = Math.max(1, ...rows.map(r => r.calls));
+
+  const tableRows = rows.map(r => `
+    <tr><td>${esc(r.label)}</td><td>${esc(r.phone)}</td>
+    <td><div class="bar"><div class="bar-fill" style="width:${Math.round(r.calls / maxVal * 100)}%"></div></div>${r.calls}</td>
+    <td>${r.note ? esc(r.note) : '—'}</td></tr>`).join('');
+
+  const body = `
+    <h2>KPI</h2>${kpiBlock([
+      ['Номеров в пуле', rows.length],
+      ['Дали хотя бы один звонок', working],
+      ['Всего звонков', totalCalls]
+    ])}
+    <h2>Звонки по анкетам/площадкам</h2>
+    <table><tr><th>Метка</th><th>Номер</th><th>Звонков</th><th>Заметка</th></tr>
+      ${tableRows || '<tr><td colspan="4">Номера ещё не добавлены (Настройки → Номера и анкеты)</td></tr>'}</table>
+  `;
+  return page('Отчёт по анкетам и номерам', `Период: ${period === 'month' ? 'месяц' : 'неделя'}`, body);
+}
+
+module.exports = { renderAdminReport, renderSalonReport, renderNetworkReport, renderClientsReport, renderAdNumbersReport };

@@ -235,6 +235,30 @@ app.get('/api/ad-numbers/report', auth.requireAdmin, (req, res) => {
   res.json({ from, till, rows });
 });
 
+// динамика по дням суммарно для всего пула анкет/номеров (для графика на дашборде)
+app.get('/api/ad-numbers/timeseries', auth.requireAdmin, (req, res) => {
+  const period = ['week', 'month'].includes(req.query.period) ? req.query.period : 'week';
+  const { from, till } = periodBounds(period, getTzOffset());
+  const rows = db.prepare(`
+    SELECT substr(c.started_at,1,10) AS day, COUNT(*) AS calls
+    FROM calls c
+    JOIN ad_phone_numbers an ON an.phone = c.dialed_number
+    WHERE c.started_at >= ? AND c.started_at <= ?
+    GROUP BY day
+  `).all(from, till);
+  const byDay = new Map(rows.map(r => [r.day, r.calls]));
+
+  const days = [];
+  const cur = new Date(from.slice(0, 10) + 'T00:00:00Z');
+  const end = new Date(till.slice(0, 10) + 'T00:00:00Z');
+  while (cur <= end) {
+    const key = cur.toISOString().slice(0, 10);
+    days.push({ day: key, calls: byDay.get(key) || 0 });
+    cur.setUTCDate(cur.getUTCDate() + 1);
+  }
+  res.json({ period, from, till, days });
+});
+
 // ================= АДМИНИСТРАТОРЫ =================
 app.get('/api/admins', (req, res) => {
   let salonId = req.query.salon_id ? Number(req.query.salon_id) : null;
@@ -782,6 +806,10 @@ app.get('/api/reports/network', auth.requireAdmin, (req, res) => {
 });
 app.get('/api/reports/clients', auth.requireAdmin, (req, res) => {
   reports.renderClientsReport(req.query.period || 'week')
+    .then(html => res.send(html)).catch(err => res.status(500).send('Ошибка отчёта: ' + err.message));
+});
+app.get('/api/reports/ad-numbers', auth.requireAdmin, (req, res) => {
+  reports.renderAdNumbersReport(req.query.period || 'week')
     .then(html => res.send(html)).catch(err => res.status(500).send('Ошибка отчёта: ' + err.message));
 });
 

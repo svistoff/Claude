@@ -207,14 +207,24 @@ RENDERERS.dashboard = async function renderDashboard() {
       </div>
       <div id="dash-chart" style="margin-top:12px">Загрузка…</div>
     </div>
+    ${dashboardPeriod !== 'today' ? `
     <div class="card">
       <h3>📈 Динамика звонков по дням</h3>
       <div id="dash-timeseries" style="margin-top:12px">Загрузка…</div>
-    </div>
+    </div>` : ''}
     <div class="card">
       <h3>📞 Рейтинг номеров объектов</h3>
       <div id="dash-ranking">Загрузка…</div>
     </div>
+    <div class="card">
+      <h3>📶 Звонки по анкетам</h3>
+      <div id="dash-ad-report" style="margin-top:12px">Загрузка…</div>
+    </div>
+    ${dashboardPeriod !== 'today' ? `
+    <div class="card">
+      <h3>📈 Динамика звонков на анкеты по дням</h3>
+      <div id="dash-ad-timeseries" style="margin-top:12px">Загрузка…</div>
+    </div>` : ''}
     <div class="grid2">
       <div class="card">
         <h3>🔴 Пропущенные без перезвона (${d.missed_no_callback.length})</h3>
@@ -238,8 +248,10 @@ RENDERERS.dashboard = async function renderDashboard() {
     </div>
   `;
   loadDashboardStats();
-  loadDashboardTimeseries();
+  if (dashboardPeriod !== 'today') loadDashboardTimeseries();
   loadDashboardRanking();
+  loadDashboardAdReport();
+  if (dashboardPeriod !== 'today') loadDashboardAdTimeseries();
 };
 
 function setDashboardPeriod(period) {
@@ -252,9 +264,21 @@ async function loadDashboardStats() {
   document.getElementById('dash-chart').innerHTML = renderSalonStatsChart(stats);
 }
 
+// При периоде "Сегодня" график по дням не показываем — это одна точка,
+// содержательной динамики в ней нет (см. dashboardPeriod !== 'today' в шаблоне).
 async function loadDashboardTimeseries() {
   const { days } = await api('/dashboard/calls-timeseries?period=' + dashboardPeriod);
   document.getElementById('dash-timeseries').innerHTML = renderCallsTimeseriesChart(days);
+}
+
+async function loadDashboardAdReport() {
+  const { rows } = await api('/ad-numbers/report?period=' + dashboardPeriod);
+  document.getElementById('dash-ad-report').innerHTML = renderAdReportChart(rows);
+}
+
+async function loadDashboardAdTimeseries() {
+  const { days } = await api('/ad-numbers/timeseries?period=' + dashboardPeriod);
+  document.getElementById('dash-ad-timeseries').innerHTML = renderAdTimeseriesChart(days);
 }
 
 async function loadDashboardRanking() {
@@ -346,6 +370,33 @@ function renderCallsTimeseriesChart(days) {
       <span><span style="display:inline-block;width:10px;height:10px;background:var(--danger);border-radius:2px;margin-right:4px"></span>Пропущено</span>
       <span><span style="display:inline-block;width:10px;height:10px;background:var(--ok);border-radius:2px;margin-right:4px"></span>Перезвонили</span>
     </div>`;
+}
+
+// Однолинейный вариант того же графика — суммарные звонки по всему пулу
+// анкет/номеров за день (без разбивки по меткам: десятки анкет линиями
+// разного цвета читать невозможно, для "работает/не работает" конкретной
+// анкеты есть отдельный полосчатый график renderAdReportChart).
+function renderAdTimeseriesChart(days) {
+  if (!days.length) return '<p class="muted">Нет данных</p>';
+  const w = Math.max(360, days.length * 32), h = 150, padL = 18, padR = 18, padBottom = 22;
+  const maxVal = Math.max(1, ...days.map(d => d.calls));
+  const stepX = days.length > 1 ? (w - padL - padR) / (days.length - 1) : 0;
+  const scaleY = v => (h - padBottom) - Math.round((v / maxVal) * (h - padBottom - 16));
+
+  const points = days.map((d, i) => `${(padL + i*stepX).toFixed(1)},${scaleY(d.calls)}`).join(' ');
+  const dots = days.map((d, i) => `<circle cx="${(padL + i*stepX).toFixed(1)}" cy="${scaleY(d.calls)}" r="2.5" fill="var(--accent)"></circle>`).join('');
+
+  const labelEvery = Math.max(1, Math.ceil(days.length / 10));
+  const labels = days.map((d, i) => i % labelEvery !== 0 ? '' : `
+    <text x="${(padL + i*stepX).toFixed(1)}" y="${h - 4}" text-anchor="middle" font-size="10" fill="var(--muted)">${d.day.slice(8,10)}.${d.day.slice(5,7)}</text>`).join('');
+
+  return `
+    <svg viewBox="0 0 ${w} ${h}" style="width:100%;max-width:900px;height:auto;color:var(--text)">
+      <line x1="${padL}" y1="${h-padBottom}" x2="${w-padR}" y2="${h-padBottom}" stroke="var(--border)" stroke-width="1"></line>
+      <polyline points="${points}" fill="none" stroke="var(--accent)" stroke-width="2"></polyline>
+      ${dots}
+      ${labels}
+    </svg>`;
 }
 
 async function confirmAdmin(id) { await api(`/admins/${id}/confirm`, { method: 'POST' }); navigate('dashboard'); }
@@ -978,6 +1029,13 @@ RENDERERS.reports = async function renderReports() {
           <button class="primary" onclick="window.open('/api/reports/clients?period='+document.getElementById('rep-cli-period').value)">Сформировать</button>
           <a class="btn" href="/api/export/calls.xlsx">Экспорт звонков в Excel</a>
         </div>
+      </div>
+      <div class="card"><h3>По анкетам и номерам</h3>
+        <div class="row" style="flex-direction:column;align-items:stretch">
+          <select id="rep-ad-period"><option value="week">Неделя</option><option value="month">Месяц</option></select>
+          <button class="primary" onclick="window.open('/api/reports/ad-numbers?period='+document.getElementById('rep-ad-period').value)">Сформировать</button>
+        </div>
+        <p class="muted" style="margin-top:8px">Откроется в новой вкладке — кнопка «Сохранить в PDF» внутри отчёта.</p>
       </div>
     </div>
   `;
