@@ -334,6 +334,19 @@ function appendAssistant(d) {
   scrollDown();
 }
 function addNote(t) { $("#chat").appendChild(el("div", "msg system-note", t)); scrollDown(); }
+function addLimitNote(msg) {
+  const box = el("div", "msg system-note");
+  box.appendChild(el("div", null, "⏸ Достигнут лимит шагов за один запуск. Прогресс сохранён."));
+  const btn = el("button", "btn-accent pressable", "▶ Продолжить");
+  btn.style.marginTop = "10px";
+  btn.addEventListener("click", () => {
+    if (state.running) return;
+    input.value = "Продолжи задачу с того места, где остановился.";
+    send();
+  });
+  box.appendChild(btn);
+  $("#chat").appendChild(box); scrollDown();
+}
 
 const ICON = { read_file: "📄", list_files: "📁", search_files: "🔎", write_file: "✏️", edit_file: "✏️", terminal: "▶", git: "🔀", github: "🐙", browser: "🌐" };
 const VERB = { read_file: "Читаю", list_files: "Смотрю папку", search_files: "Ищу", write_file: "Пишу", edit_file: "Правлю", terminal: "Терминал", git: "Git" };
@@ -549,7 +562,7 @@ function handleEvent(ev) {
     case "blocked": addNote("⛔ Заблокировано: " + ev.reason + "\n" + (ev.preview || "")); break;
     case "usage": showUsage(ev); break;
     case "stopped": hideThinking(); addNote("⏹ Агент остановлен."); break;
-    case "limit": hideThinking(); addNote(ev.message); break;
+    case "limit": hideThinking(); addLimitNote(ev.message); break;
     case "error": hideThinking(); addNote("Ошибка: " + ev.message); break;
     case "end": hideThinking(); break;
   }

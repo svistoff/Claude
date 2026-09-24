@@ -79,7 +79,7 @@ class PricingConfig(BaseModel):
 
 
 class AgentConfig(BaseModel):
-    max_iterations: int = 30
+    max_iterations: int = 50
     terminal_timeout_default: int = 60
     terminal_timeout_max: int = 300
     max_read_bytes: int = 200000
