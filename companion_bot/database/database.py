@@ -20,6 +20,9 @@ CREATE TABLE IF NOT EXISTS users (
     free_messages_date TEXT NOT NULL DEFAULT '',
     bonus_messages INTEGER NOT NULL DEFAULT 0,
     total_stars_paid INTEGER NOT NULL DEFAULT 0,
+    memory_summary TEXT NOT NULL DEFAULT '',
+    last_summary_message_id INTEGER NOT NULL DEFAULT 0,
+    last_proactive_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -40,6 +43,17 @@ CREATE TABLE IF NOT EXISTS payments (
     telegram_payment_charge_id TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS pending_replies (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    chat_id INTEGER NOT NULL,
+    user_message TEXT NOT NULL,
+    send_at TEXT NOT NULL,         -- когда доставить ("занята" -> отложенный ответ)
+    status TEXT NOT NULL DEFAULT 'PENDING',  -- PENDING | SENT
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_pending_replies_status ON pending_replies(status, send_at);
 """
 
 

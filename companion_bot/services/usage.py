@@ -2,16 +2,16 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
 
 from companion_bot.config import config
 from companion_bot.database.database import get_conn
+from companion_bot.utils import now_str
 
 logger = logging.getLogger(__name__)
 
 
 def _today() -> str:
-    return datetime.now(timezone.utc).date().isoformat()
+    return now_str()[:10]
 
 
 async def ensure_user(user_id: int) -> None:
@@ -77,21 +77,31 @@ async def try_consume_message(user_id: int) -> bool:
     return False
 
 
+async def record_payment(
+    user_id: int, stars_amount: int, bonus_messages_granted: int, charge_id: str | None
+) -> None:
+    conn = get_conn()
+    await conn.execute(
+        "INSERT INTO payments (user_id, stars_amount, bonus_messages_granted, "
+        "telegram_payment_charge_id) VALUES (?, ?, ?, ?)",
+        (user_id, stars_amount, bonus_messages_granted, charge_id),
+    )
+    await conn.execute(
+        "UPDATE users SET total_stars_paid = total_stars_paid + ? WHERE user_id = ?",
+        (stars_amount, user_id),
+    )
+    await conn.commit()
+
+
 async def add_bonus_messages(
     user_id: int, amount: int, stars_amount: int, charge_id: str | None
 ) -> None:
     conn = get_conn()
     await conn.execute(
-        "UPDATE users SET bonus_messages = bonus_messages + ?, "
-        "total_stars_paid = total_stars_paid + ? WHERE user_id = ?",
-        (amount, stars_amount, user_id),
+        "UPDATE users SET bonus_messages = bonus_messages + ? WHERE user_id = ?",
+        (amount, user_id),
     )
-    await conn.execute(
-        "INSERT INTO payments (user_id, stars_amount, bonus_messages_granted, "
-        "telegram_payment_charge_id) VALUES (?, ?, ?, ?)",
-        (user_id, stars_amount, amount, charge_id),
-    )
-    await conn.commit()
+    await record_payment(user_id, stars_amount, amount, charge_id)
     logger.info(
         "Пользователю %s начислено +%s бонусных сообщений за %s Stars",
         user_id, amount, stars_amount,
