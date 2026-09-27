@@ -202,9 +202,12 @@ async function ingestCalls(sinceStr, tillStr) {
     }
 
     // Платный резерв через плечи звонка — оставляем только для номеров,
-    // явно заведённых как общее меню (чтобы не расходовать лимит UIS API
-    // на десятки рекламных номеров, у которых просто нет метки employees).
-    if (!salon && candidate && sharedIvrNumbers.has(candidate) && !employeesLabel) {
+    // явно заведённых как общее меню, и только когда есть реальный шанс на
+    // успех: если клиент вообще не дозвонился ни до кого (talk_duration=0),
+    // соединённых исходящих плеч физически не существует — раньше в этом
+    // случае лимит УИС всё равно тратился на заведомо безрезультатный запрос
+    // (именно так съедался дневной лимит на каждом звонке, брошенном в меню).
+    if (!salon && candidate && sharedIvrNumbers.has(candidate) && !employeesLabel && Number(c.talk_duration) > 0) {
       const resolved = await resolveSalonByLegs(c, actionNameMap, salonsById);
       salon = resolved.salon;
       if (!salon) {
