@@ -923,6 +923,12 @@ RENDERERS['ad-numbers'] = async function renderAdNumbers() {
       <div id="ad-report-chart" style="margin-top:14px">Загрузка…</div>
       <table id="ad-report-table" style="margin-top:14px"></table>
     </div>
+    <div class="card">
+      <h3>📅 Динамика по дням для каждой анкеты</h3>
+      <p class="muted">Период и диапазон дат — те же, что и в отчёте выше. Выходные подсвечены —
+      удобно сверять эффект от изменения ставок по будням/выходным.</p>
+      <div id="ad-daily-table" style="margin-top:12px">Загрузка…</div>
+    </div>
   `;
   await loadAdReport();
 };
@@ -949,6 +955,24 @@ async function loadAdReport() {
     <tr><th>Метка</th><th>Номер</th><th>Заметка</th><th>Звонков</th></tr>
     ${rows.map(r => `<tr><td>${esc(r.label)}</td><td>${esc(r.phone)}</td><td>${noteOrLink(r.note)}</td><td>${r.calls}</td></tr>`).join('')
       || '<tr><td colspan="4" class="muted">Номеров не добавлено</td></tr>'}`;
+
+  const daily = await api('/ad-numbers/daily-breakdown?' + qs);
+  document.getElementById('ad-daily-table').innerHTML = renderAdDailyTable(daily);
+}
+
+// Понедельно-дневная разница по датам ("что стало с конкретной анкетой в
+// эти выходные") — таблица анкета×день читается для этого лучше линейного
+// графика: десятки анкет линиями разного цвета накладывались бы друг на
+// друга и сравнить конкретный день было бы невозможно.
+function renderAdDailyTable(data) {
+  if (!data.rows.length) return '<p class="muted">Список номеров пуст — добавьте номера выше</p>';
+  const isWeekend = d => { const wd = new Date(d + 'T00:00:00Z').getUTCDay(); return wd === 0 || wd === 6; };
+  const header = `<tr><th>Анкета</th>${data.days.map(d => `<th style="text-align:center;${isWeekend(d)?'background:#fff6e0':''}">${d.slice(8,10)}.${d.slice(5,7)}</th>`).join('')}</tr>`;
+  const rows = data.rows.map(r => {
+    const cells = r.counts.map((c, i) => `<td style="text-align:center;${isWeekend(data.days[i])?'background:#fffaf0':''}">${c || ''}</td>`).join('');
+    return `<tr><td>${esc(r.label)}<div class="muted" style="font-size:11px">${esc(r.phone)}</div></td>${cells}</tr>`;
+  }).join('');
+  return `<div style="overflow-x:auto"><table style="min-width:${360 + data.days.length * 44}px">${header}${rows}</table></div>`;
 }
 
 function noteOrLink(note) {

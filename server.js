@@ -260,6 +260,39 @@ app.get('/api/ad-numbers/timeseries', auth.requireAdmin, (req, res) => {
   res.json({ period, from, till, days });
 });
 
+// динамика по дням ОТДЕЛЬНО для каждой анкеты (матрица анкета×день) — чтобы
+// видеть эффект от изменения ставок/цены по конкретной анкете день в день,
+// а не только суммарно по всему пулу (см. /timeseries выше)
+app.get('/api/ad-numbers/daily-breakdown', auth.requireAdmin, (req, res) => {
+  let from, till;
+  if (req.query.date_from && req.query.date_till) {
+    from = req.query.date_from;
+    till = req.query.date_till;
+  } else {
+    const period = ['week', 'month'].includes(req.query.period) ? req.query.period : 'week';
+    ({ from, till } = periodBounds(period, getTzOffset()));
+  }
+  const numbers = db.prepare('SELECT * FROM ad_phone_numbers ORDER BY label, phone').all();
+  const rows = db.prepare(`
+    SELECT an.id AS ad_id, substr(c.started_at,1,10) AS day, COUNT(*) AS calls
+    FROM ad_phone_numbers an
+    JOIN calls c ON c.dialed_number = an.phone AND c.started_at >= ? AND c.started_at <= ?
+    GROUP BY an.id, day
+  `).all(from, till);
+
+  const days = [];
+  const cur = new Date(from.slice(0, 10) + 'T00:00:00Z');
+  const end = new Date(till.slice(0, 10) + 'T00:00:00Z');
+  while (cur <= end) { days.push(cur.toISOString().slice(0, 10)); cur.setUTCDate(cur.getUTCDate() + 1); }
+
+  const countsByKey = new Map(rows.map(r => [`${r.ad_id}|${r.day}`, r.calls]));
+  const table = numbers.map(n => ({
+    id: n.id, label: n.label, phone: n.phone, note: n.note,
+    counts: days.map(d => countsByKey.get(`${n.id}|${d}`) || 0)
+  }));
+  res.json({ from, till, days, rows: table });
+});
+
 // ================= АДМИНИСТРАТОРЫ =================
 app.get('/api/admins', (req, res) => {
   let salonId = req.query.salon_id ? Number(req.query.salon_id) : null;
