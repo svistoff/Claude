@@ -299,16 +299,17 @@ async def instagram_oauth_callback(
 # --- VK OAuth: разовая привязка пользовательского токена ---
 # (см. services/vk_oauth.py и README.md). wall.getComments не работает с
 # токеном сообщества (ошибка 27 "method is unavailable with group auth",
-# проверено вживую) — нужен именно пользовательский токен. При
-# scope=offline он не истекает, автопродление не требуется.
+# проверено вживую) — нужен именно пользовательский токен. Это VK ID
+# (id.vk.ru), OAuth 2.1 + обязательный PKCE, client_secret не участвует.
 #
 # /start защищён require_admin по тем же причинам, что и у Instagram —
 # без этого кто угодно мог бы авторизовать сервис своим VK-аккаунтом и
-# подменить VK_ACCESS_TOKEN в .env. state защищает /callback от CSRF/replay.
+# подменить VK_ACCESS_TOKEN в .env. state защищает /callback от CSRF/replay,
+# а сам code_verifier (PKCE) хранится привязанным к state до обмена.
 
-VK_SCOPES = "wall,offline"
+VK_SCOPES = "wall"
 
-_vk_pending_oauth_states: set[str] = set()
+_vk_pending_oauth: dict[str, str] = {}  # state -> code_verifier
 
 
 @router.get("/vk/oauth/start", dependencies=[Depends(require_admin)])
@@ -319,16 +320,17 @@ async def vk_oauth_start() -> RedirectResponse:
             detail="VK_APP_ID / VK_OAUTH_REDIRECT_URI не заданы в .env",
         )
     state = secrets.token_urlsafe(24)
-    _vk_pending_oauth_states.add(state)
+    code_verifier, code_challenge = vk_oauth.generate_pkce_pair()
+    _vk_pending_oauth[state] = code_verifier
     url = (
-        "https://oauth.vk.com/authorize"
+        f"{vk_oauth.AUTHORIZE_URL}"
         f"?client_id={config.vk_app_id}"
         f"&redirect_uri={config.vk_oauth_redirect_uri}"
         f"&scope={VK_SCOPES}"
         "&response_type=code"
-        "&display=page"
-        f"&v={vk_oauth.VK_API_VERSION}"
         f"&state={state}"
+        f"&code_challenge={code_challenge}"
+        "&code_challenge_method=S256"
     )
     return RedirectResponse(url)
 
@@ -337,6 +339,7 @@ async def vk_oauth_start() -> RedirectResponse:
 async def vk_oauth_callback(
     code: str | None = None,
     state: str | None = None,
+    device_id: str | None = None,
     error: str | None = None,
     error_description: str | None = None,
 ) -> HTMLResponse:
@@ -345,37 +348,41 @@ async def vk_oauth_callback(
             f"<h1>VK отказал в авторизации</h1><p>{error}: {error_description}</p>",
             status_code=400,
         )
-    if not state or state not in _vk_pending_oauth_states:
+    if not state or state not in _vk_pending_oauth:
         raise HTTPException(
             status_code=400,
             detail="Неизвестный или уже использованный state — начните заново с /api/vk/oauth/start",
         )
-    _vk_pending_oauth_states.discard(state)
+    code_verifier = _vk_pending_oauth.pop(state)
     if not code:
         raise HTTPException(status_code=400, detail="VK не вернул code")
-    if not (config.vk_app_id and config.vk_app_secret and config.vk_oauth_redirect_uri):
+    if not device_id:
+        raise HTTPException(status_code=400, detail="VK не вернул device_id")
+    if not (config.vk_app_id and config.vk_oauth_redirect_uri):
         raise HTTPException(
             status_code=500,
-            detail="VK_APP_ID / VK_APP_SECRET / VK_OAUTH_REDIRECT_URI не заданы в .env",
+            detail="VK_APP_ID / VK_OAUTH_REDIRECT_URI не заданы в .env",
         )
 
     try:
-        token, expires_in = await vk_oauth.exchange_code_for_token(
-            code, config.vk_app_id, config.vk_app_secret, config.vk_oauth_redirect_uri
+        token, expires_in, refresh_token = await vk_oauth.exchange_code_for_token(
+            code, config.vk_app_id, config.vk_oauth_redirect_uri, code_verifier, device_id, state
         )
     except vk_oauth.VKOAuthError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     set_env_var(ENV_PATH, "VK_ACCESS_TOKEN", token)
+    set_env_var(ENV_PATH, "VK_DEVICE_ID", device_id)
+    if refresh_token:
+        set_env_var(ENV_PATH, "VK_REFRESH_TOKEN", refresh_token)
     lifetime_note = (
-        "токен бессрочный (запрошен scope offline)."
-        if expires_in is None
-        else f"действителен ещё ~{expires_in // 86400} дней — обратите внимание, "
-        "scope offline не сработал как ожидалось, потребуется продумать продление."
+        f"действителен ещё ~{expires_in // 60} минут." if expires_in else "срок действия не указан VK."
     )
     return HTMLResponse(
         "<h1>VK подключён</h1>"
         f"<p>Токен сохранён в .env. {lifetime_note}</p>"
         "<p>Перезапустите сервис, чтобы он подхватил новый токен:<br>"
         "<code>sudo supervisorctl restart random-giveaway-api</code></p>"
+        "<p>И настройте автопродление по cron — см. randomgiveaway/README.md "
+        "(scripts/refresh_vk_token.py), иначе токен истечёт.</p>"
     )

@@ -208,6 +208,7 @@ def test_vk_oauth_callback_rejects_unknown_state():
 
 def test_vk_oauth_full_flow_with_valid_state(monkeypatch, tmp_path):
     import dataclasses
+    from urllib.parse import parse_qs, urlparse
 
     from randomgiveaway.api import routes as routes_module
     from randomgiveaway.services import vk_oauth as oauth_module
@@ -218,15 +219,15 @@ def test_vk_oauth_full_flow_with_valid_state(monkeypatch, tmp_path):
         dataclasses.replace(
             routes_module.config,
             vk_app_id="app-id",
-            vk_app_secret="app-secret",
             vk_oauth_redirect_uri="https://random.ekb-guide.ru/api/vk/oauth/callback",
         ),
     )
     monkeypatch.setattr(routes_module, "ENV_PATH", tmp_path / ".env")
 
-    async def fake_exchange(code, app_id, app_secret, redirect_uri):
+    async def fake_exchange(code, client_id, redirect_uri, code_verifier, device_id, state):
         assert code == "real-code"
-        return "vk-user-token", None
+        assert device_id == "device-42"
+        return "vk-user-token", None, "refresh-token-abc"
 
     monkeypatch.setattr(oauth_module, "exchange_code_for_token", fake_exchange)
 
@@ -234,11 +235,17 @@ def test_vk_oauth_full_flow_with_valid_state(monkeypatch, tmp_path):
         start_resp = client.get("/api/vk/oauth/start")
         assert start_resp.status_code == 307
         location = start_resp.headers["location"]
-        state = location.split("state=")[1]
+        state = parse_qs(urlparse(location).query)["state"][0]
 
-        callback_resp = client.get("/api/vk/oauth/callback", params={"code": "real-code", "state": state})
+        callback_resp = client.get(
+            "/api/vk/oauth/callback",
+            params={"code": "real-code", "state": state, "device_id": "device-42"},
+        )
         assert callback_resp.status_code == 200, callback_resp.text
         assert "подключён" in callback_resp.text
 
-        replay_resp = client.get("/api/vk/oauth/callback", params={"code": "real-code", "state": state})
+        replay_resp = client.get(
+            "/api/vk/oauth/callback",
+            params={"code": "real-code", "state": state, "device_id": "device-42"},
+        )
         assert replay_resp.status_code == 400
