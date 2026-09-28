@@ -1125,6 +1125,18 @@ RENDERERS.settings = async function renderSettings() {
       <div id="bf-result" class="muted" style="margin-top:8px"></div>
     </div>
     <div class="card">
+      <h3>📄 Дозагрузить из файла (CSV из UIS)</h3>
+      <p class="muted">Когда сам API недоступен (например, упёрлись в дневной лимит запросов UIS) — выгрузите
+      отчёт «Звонки» за нужный период в личном кабинете UIS и загрузите файл сюда. Резолюция салона и защита
+      от дублей — те же, что и при обычном опросе; повторная загрузка того же файла безопасна. Звонки
+      сохраняются без ИИ-анализа (только цифры для статистики).</p>
+      <div class="row">
+        <input type="file" id="csv-file" accept=".csv">
+        <button class="primary" onclick="uploadCsv()">Загрузить</button>
+      </div>
+      <div id="csv-result" class="muted" style="margin-top:8px"></div>
+    </div>
+    <div class="card">
       <h3>📞 Клик-звонок через UIS <span class="muted">(отложено — мало исходящих)</span></h3>
       <div class="row" style="flex-direction:column;align-items:stretch;max-width:480px">
         <label>Виртуальный номер для исходящих<input id="co-number" value="${esc(callout.outbound_virtual_number||'')}"></label>
@@ -1176,6 +1188,30 @@ async function runBackfill() {
     }});
     resultEl.textContent = `Готово: получено ${result.total}, распределено по салонам ${result.matched}` +
       (result.unmatchedNumbers.length ? `, непривязанные номера: ${result.unmatchedNumbers.join('; ')}` : '');
+  } catch (e) {
+    resultEl.textContent = 'Ошибка: ' + e.message;
+  }
+}
+
+// Файл — не JSON, поэтому напрямую через fetch с FormData, в обход api().
+async function uploadCsv() {
+  const input = document.getElementById('csv-file');
+  const resultEl = document.getElementById('csv-result');
+  if (!input.files.length) return alert('Выберите файл');
+  const fd = new FormData();
+  fd.append('file', input.files[0]);
+  resultEl.textContent = 'Загрузка и обработка…';
+  try {
+    const resp = await fetch('/api/settings/telephony/import-csv', { method: 'POST', body: fd });
+    const r = await resp.json();
+    if (!resp.ok) throw new Error(r.error || ('HTTP ' + resp.status));
+    let html = `Готово: обработано ${r.totalRows}, добавлено ${r.inserted}, уже были в базе ${r.duplicates}, исключённых ${r.excluded}.`;
+    if (r.badDates) html += ` Пропущено строк с нераспознанной датой: ${r.badDates}.`;
+    if (r.matchedBySalon.length) html += '<br>По салонам: ' + r.matchedBySalon.map(s => `${esc(s.name)}: ${s.count}`).join(', ');
+    if (r.unmatchedByLabel.length) html += '<br>Непривязанные метки UIS (добавьте через «Метки UIS» и загрузите файл ещё раз): ' + r.unmatchedByLabel.map(x => `«${esc(x.label)}»: ${x.count}`).join(', ');
+    if (r.unmatchedByNumber.length) html += '<br>Непривязанные номера (без метки): ' + r.unmatchedByNumber.map(x => `${esc(x.number)}: ${x.count}`).join(', ');
+    resultEl.innerHTML = html;
+    input.value = '';
   } catch (e) {
     resultEl.textContent = 'Ошибка: ' + e.message;
   }

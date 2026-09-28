@@ -3,6 +3,7 @@ const cookieParser = require('cookie-parser');
 const bcrypt = require('bcryptjs');
 const path = require('path');
 const XLSX = require('xlsx');
+const multer = require('multer');
 const db = require('./db');
 const auth = require('./auth');
 const { getEffectiveChecklist, adminForUser, canAccessSalon, findOrCreateClient, normalizePhone } = require('./lib');
@@ -763,6 +764,21 @@ app.post('/api/settings/telephony/backfill', auth.requireAdmin, (req, res) => {
   require('./telephony').backfill(date_from, date_till)
     .then(result => res.json(result))
     .catch(err => res.status(500).json({ error: err.message }));
+});
+
+// Ручная дозагрузка из CSV-выгрузки отчёта UIS ("Звонки") — когда сам API
+// недоступен (например, упёрлись в дневной лимит запросов), а звонки в
+// файле за нужный период уже есть. Та же логика резолюции салона и защита
+// от дублей, что и у обычного опроса — см. csv-import.js.
+const csvUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
+app.post('/api/settings/telephony/import-csv', auth.requireAdmin, csvUpload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Файл не получен' });
+  try {
+    const result = require('./csv-import').importUisCsv(req.file.buffer.toString('utf8'), { dryRun: req.query.dry_run === '1' });
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 // ================= КЛИК-ЗВОНОК (отложено, но код доступен) =================
