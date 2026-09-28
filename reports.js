@@ -273,7 +273,7 @@ async function renderClientsReport(period) {
 async function renderAdNumbersReport(period) {
   const since = periodStart(period);
   const rows = db.prepare(`
-    SELECT an.phone, an.label, an.note, COUNT(c.id) AS calls
+    SELECT an.id, an.phone, an.label, an.note, COUNT(c.id) AS calls
     FROM ad_phone_numbers an
     LEFT JOIN calls c ON c.dialed_number = an.phone AND c.started_at >= ?
     GROUP BY an.id
@@ -289,6 +289,32 @@ async function renderAdNumbersReport(period) {
     <td><div class="bar"><div class="bar-fill" style="width:${Math.round(r.calls / maxVal * 100)}%"></div></div>${r.calls}</td>
     <td>${r.note ? esc(r.note) : '—'}</td></tr>`).join('');
 
+  // Динамика по дням для каждой анкеты отдельно — суммы выше не показывают,
+  // подействовало ли изменение ставки/цены на конкретную анкету в конкретный
+  // день; выходные подсвечены для сверки эффекта по будням/выходным.
+  const dayRows = db.prepare(`
+    SELECT an.id AS ad_id, substr(c.started_at,1,10) AS day, COUNT(*) AS calls
+    FROM ad_phone_numbers an
+    JOIN calls c ON c.dialed_number = an.phone AND c.started_at >= ?
+    GROUP BY an.id, day
+  `).all(since);
+
+  const days = [];
+  const cur = new Date(since.slice(0, 10) + 'T00:00:00Z');
+  const endDay = new Date();
+  while (cur <= endDay) { days.push(cur.toISOString().slice(0, 10)); cur.setUTCDate(cur.getUTCDate() + 1); }
+
+  const countsByKey = new Map(dayRows.map(r => [`${r.ad_id}|${r.day}`, r.calls]));
+  const isWeekend = d => { const wd = new Date(d + 'T00:00:00Z').getUTCDay(); return wd === 0 || wd === 6; };
+  const dailyHeader = `<tr><th>Метка</th>${days.map(d => `<th style="text-align:center;${isWeekend(d) ? 'background:#fdf3d8' : ''}">${d.slice(8, 10)}.${d.slice(5, 7)}</th>`).join('')}</tr>`;
+  const dailyBodyRows = rows.map(r => {
+    const cells = days.map(d => {
+      const c = countsByKey.get(`${r.id}|${d}`) || 0;
+      return `<td style="text-align:center;${isWeekend(d) ? 'background:#fdf3d8' : ''}">${c || ''}</td>`;
+    }).join('');
+    return `<tr><td>${esc(r.label)}<br><span style="color:#888;font-size:11px">${esc(r.phone)}</span></td>${cells}</tr>`;
+  }).join('');
+
   const body = `
     <h2>KPI</h2>${kpiBlock([
       ['Номеров в пуле', rows.length],
@@ -298,6 +324,8 @@ async function renderAdNumbersReport(period) {
     <h2>Звонки по анкетам/площадкам</h2>
     <table><tr><th>Метка</th><th>Номер</th><th>Звонков</th><th>Заметка</th></tr>
       ${tableRows || '<tr><td colspan="4">Номера ещё не добавлены (Настройки → Номера и анкеты)</td></tr>'}</table>
+    <h2>Динамика по дням (каждая анкета отдельно)</h2>
+    <div style="overflow-x:auto"><table>${rows.length ? dailyHeader + dailyBodyRows : '<tr><td>Номера ещё не добавлены</td></tr>'}</table></div>
   `;
   return page('Отчёт по анкетам и номерам', `Период: ${period === 'month' ? 'месяц' : 'неделя'}`, body);
 }
