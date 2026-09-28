@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import secrets
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -322,17 +323,21 @@ async def vk_oauth_start() -> RedirectResponse:
     state = secrets.token_urlsafe(24)
     code_verifier, code_challenge = vk_oauth.generate_pkce_pair()
     _vk_pending_oauth[state] = code_verifier
-    url = (
-        f"{vk_oauth.AUTHORIZE_URL}"
-        f"?client_id={config.vk_app_id}"
-        f"&redirect_uri={config.vk_oauth_redirect_uri}"
-        f"&scope={VK_SCOPES}"
-        "&response_type=code"
-        f"&state={state}"
-        f"&code_challenge={code_challenge}"
-        "&code_challenge_method=S256"
+    # Параметры обязательно url-кодируем: redirect_uri содержит "://" и "/",
+    # без кодирования VK может не так распарсить строку запроса при
+    # внутреннем сопоставлении redirect_uri с «Доверенным Redirect URL».
+    params = urlencode(
+        {
+            "client_id": config.vk_app_id,
+            "redirect_uri": config.vk_oauth_redirect_uri,
+            "scope": VK_SCOPES,
+            "response_type": "code",
+            "state": state,
+            "code_challenge": code_challenge,
+            "code_challenge_method": "S256",
+        }
     )
-    return RedirectResponse(url)
+    return RedirectResponse(f"{vk_oauth.AUTHORIZE_URL}?{params}")
 
 
 @router.get("/vk/oauth/callback")
