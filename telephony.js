@@ -10,8 +10,17 @@
 // Звонки на номера, которых нет ни у одного объекта в карте, просто пропускаются.
 
 const fetch = require('node-fetch');
+const { SocksProxyAgent } = require('socks-proxy-agent');
 const db = require('./db');
 const { normalizePhone, findOrCreateClient, getSalonPhoneMap, getSharedIvrNumberSet, getExcludedNumberSet, getExcludedCallerNumberSet, getActionNameSalonMap } = require('./lib');
+
+// Прямые исходящие соединения к UIS с этого сервера ловят DPI-блокировку
+// (TCP-соединение и TLS Client Hello уходят, дальше — тишина до таймаута;
+// подтверждено вручную через curl). Обход — через SOCKS5-туннель на другой
+// VPS (autossh/supervisor, слушает 127.0.0.1:1080). Задаётся переменной
+// окружения, чтобы не ломать локальную разработку, где туннеля нет:
+//   UIS_SOCKS_PROXY=socks5h://127.0.0.1:1080
+const uisProxyAgent = process.env.UIS_SOCKS_PROXY ? new SocksProxyAgent(process.env.UIS_SOCKS_PROXY) : null;
 
 const DATA_API_URL = 'https://dataapi.uiscom.ru/v2.0';
 const LOOKBACK_MS_FOR_CALLBACK_MATCH = 48 * 60 * 60 * 1000; // окно поиска пары «пропущен → перезвон»
@@ -33,7 +42,8 @@ async function uisRequest(method, params) {
   const resp = await fetch(DATA_API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
+    agent: uisProxyAgent || undefined
   });
   const json = await resp.json();
   if (json.error) {
