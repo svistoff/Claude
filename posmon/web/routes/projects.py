@@ -12,7 +12,7 @@ from ...db import get_session, get_sessionmaker
 from ...domain.normalize import normalize_host
 from ...domain.results import RunMode
 from ...models import Profile, Project, Query, Site, User
-from ...services.analytics import avg_position_series, latest_positions
+from ...services.analytics import avg_position_series, latest_positions, site_metrics
 from ...services.runner import run_project_batch
 from ..charts import SERIES_COLORS, ChartOptions, Series, line_chart
 from ..deps import current_user, is_admin, redirect, render
@@ -170,6 +170,66 @@ async def project_detail(
         queries=queries, sites=sites, profiles=profiles,
         active_profiles=active_profiles, table_rows=table_rows, mode=mode,
         dyn_chart=dyn_chart, chart_profile_id=chart_profile_id, days=days,
+    )
+
+
+# ── PDF-отчёт (печатная страница) ───────────────────────────────────────────
+@router.get("/projects/{project_id}/report")
+async def project_report(
+    project_id: int,
+    request: Request,
+    mode: str = RunMode.SEO.value,
+    profile: int | None = None,
+    user: User | None = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    if user is None:
+        return redirect("/login")
+    project = await _get_project(session, project_id)
+    if project is None:
+        return redirect("/projects")
+
+    sites = (await session.execute(
+        select(Site).where(Site.project_id == project_id, Site.active.is_(True)).order_by(Site.name)
+    )).scalars().all()
+    profiles = (await session.execute(
+        select(Profile).where(Profile.project_id == project_id, Profile.active.is_(True)).order_by(Profile.id)
+    )).scalars().all()
+    queries = (await session.execute(
+        select(Query).where(Query.project_id == project_id, Query.active.is_(True)).order_by(Query.query)
+    )).scalars().all()
+
+    profile_id = profile or (profiles[0].id if profiles else None)
+    profile_obj = next((p for p in profiles if p.id == profile_id), None)
+
+    latest = await latest_positions(session, project_id, mode)
+
+    # Сводка по каждому сайту
+    site_reports = []
+    for s in sites:
+        m = await site_metrics(session, site_id=s.id, profile_id=profile_id, mode=mode) if profile_id else None
+        site_reports.append({"site": s, "metrics": m.as_dict() if m else None})
+
+    # Таблица: строки — запросы, колонки — сайты (для выбранного профиля)
+    rows = []
+    for q in queries:
+        cells = []
+        for s in sites:
+            row = latest.get((q.id, s.id, profile_id)) if profile_id else None
+            cells.append(row.position if row else None)
+        rows.append({"query": q, "cells": cells})
+
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    settings = request.app.state.settings
+    try:
+        now = datetime.now(ZoneInfo(settings.timezone)).strftime("%d.%m.%Y %H:%M")
+    except Exception:  # noqa: BLE001
+        now = datetime.now().strftime("%d.%m.%Y %H:%M")
+
+    return render(
+        request, "report.html", user=user, project=project, sites=sites,
+        profile=profile_obj, mode=mode, site_reports=site_reports, rows=rows, now=now,
     )
 
 

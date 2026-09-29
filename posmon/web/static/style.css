@@ -85,6 +85,18 @@ h1 small { font-weight: 400; font-size: 16px; }
 button.secondary { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); }
 button.danger, .link.danger { color: var(--bad); }
 
+.topline { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin: 6px 0 14px; }
+.segmented { display: inline-flex; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.segmented a { padding: 11px 20px; font-weight: 600; color: var(--muted); background: var(--panel); font-size: 15px; }
+.segmented a + a { border-left: 1px solid var(--border); }
+.segmented a.on { background: var(--accent); color: #fff; }
+.segmented a:hover { text-decoration: none; }
+.btn-outline { padding: 9px 14px; border: 1px solid var(--accent); border-radius: 8px; color: var(--accent); font-weight: 600; }
+.btn-outline:hover { background: var(--accent); color: #fff; text-decoration: none; }
+button.small-btn { padding: 6px 12px; font-size: 13px; }
+.settings-block { margin-top: 14px; }
+.settings-block h3 { font-size: 13px; margin: 0 0 8px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+
 .cols { display: grid; grid-template-columns: 1fr; gap: 22px; margin-top: 10px; }
 @media (min-width: 780px) { .cols { grid-template-columns: 1fr 1fr; } }
 .cols section { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }

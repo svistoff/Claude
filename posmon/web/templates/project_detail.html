@@ -4,32 +4,48 @@
 <p class="crumbs"><a href="/projects">Проекты</a> / {{ project.name }}</p>
 <h1>{{ project.name }} <small class="muted">ТОП-{{ project.depth }}</small></h1>
 
+<div class="topline">
+  <div class="segmented">
+    <a href="?mode=seo&profile={{ chart_profile_id }}&days={{ days }}" class="{{ 'on' if mode=='seo' }}">SEO · органика</a>
+    <a href="?mode=battle&profile={{ chart_profile_id }}&days={{ days }}" class="{{ 'on' if mode=='battle' }}">Боевая · с рекламой</a>
+  </div>
+  <a class="btn-outline" href="/projects/{{ project.id }}/report?mode={{ mode }}&profile={{ chart_profile_id }}" target="_blank">📄 PDF-отчёт</a>
+</div>
+
 {% if user.role == 'Admin' %}
 <details class="editproj">
-  <summary>⚙ Настройки проекта</summary>
-  <form method="post" action="/projects/{{ project.id }}/edit" class="form-row">
-    <input type="text" name="name" value="{{ project.name }}" required>
-    <input type="number" name="depth" value="{{ project.depth }}" min="1" max="100" title="Глубина (ТОП-N)">
-    <input type="text" name="description" value="{{ project.description or '' }}" placeholder="Описание">
-    <button type="submit">Сохранить</button>
-  </form>
-  <form method="post" action="/projects/{{ project.id }}/delete"
-        onsubmit="return confirm('Удалить проект «{{ project.name }}» и ВСЕ его данные (запросы, сайты, история)? Это необратимо.');">
-    <button type="submit" class="danger-btn">Удалить проект</button>
-  </form>
-</details>
+  <summary>⚙ Настройки и запуск проверки</summary>
 
-<div class="runbar">
-  <form method="post" action="/projects/{{ project.id }}/run" class="inline">
-    <input type="hidden" name="mode" value="seo">
-    <button type="submit">▶ Проверить сейчас — SEO (ночной режим)</button>
-  </form>
-  <form method="post" action="/projects/{{ project.id }}/run" class="inline">
-    <input type="hidden" name="mode" value="battle">
-    <button type="submit" class="secondary">▶ Боевая выдача (с рекламой)</button>
-  </form>
-  <span class="muted small">Прогон идёт в фоне; обновите страницу через минуту.</span>
-</div>
+  <div class="settings-block">
+    <h3>Обновить сейчас</h3>
+    <form method="post" action="/projects/{{ project.id }}/run" class="inline">
+      <input type="hidden" name="mode" value="seo">
+      <button type="submit" class="small-btn">Проверить — SEO</button>
+    </form>
+    <form method="post" action="/projects/{{ project.id }}/run" class="inline">
+      <input type="hidden" name="mode" value="battle">
+      <button type="submit" class="small-btn secondary">Проверить — боевой</button>
+    </form>
+    <span class="muted small">прогон в фоне, обновите страницу через минуту</span>
+  </div>
+
+  <div class="settings-block">
+    <h3>Параметры проекта</h3>
+    <form method="post" action="/projects/{{ project.id }}/edit" class="form-row">
+      <input type="text" name="name" value="{{ project.name }}" required>
+      <input type="number" name="depth" value="{{ project.depth }}" min="1" max="100" title="Глубина (ТОП-N)">
+      <input type="text" name="description" value="{{ project.description or '' }}" placeholder="Описание">
+      <button type="submit" class="small-btn">Сохранить</button>
+    </form>
+  </div>
+
+  <div class="settings-block">
+    <form method="post" action="/projects/{{ project.id }}/delete"
+          onsubmit="return confirm('Удалить проект «{{ project.name }}» и ВСЕ его данные (запросы, сайты, история)? Это необратимо.');">
+      <button type="submit" class="danger-btn small-btn">Удалить проект</button>
+    </form>
+  </div>
+</details>
 {% endif %}
 
 <h2>Динамика <span class="muted small">средняя позиция по дням · выше линия = сайт растёт</span></h2>
@@ -46,9 +62,7 @@
 </div>
 <div class="chart-wrap">{{ dyn_chart | safe }}</div>
 
-<h2>Позиции <span class="muted small">режим:
-  <a href="?mode=seo" class="{{ 'on' if mode=='seo' }}">SEO</a> ·
-  <a href="?mode=battle" class="{{ 'on' if mode=='battle' }}">боевой</a></span></h2>
+<h2>Позиции <span class="muted small">{{ 'боевой режим (с рекламой)' if mode=='battle' else 'SEO (органика)' }}</span></h2>
 {% if active_profiles %}
 <div class="scroll-x">
 <table class="grid positions">

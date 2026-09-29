@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Отчёт — {{ project.name }}</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <style>
+    body { background: #fff; }
+    .report { max-width: 1000px; margin: 0 auto; padding: 24px 20px 60px; }
+    .rep-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 20px; }
+    .rep-title h1 { margin: 0 0 6px; }
+    .rep-meta { color: var(--muted); font-size: 13px; line-height: 1.7; }
+    .rep-meta b { color: var(--text); }
+    .print-btn { padding: 10px 16px; }
+    table.rep { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13px; }
+    table.rep th, table.rep td { border: 1px solid var(--border); padding: 6px 8px; text-align: center; }
+    table.rep th { background: var(--panel-2); color: var(--muted); }
+    table.rep td.q { text-align: left; }
+    td.cell { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .rep-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px,1fr)); gap: 12px; margin: 16px 0 8px; }
+    .rep-card { border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+    .rep-card h4 { margin: 0 0 8px; }
+    .rep-card .kv { display: flex; justify-content: space-between; font-size: 13px; padding: 2px 0; color: var(--muted); }
+    .rep-card .kv b { color: var(--text); }
+    .rep-foot { margin-top: 30px; color: var(--muted); font-size: 12px; border-top: 1px solid var(--border); padding-top: 10px; }
+    @media print {
+      .no-print { display: none !important; }
+      .report { padding: 0; max-width: none; }
+      table.rep th { background: #f0f2f5 !important; }
+      * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    }
+  </style>
+</head>
+<body>
+<div class="report">
+  <div class="rep-head">
+    <div class="rep-title">
+      <h1>Отчёт по позициям</h1>
+      <div class="rep-meta">
+        Проект: <b>{{ project.name }}</b><br>
+        Регион: <b>Екатеринбург</b> · Поиск: <b>Яндекс</b> · Глубина: <b>ТОП-{{ project.depth }}</b><br>
+        Режим: <b>{{ 'боевой (с рекламой)' if mode=='battle' else 'SEO (органика)' }}</b>{% if profile %} · Профиль: <b>{{ profile.name }}</b>{% endif %}<br>
+        Сформирован: <b>{{ now }}</b>
+      </div>
+    </div>
+    <button class="print-btn no-print" onclick="window.print()">📄 Сохранить в PDF</button>
+  </div>
+
+  <h2>Сводка по сайтам</h2>
+  <div class="rep-cards">
+    {% for r in site_reports %}
+    <div class="rep-card">
+      <h4>{{ r.site.name }} <span class="muted small">{{ r.site.domain }}</span></h4>
+      {% if r.metrics %}
+      <div class="kv"><span>В выдаче</span><b>{{ r.metrics.found }}/{{ r.metrics.total }} ({{ (r.metrics.coverage*100)|round(0)|int }}%)</b></div>
+      <div class="kv"><span>Средняя позиция</span><b>{{ r.metrics.average if r.metrics.average is not none else '—' }}</b></div>
+      <div class="kv"><span>Медиана</span><b>{{ r.metrics.median if r.metrics.median is not none else '—' }}</b></div>
+      <div class="kv"><span>ТОП-3 / 10</span><b>{{ r.metrics.top[3] }} / {{ r.metrics.top[10] }}</b></div>
+      <div class="kv"><span>ТОП-20 / 50</span><b>{{ r.metrics.top[20] }} / {{ r.metrics.top[50] }}</b></div>
+      {% else %}
+      <div class="muted small">нет данных</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+  <h2>Позиции по запросам</h2>
+  <table class="rep">
+    <thead>
+      <tr><th class="q" style="text-align:left">Запрос</th>{% for s in sites %}<th>{{ s.name }}</th>{% endfor %}</tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td class="q">{{ row.query.query }}</td>
+        {% for c in row.cells %}
+        <td class="cell {{ c|posclass }}">{% if c %}{{ c }}{% else %}&gt;{{ project.depth }}{% endif %}</td>
+        {% endfor %}
+      </tr>
+      {% else %}
+      <tr><td colspan="{{ sites|length + 1 }}" class="muted">Нет данных</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="rep-foot">
+    Сформировано системой мониторинга позиций posmon · {{ now }} · stat.xmassage.vip
+  </div>
+</div>
+</body>
+</html>

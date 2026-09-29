@@ -130,6 +130,16 @@ async def test_edit_and_delete_project_cascade(client):
         assert (await s.execute(select(Query))).scalars().first() is None  # каскад сработал
 
 
+async def test_report_page_renders(client):
+    await _login(client)
+    await client.post("/projects", data={"name": "P", "depth": "50", "description": ""})
+    await client.post("/projects/1/profiles", data={"name": "Desktop", "device": "desktop", "source": "api", "region": "Екатеринбург"})
+    r = await client.get("/projects/1/report?mode=seo")
+    assert r.status_code == 200
+    assert "Отчёт по позициям" in r.text
+    assert "Сохранить в PDF" in r.text
+
+
 async def test_run_now_redirects(client):
     await _login(client)
     await client.post("/projects", data={"name": "P", "depth": "50", "description": ""})
