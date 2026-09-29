@@ -15,6 +15,7 @@ posmon/.env
 posmon/data/
 posmon/posmon.db
 posmon/browser_profiles/
+posmon/artifacts/
 posmon/reports/
 posmon/screenshots/
 .pytest_cache/

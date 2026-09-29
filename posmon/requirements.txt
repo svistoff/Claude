@@ -19,6 +19,7 @@ python-dotenv>=1.0
 # Сбор выдачи
 httpx>=0.27          # Yandex Search API
 playwright>=1.42     # браузерный скрейпинг персонализированных профилей
+beautifulsoup4>=4.12 # парсинг HTML-выдачи (браузерный сбор)
 
 # Планировщик
 apscheduler>=3.10

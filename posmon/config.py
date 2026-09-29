@@ -54,8 +54,22 @@ class Settings(BaseSettings):
     daily_check_enabled: bool = Field(default=True, alias="DAILY_CHECK_ENABLED")
     daily_check_time: str = Field(default="02:00", alias="DAILY_CHECK_TIME")
     daily_check_jitter_seconds: int = Field(default=900, alias="DAILY_CHECK_JITTER_SECONDS")
+    # Дневной боевой прогон (с рекламой, через браузер). Выключен по умолчанию —
+    # включать после настройки браузерного сбора.
+    battle_check_enabled: bool = Field(default=False, alias="BATTLE_CHECK_ENABLED")
+    battle_check_time: str = Field(default="19:00", alias="BATTLE_CHECK_TIME")
     workers: int = Field(default=3, alias="WORKERS")
     max_attempts: int = Field(default=3, alias="MAX_ATTEMPTS")
+
+    # Браузерный сбор (Playwright)
+    browser_headless: bool = Field(default=True, alias="BROWSER_HEADLESS")
+    browser_profiles_dir: str = Field(default="", alias="BROWSER_PROFILES_DIR")
+    browser_nav_timeout_ms: int = Field(default=45000, alias="BROWSER_NAV_TIMEOUT_MS")
+    browser_pace_min: float = Field(default=15.0, alias="BROWSER_PACE_MIN")
+    browser_pace_max: float = Field(default=40.0, alias="BROWSER_PACE_MAX")
+    browser_save_html: bool = Field(default=True, alias="BROWSER_SAVE_HTML")
+    browser_save_screenshot: bool = Field(default=False, alias="BROWSER_SAVE_SCREENSHOT")
+    browser_artifacts_dir: str = Field(default="", alias="BROWSER_ARTIFACTS_DIR")
 
     @property
     def yandex_api_configured(self) -> bool:
@@ -68,6 +82,14 @@ class Settings(BaseSettings):
     @property
     def is_sqlite(self) -> bool:
         return self.database_url.startswith("sqlite")
+
+    @property
+    def profiles_dir(self) -> str:
+        return self.browser_profiles_dir or str(BASE_DIR / "browser_profiles")
+
+    @property
+    def artifacts_dir(self) -> str:
+        return self.browser_artifacts_dir or str(BASE_DIR / "artifacts")
 
 
 @lru_cache
