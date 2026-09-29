@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   ApiError,
@@ -6,8 +6,10 @@ import {
   drawGiveaway,
   importParticipants,
   loadCommentsLive,
+  previewParticipants,
+  publishTelegram,
 } from '../api/client'
-import { defaultSettings, type GiveawaySettings, type ParticipantsPreview, type Source } from '../api/types'
+import { defaultSettings, type Giveaway, type GiveawaySettings, type ParticipantsPreview, type Source } from '../api/types'
 import { AdminTokenField } from '../components/AdminTokenField'
 import { Switch } from '../components/Switch'
 
@@ -18,7 +20,7 @@ const SOURCES: { value: Source; label: string }[] = [
   { value: 'import', label: 'Импорт файла' },
 ]
 
-type Step = 'setup' | 'preview'
+type Step = 'setup' | 'preview' | 'telegram-live'
 
 export function HomePage() {
   const navigate = useNavigate()
@@ -26,6 +28,7 @@ export function HomePage() {
   const [step, setStep] = useState<Step>('setup')
   const [source, setSource] = useState<Source>('instagram')
   const [postUrl, setPostUrl] = useState('')
+  const [telegramText, setTelegramText] = useState('')
   const [title, setTitle] = useState('')
   const [file, setFile] = useState<File | null>(null)
   const [importFormat, setImportFormat] = useState<'csv' | 'json' | 'list'>('csv')
@@ -37,10 +40,33 @@ export function HomePage() {
 
   const [giveawayId, setGiveawayId] = useState<number | null>(null)
   const [preview, setPreview] = useState<ParticipantsPreview | null>(null)
+  const [telegramGiveaway, setTelegramGiveaway] = useState<Giveaway | null>(null)
 
   function updateSettings<K extends keyof GiveawaySettings>(key: K, value: GiveawaySettings[K]) {
     setSettings((s) => ({ ...s, [key]: value }))
   }
+
+  // Telegram не отдаёт комментарии по ссылке (см. README, «Подключение
+  // Telegram») — участники накапливаются по кнопке/рефералкам, поэтому
+  // после публикации опрашиваем их число вместо одноразовой загрузки.
+  useEffect(() => {
+    if (step !== 'telegram-live' || !giveawayId) return
+    let cancelled = false
+    const poll = async () => {
+      try {
+        const p = await previewParticipants(giveawayId)
+        if (!cancelled) setPreview(p)
+      } catch {
+        // временная сетевая ошибка при опросе — не прерываем поток, попробуем на следующем тике
+      }
+    }
+    poll()
+    const interval = setInterval(poll, 4000)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [step, giveawayId])
 
   async function handleLoadComments() {
     setError(null)
@@ -48,6 +74,11 @@ export function HomePage() {
     if (source === 'import') {
       if (!file) {
         setError('Выберите файл для импорта')
+        return
+      }
+    } else if (source === 'telegram') {
+      if (!telegramText.trim()) {
+        setError('Введите текст поста')
         return
       }
     } else if (!postUrl.trim()) {
@@ -72,6 +103,13 @@ export function HomePage() {
         settings: finalSettings,
       })
       setGiveawayId(giveaway.id)
+
+      if (source === 'telegram') {
+        const published = await publishTelegram(giveaway.id, telegramText.trim())
+        setTelegramGiveaway(published)
+        setStep('telegram-live')
+        return
+      }
 
       const result =
         source === 'import'
@@ -162,6 +200,20 @@ export function HomePage() {
                     </select>
                   </div>
                 </>
+              ) : source === 'telegram' ? (
+                <div className="field">
+                  <label htmlFor="telegram-text">Текст поста для канала</label>
+                  <textarea
+                    id="telegram-text"
+                    rows={5}
+                    value={telegramText}
+                    onChange={(e) => setTelegramText(e.target.value)}
+                    placeholder={'Например: Разыгрываем билеты на фестиваль!\nЖми «Участвую» и приглашай друзей — больше шансов на победу.'}
+                  />
+                  <p className="field-hint">
+                    Бот сам опубликует этот текст в канал с кнопкой «Участвую» — ссылку на пост вставлять не нужно.
+                  </p>
+                </div>
               ) : (
                 <div className="field">
                   <label htmlFor="post-url">Ссылка на пост</label>
@@ -211,36 +263,46 @@ export function HomePage() {
 
               <Switch
                 label="Один пользователь = один шанс"
-                hint="Иначе несколько комментариев одного человека увеличивают его шанс"
+                hint={
+                  source === 'telegram'
+                    ? 'Иначе за каждого приглашённого друга — дополнительный шанс'
+                    : 'Иначе несколько комментариев одного человека увеличивают его шанс'
+                }
                 checked={settings.unique_user}
                 onChange={(v) => updateSettings('unique_user', v)}
               />
-              <Switch
-                label="Учитывать ответы на комментарии"
-                checked={settings.include_replies}
-                onChange={(v) => updateSettings('include_replies', v)}
-              />
-              <Switch
-                label="Требовать упоминание пользователя (@)"
-                checked={settings.require_mention}
-                onChange={(v) => updateSettings('require_mention', v)}
-              />
+              {source !== 'telegram' && (
+                <>
+                  <Switch
+                    label="Учитывать ответы на комментарии"
+                    checked={settings.include_replies}
+                    onChange={(v) => updateSettings('include_replies', v)}
+                  />
+                  <Switch
+                    label="Требовать упоминание пользователя (@)"
+                    checked={settings.require_mention}
+                    onChange={(v) => updateSettings('require_mention', v)}
+                  />
+                </>
+              )}
               <Switch
                 label="Исключить автора поста"
                 checked={settings.exclude_post_author}
                 onChange={(v) => updateSettings('exclude_post_author', v)}
               />
 
-              <div className="field" style={{ marginTop: 16 }}>
-                <label htmlFor="required-text">Учитывать только комментарии, содержащие (необязательно)</label>
-                <input
-                  id="required-text"
-                  type="text"
-                  value={settings.required_text ?? ''}
-                  onChange={(e) => updateSettings('required_text', e.target.value || null)}
-                  placeholder="например: @друг"
-                />
-              </div>
+              {source !== 'telegram' && (
+                <div className="field" style={{ marginTop: 16 }}>
+                  <label htmlFor="required-text">Учитывать только комментарии, содержащие (необязательно)</label>
+                  <input
+                    id="required-text"
+                    type="text"
+                    value={settings.required_text ?? ''}
+                    onChange={(e) => updateSettings('required_text', e.target.value || null)}
+                    placeholder="например: @друг"
+                  />
+                </div>
+              )}
 
               <div className="field">
                 <label htmlFor="excluded">Исключить пользователей (по одному в строке)</label>
@@ -255,7 +317,70 @@ export function HomePage() {
             </div>
 
             <button className="btn btn-primary" onClick={handleLoadComments} disabled={loading}>
-              {loading ? 'Загружаем…' : 'Загрузить комментарии'}
+              {loading
+                ? source === 'telegram'
+                  ? 'Публикуем…'
+                  : 'Загружаем…'
+                : source === 'telegram'
+                  ? 'Опубликовать в Telegram'
+                  : 'Загрузить комментарии'}
+            </button>
+          </>
+        )}
+
+        {step === 'telegram-live' && telegramGiveaway && (
+          <>
+            <h1 className="title">Пост опубликован</h1>
+            <p className="subtitle">
+              Участники накапливаются по мере того, как люди жмут «Участвую» и приглашают друзей.
+            </p>
+
+            {error && <div className="error-box">{error}</div>}
+
+            <div className="card">
+              <div className="field" style={{ marginBottom: 0 }}>
+                <a href={telegramGiveaway.post_url} target="_blank" rel="noreferrer">
+                  Открыть пост в канале →
+                </a>
+              </div>
+            </div>
+
+            <div className="card">
+              <div className="stat-row">
+                <span className="stat-label">Участников сейчас</span>
+                <span className="stat-value">{preview?.participants_after_rules ?? 0}</span>
+              </div>
+              <div className="stat-row">
+                <span className="stat-label">Победителей</span>
+                <span className="stat-value">{settings.winners_count}</span>
+              </div>
+              {settings.backup_winners_count > 0 && (
+                <div className="stat-row">
+                  <span className="stat-label">Запасных</span>
+                  <span className="stat-value">{settings.backup_winners_count}</span>
+                </div>
+              )}
+              <p className="field-hint">Число обновляется само каждые несколько секунд.</p>
+            </div>
+
+            <button
+              className="btn btn-primary"
+              onClick={handleDraw}
+              disabled={loading || (preview?.participants_after_rules ?? 0) < settings.winners_count}
+            >
+              {loading ? 'Запускаем…' : 'ПРОВЕСТИ РОЗЫГРЫШ'}
+            </button>
+            <div style={{ height: 12 }} />
+            <button
+              className="btn btn-ghost"
+              onClick={() => {
+                setStep('setup')
+                setTelegramGiveaway(null)
+                setPreview(null)
+              }}
+              disabled={loading}
+            >
+              Назад к настройкам
             </button>
           </>
         )}

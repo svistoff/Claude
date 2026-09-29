@@ -47,7 +47,10 @@ async def create_giveaway(
 ) -> Giveaway:
     if source not in VALID_SOURCES:
         raise GiveawayError(f"Неизвестный источник: {source}")
-    if not post_url.strip():
+    # Для Telegram пост ещё не существует на момент создания розыгрыша — его
+    # публикует сам сервис (services/telegram_giveaway.publish_giveaway_post),
+    # post_url заполнится этим вызовом.
+    if source != "telegram" and not post_url.strip():
         raise GiveawayError("Укажите ссылку на пост")
     if settings.winners_count < 1:
         raise GiveawayError("Количество победителей должно быть не меньше 1")

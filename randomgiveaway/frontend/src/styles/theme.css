@@ -122,6 +122,12 @@ a {
   border-color: var(--accent);
 }
 
+.field-hint {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  margin-top: 8px;
+}
+
 .toggle-row {
   display: flex;
   align-items: center;

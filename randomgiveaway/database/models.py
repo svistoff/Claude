@@ -57,6 +57,12 @@ class Giveaway:
     post_author_user_id: str | None
     created_at: str
     drawn_at: str | None
+    # Заполняются после публикации поста-розыгрыша через Telegram-бота
+    # (services/telegram_giveaway.publish_giveaway_post) — нужны, чтобы
+    # знать, в какой чат/сообщение слать обновления, и чтобы не публиковать
+    # один и тот же розыгрыш дважды.
+    telegram_chat_id: str | None = None
+    telegram_message_id: int | None = None
 
     @property
     def settings(self) -> GiveawaySettings:
@@ -64,6 +70,7 @@ class Giveaway:
 
     @staticmethod
     def from_row(row: aiosqlite.Row) -> "Giveaway":
+        row_keys = row.keys()
         return Giveaway(
             id=row["id"],
             public_id=row["public_id"],
@@ -82,6 +89,8 @@ class Giveaway:
             post_author_user_id=row["post_author_user_id"],
             created_at=row["created_at"],
             drawn_at=row["drawn_at"],
+            telegram_chat_id=row["telegram_chat_id"] if "telegram_chat_id" in row_keys else None,
+            telegram_message_id=row["telegram_message_id"] if "telegram_message_id" in row_keys else None,
         )
 
 

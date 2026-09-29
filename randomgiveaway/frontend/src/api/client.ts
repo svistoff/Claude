@@ -83,6 +83,14 @@ export function loadCommentsLive(id: number): Promise<ParticipantsPreview> {
   return request<ParticipantsPreview>(`/api/giveaways/${id}/load-comments`, { method: 'POST' })
 }
 
+export function publishTelegram(id: number, text: string): Promise<Giveaway> {
+  return request<Giveaway>(`/api/giveaways/${id}/telegram/publish`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  })
+}
+
 export function previewParticipants(id: number): Promise<ParticipantsPreview> {
   return request<ParticipantsPreview>(`/api/giveaways/${id}/participants/process`, { method: 'POST' })
 }

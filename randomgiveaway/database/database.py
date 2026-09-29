@@ -57,7 +57,41 @@ CREATE TABLE IF NOT EXISTS winners (
 );
 
 CREATE INDEX IF NOT EXISTS idx_winners_giveaway ON winners(giveaway_id);
+
+-- Сырые события участия в Telegram-розыгрышах (кнопка "Участвую" +
+-- реферальные приглашения) — накапливаются по мере поступления вебхуков,
+-- на их основе participants периодически пересчитывается целиком заново
+-- (см. services/telegram_giveaway.rebuild_participants), как и для
+-- остальных источников. 'join' — на пользователя не больше одной записи
+-- (см. уникальный индекс ниже), 'referral' — по одной на каждое
+-- засчитанное приглашение (с потолком, см. TELEGRAM_MAX_REFERRALS).
+CREATE TABLE IF NOT EXISTS telegram_entries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    giveaway_id INTEGER NOT NULL REFERENCES giveaways(id) ON DELETE CASCADE,
+    telegram_user_id TEXT NOT NULL,
+    username TEXT,
+    display_name TEXT,
+    kind TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_telegram_entries_giveaway ON telegram_entries(giveaway_id);
+
+-- Один "join" на пользователя на розыгрыш; "referral" не ограничен этим
+-- индексом — на них считает потолок сам сервис при вставке.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_telegram_entries_unique_join
+    ON telegram_entries(giveaway_id, telegram_user_id)
+    WHERE kind = 'join';
 """
+
+# giveaways создавалась до Telegram-интеграции — на уже развёрнутых базах
+# столбцов ниже нет, добавляем через ALTER TABLE (CREATE TABLE IF NOT EXISTS
+# столбцы в существующую таблицу не добавляет). SQLite не даёт
+# "ADD COLUMN IF NOT EXISTS" — ловим и игнорируем "duplicate column".
+_GIVEAWAYS_MIGRATIONS = (
+    "ALTER TABLE giveaways ADD COLUMN telegram_chat_id TEXT",
+    "ALTER TABLE giveaways ADD COLUMN telegram_message_id INTEGER",
+)
 
 
 async def init_db() -> aiosqlite.Connection:
@@ -69,6 +103,12 @@ async def init_db() -> aiosqlite.Connection:
     await conn.execute("PRAGMA busy_timeout=5000;")
     await conn.execute("PRAGMA foreign_keys=ON;")
     await conn.executescript(SCHEMA)
+    for stmt in _GIVEAWAYS_MIGRATIONS:
+        try:
+            await conn.execute(stmt)
+        except aiosqlite.OperationalError as exc:
+            if "duplicate column" not in str(exc).lower():
+                raise
     await conn.commit()
     _conn = conn
     logger.info("База данных инициализирована: %s", config.db_path)

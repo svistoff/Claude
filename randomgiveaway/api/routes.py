@@ -5,12 +5,11 @@ from __future__ import annotations
 import secrets
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from randomgiveaway.adapters.import_adapter import ImportAdapter
 from randomgiveaway.adapters.instagram_adapter import InstagramAdapter
-from randomgiveaway.adapters.telegram_adapter import TelegramAdapter
 from randomgiveaway.adapters.vk_adapter import VKAdapter
 from randomgiveaway.api.schemas import (
     CreateGiveawayRequest,
@@ -19,6 +18,7 @@ from randomgiveaway.api.schemas import (
     ParticipantOut,
     ParticipantsPreviewOut,
     PublicResultOut,
+    PublishTelegramRequest,
     WinnerOut,
 )
 from randomgiveaway.config import ENV_PATH, config
@@ -26,6 +26,7 @@ from randomgiveaway.database.models import Participant, Winner
 from randomgiveaway.env_file import set_env_var
 from randomgiveaway.services import giveaways as giveaway_service
 from randomgiveaway.services import instagram_oauth
+from randomgiveaway.services import telegram_giveaway
 from randomgiveaway.services import vk_oauth
 
 router = APIRouter(prefix="/api")
@@ -33,7 +34,6 @@ router = APIRouter(prefix="/api")
 _LIVE_ADAPTERS = {
     "instagram": lambda: InstagramAdapter(config.instagram_access_token),
     "vk": lambda: VKAdapter(config.vk_access_token),
-    "telegram": lambda: TelegramAdapter(config.telegram_session),
 }
 
 
@@ -165,6 +165,12 @@ async def list_participants(giveaway_id: int) -> list[ParticipantOut]:
 
 @router.post("/giveaways/{giveaway_id}/draw", response_model=DrawResultOut, dependencies=[Depends(require_admin)])
 async def draw_giveaway(giveaway_id: int) -> DrawResultOut:
+    pre_draw = await giveaway_service.get_giveaway(giveaway_id)
+    if pre_draw.source == "telegram":
+        # Подписка засчитывается на момент розыгрыша, не клика по кнопке
+        # (см. README.md, «Подключение Telegram») — исключаем отписавшихся
+        # прямо перед тем, как передать участников в random_engine.
+        await telegram_giveaway.resync_membership_and_exclude(giveaway_id)
     g, _winners, _backups = await giveaway_service.perform_draw(giveaway_id)
     pairs = await giveaway_service.get_winners_with_participants(giveaway_id)
     winners = [_to_winner_out(w, p) for w, p in pairs if not w.is_backup]
@@ -391,3 +397,36 @@ async def vk_oauth_callback(
         "<p>И настройте автопродление по cron — см. randomgiveaway/README.md "
         "(scripts/refresh_vk_token.py), иначе токен истечёт.</p>"
     )
+
+
+# --- Telegram: публикация поста-розыгрыша + приём вебхука бота ---
+# (см. services/telegram_giveaway.py и README.md, «Подключение Telegram»).
+# Механика — кнопка "Участвую" + реферальные ссылки, не чтение истории
+# комментариев (Bot API не даёт боту доступа к ней, только к новым
+# апдейтам). /publish защищён require_admin по тем же причинам, что и
+# OAuth-ручки выше. /webhook защищён секретом в заголовке
+# X-Telegram-Bot-Api-Secret-Token (его Telegram присылает сам — задаётся
+# один раз через services.telegram_api.set_webhook), а не require_admin,
+# т.к. вызывающая сторона — сервер Telegram, а не браузер администратора.
+
+
+@router.post(
+    "/giveaways/{giveaway_id}/telegram/publish",
+    response_model=GiveawayOut,
+    dependencies=[Depends(require_admin)],
+)
+async def publish_telegram_giveaway(giveaway_id: int, payload: PublishTelegramRequest) -> GiveawayOut:
+    g = await telegram_giveaway.publish_giveaway_post(giveaway_id, payload.text)
+    return GiveawayOut.from_domain(g)
+
+
+@router.post("/telegram/webhook")
+async def telegram_webhook(
+    request: Request,
+    x_telegram_bot_api_secret_token: str | None = Header(default=None),
+) -> dict[str, bool]:
+    if config.telegram_webhook_secret and x_telegram_bot_api_secret_token != config.telegram_webhook_secret:
+        raise HTTPException(status_code=401, detail="Неверный секрет вебхука")
+    update = await request.json()
+    await telegram_giveaway.handle_update(update)
+    return {"ok": True}

@@ -22,6 +22,10 @@ class GiveawaySettingsIn(BaseModel):
         return GiveawaySettings(**self.model_dump())
 
 
+class PublishTelegramRequest(BaseModel):
+    text: str
+
+
 class CreateGiveawayRequest(BaseModel):
     source: str
     post_url: str
@@ -47,6 +51,7 @@ class GiveawayOut(BaseModel):
     created_at: str
     drawn_at: str | None
     settings: GiveawaySettingsIn
+    telegram_published: bool = False
 
     @staticmethod
     def from_domain(g: Giveaway) -> "GiveawayOut":
@@ -67,6 +72,7 @@ class GiveawayOut(BaseModel):
             created_at=g.created_at,
             drawn_at=g.drawn_at,
             settings=GiveawaySettingsIn(**asdict(g.settings)),
+            telegram_published=g.telegram_message_id is not None,
         )
 
 

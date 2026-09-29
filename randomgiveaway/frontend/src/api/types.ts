@@ -41,6 +41,7 @@ export interface Giveaway {
   created_at: string
   drawn_at: string | null
   settings: GiveawaySettings
+  telegram_published: boolean
 }
 
 export interface ParticipantsPreview {

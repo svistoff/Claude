@@ -58,8 +58,26 @@ class Config:
     vk_device_id: str | None
     vk_app_id: str | None
     vk_oauth_redirect_uri: str | None
-    # Плейсхолдер под Этап 4 — Telegram ещё не реализован.
+    # Устарело: заготовка под чтение истории через MTProto-сессию (вариант Б
+    # из обсуждения) — сейчас не используется, Telegram реализован через
+    # бот с кнопкой "Участвую" + реферальные ссылки (см. services/telegram_*
+    # и README.md, «Подключение Telegram»). Оставлено на случай, если
+    # понадобится доразыгрывать уже опубликованные посты задним числом.
     telegram_session: str | None
+    # Токен бота-организатора розыгрышей (НЕ тот же бот, что в bot/ — тот
+    # занят другим делом, AI-рерайтом контента). Бот должен быть админом
+    # канала ekb_guide с правом публикации постов.
+    telegram_bot_token: str | None
+    # Канал, куда публикуются посты розыгрышей и где проверяется подписка
+    # участников — например "@ekb_guide" или числовой chat_id.
+    telegram_channel: str | None
+    # Секрет для проверки заголовка X-Telegram-Bot-Api-Secret-Token на
+    # вебхуке (см. services/telegram_api.set_webhook) — защита от подложных
+    # запросов на /api/telegram/webhook, не от самого Telegram.
+    telegram_webhook_secret: str | None
+    # Потолок засчитываемых приглашений на одного участника (антифрод) —
+    # см. README.md, «Подключение Telegram».
+    telegram_max_referrals: int
 
 
 def load_config() -> Config:
@@ -81,6 +99,10 @@ def load_config() -> Config:
         vk_app_id=os.getenv("VK_APP_ID") or None,
         vk_oauth_redirect_uri=os.getenv("VK_OAUTH_REDIRECT_URI") or None,
         telegram_session=os.getenv("TELEGRAM_SESSION") or None,
+        telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN") or None,
+        telegram_channel=os.getenv("TELEGRAM_CHANNEL") or None,
+        telegram_webhook_secret=os.getenv("TELEGRAM_WEBHOOK_SECRET") or None,
+        telegram_max_referrals=_get_int("TELEGRAM_MAX_REFERRALS", default=15),
     )
 
 

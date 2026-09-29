@@ -249,3 +249,117 @@ def test_vk_oauth_full_flow_with_valid_state(monkeypatch, tmp_path):
             params={"code": "real-code", "state": state, "device_id": "device-42"},
         )
         assert replay_resp.status_code == 400
+
+
+def _patch_telegram_config(monkeypatch, **overrides):
+    import dataclasses
+
+    from randomgiveaway.api import routes as routes_module
+    from randomgiveaway.services import telegram_giveaway as tg_module
+
+    patched = dataclasses.replace(routes_module.config, **overrides)
+    monkeypatch.setattr(routes_module, "config", patched)
+    monkeypatch.setattr(tg_module, "config", patched)
+    return patched
+
+
+def test_telegram_publish_requires_admin_token(monkeypatch):
+    import dataclasses
+
+    from randomgiveaway.api import routes as routes_module
+
+    monkeypatch.setattr(
+        routes_module, "config", dataclasses.replace(routes_module.config, admin_token="secret-token")
+    )
+    with TestClient(app) as client:
+        giveaway = client.post(
+            "/api/giveaways",
+            json={"source": "telegram", "post_url": "", "settings": {}},
+            headers={"X-Admin-Token": "secret-token"},
+        ).json()
+        resp = client.post(
+            f"/api/giveaways/{giveaway['id']}/telegram/publish", json={"text": "hi"}
+        )
+        assert resp.status_code == 401
+
+
+def test_telegram_publish_full_flow(monkeypatch):
+    from randomgiveaway.services import telegram_giveaway as tg_module
+
+    _patch_telegram_config(monkeypatch, telegram_bot_token="TOKEN", telegram_channel="@chan")
+
+    async def fake_get_me(token, client=None):
+        return {"username": "mybot"}
+
+    async def fake_send_message(token, chat_id, text, reply_markup=None, client=None):
+        assert chat_id == "@chan"
+        assert reply_markup["inline_keyboard"][0][0]["url"].startswith("https://t.me/mybot?start=join_")
+        return {"chat": {"id": -100999}, "message_id": 7}
+
+    monkeypatch.setattr(tg_module.telegram_api, "get_me", fake_get_me)
+    monkeypatch.setattr(tg_module.telegram_api, "send_message", fake_send_message)
+
+    with TestClient(app) as client:
+        giveaway = client.post(
+            "/api/giveaways", json={"source": "telegram", "post_url": "", "settings": {}}
+        ).json()
+        resp = client.post(
+            f"/api/giveaways/{giveaway['id']}/telegram/publish", json={"text": "Розыгрыш!"}
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["post_url"] == "https://t.me/chan/7"
+        assert body["telegram_published"] is True
+
+
+def test_telegram_webhook_rejects_wrong_secret(monkeypatch):
+    _patch_telegram_config(monkeypatch, telegram_webhook_secret="whsecret")
+    with TestClient(app) as client:
+        resp = client.post(
+            "/api/telegram/webhook",
+            json={"message": {"text": "/start join_1", "from": {"id": 1}}},
+            headers={"X-Telegram-Bot-Api-Secret-Token": "wrong"},
+        )
+        assert resp.status_code == 401
+
+
+def test_telegram_webhook_registers_participant(monkeypatch):
+    from randomgiveaway.services import telegram_giveaway as tg_module
+
+    _patch_telegram_config(
+        monkeypatch,
+        telegram_bot_token="TOKEN",
+        telegram_channel="@chan",
+        telegram_webhook_secret="whsecret",
+    )
+
+    async def fake_is_member(token, chat_id, user_id, client=None):
+        return True
+
+    async def fake_send_message(token, chat_id, text, reply_markup=None, client=None):
+        return {"message_id": 1, "chat": {"id": chat_id}}
+
+    async def fake_get_me(token, client=None):
+        return {"username": "mybot"}
+
+    monkeypatch.setattr(tg_module.telegram_api, "is_channel_member", fake_is_member)
+    monkeypatch.setattr(tg_module.telegram_api, "send_message", fake_send_message)
+    monkeypatch.setattr(tg_module.telegram_api, "get_me", fake_get_me)
+
+    with TestClient(app) as client:
+        giveaway = client.post(
+            "/api/giveaways", json={"source": "telegram", "post_url": "", "settings": {}}
+        ).json()
+        gid = giveaway["id"]
+
+        resp = client.post(
+            "/api/telegram/webhook",
+            json={"message": {"text": f"/start join_{gid}", "from": {"id": 555, "username": "alex"}}},
+            headers={"X-Telegram-Bot-Api-Secret-Token": "whsecret"},
+        )
+        assert resp.status_code == 200, resp.text
+
+        participants_resp = client.get(f"/api/giveaways/{gid}/participants")
+        assert participants_resp.status_code == 200, participants_resp.text
+        usernames = {p["username"] for p in participants_resp.json()}
+        assert usernames == {"alex"}
