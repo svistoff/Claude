@@ -50,7 +50,7 @@ async function transcribeAudio(buffer, model, apiKey, durationSec) {
 function buildAnalysisPrompt({ companyContext, transcript, salon, admins, checklist, direction, callbackStatus }) {
   const adminsList = admins.length
     ? admins.map(a => `- "${a.name}" (id=${a.id}, статус: ${a.status === 'confirmed' ? 'подтверждён' : 'не подтверждён'})`).join('\n')
-    : '(справочник администраторов этого объекта пока пуст)';
+    : '(справочник администраторов пока пуст)';
 
   const checklistList = checklist.map((item, i) => `${i + 1}. [id=${item.id}] ${item.text}`).join('\n');
   const objectKind = salon.type === 'sauna' ? 'сауна' : 'салон массажа';
@@ -73,7 +73,8 @@ function buildAnalysisPrompt({ companyContext, transcript, salon, admins, checkl
    прозвучало, но ни на кого из справочника не похоже — это может быть новый
    администратор: верни is_new_admin=true и восстанови имя в именительном падеже в
    detected_admin_name. Если имя не прозвучало вообще — оставь оба поля null.
-   Справочник администраторов этого объекта:
+   Справочник администраторов (общий по всей сети — один и тот же человек может
+   отвечать в разных объектах сети):
 ${adminsList}
 
 2. Проверить чек-лист конкретных пунктов — по каждому определить состояние:
@@ -160,14 +161,14 @@ function checklistScore(mergedChecklist) {
   return mergedChecklist.reduce((sum, i) => sum + weight[i.state], 0);
 }
 
-function resolveAdmin(salon, admins, parsed) {
+function resolveAdmin(admins, parsed) {
   if (parsed.matched_admin_name) {
     const found = admins.find(a => a.name.toLowerCase() === String(parsed.matched_admin_name).toLowerCase());
     if (found) return found.id;
   }
   if (parsed.is_new_admin && parsed.detected_admin_name) {
-    const info = db.prepare(`INSERT INTO admins (salon_id, name, status) VALUES (?, ?, 'unconfirmed')`)
-      .run(salon.id, parsed.detected_admin_name.trim());
+    const info = db.prepare(`INSERT INTO admins (name, status) VALUES (?, 'unconfirmed')`)
+      .run(parsed.detected_admin_name.trim());
     return info.lastInsertRowid;
   }
   return null;
@@ -211,7 +212,9 @@ async function processCall(callId) {
     );
     logUsage(callId, 'transcribe', transcribeCost);
 
-    const admins = db.prepare('SELECT * FROM admins WHERE salon_id = ?').all(salon.id);
+    // администраторы — общий список по всей сети: один и тот же человек может
+    // в разные смены выходить в разных салонах, ИИ узнаёт по имени, не по объекту
+    const admins = db.prepare('SELECT * FROM admins').all();
     const checklist = getEffectiveChecklist(salon);
 
     const { parsed, costUsd: analysisCost } = await analyzeTranscript({
@@ -221,7 +224,7 @@ async function processCall(callId) {
     });
     logUsage(callId, 'analysis', analysisCost);
 
-    const matchedAdminId = resolveAdmin(salon, admins, parsed);
+    const matchedAdminId = resolveAdmin(admins, parsed);
     const merged = mergeChecklist(checklist, parsed.checklist);
     const score = checklistScore(merged);
 

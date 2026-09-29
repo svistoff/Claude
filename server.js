@@ -298,7 +298,7 @@ app.get('/api/admins', (req, res) => {
   let salonId = req.query.salon_id ? Number(req.query.salon_id) : null;
   if (req.user.role !== 'admin') {
     const admin = adminForUser(req.user.id);
-    if (!admin) return res.json([]);
+    if (!admin || !admin.salon_id) return res.json([]);
     salonId = admin.salon_id;
   }
   const status = req.query.status;
@@ -308,27 +308,32 @@ app.get('/api/admins', (req, res) => {
   if (status) { conditions.push('a.status = ?'); params.push(status); }
   const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
   const rows = db.prepare(`
-    SELECT a.*, s.name AS salon_name, u.username AS login_username
-    FROM admins a JOIN salons s ON s.id = a.salon_id
+    SELECT a.*, s.name AS salon_name, u.username AS login_username,
+      (SELECT GROUP_CONCAT(DISTINCT sal.name) FROM calls c JOIN salons sal ON sal.id = c.salon_id WHERE c.matched_admin_id = a.id) AS worked_salons
+    FROM admins a LEFT JOIN salons s ON s.id = a.salon_id
     LEFT JOIN users u ON u.id = a.user_id
     ${where} ORDER BY a.status DESC, a.name
   `).all(...params);
   res.json(rows);
 });
 
+// администратор — общая метка по имени на всю сеть (не привязан к объекту:
+// один человек может выходить на смену в разных салонах). salon_id — только
+// необязательный "домашний" объект для входа на страницу «Гости».
 app.post('/api/admins', auth.requireAdmin, (req, res) => {
   const { salon_id, name } = req.body || {};
-  if (!salon_id || !name) return res.status(400).json({ error: 'Укажите объект и имя администратора' });
-  const info = db.prepare(`INSERT INTO admins (salon_id, name, status) VALUES (?, ?, 'confirmed')`).run(salon_id, name.trim());
+  if (!name || !name.trim()) return res.status(400).json({ error: 'Укажите имя администратора' });
+  const info = db.prepare(`INSERT INTO admins (salon_id, name, status) VALUES (?, ?, 'confirmed')`).run(salon_id || null, name.trim());
   res.json(db.prepare('SELECT * FROM admins WHERE id = ?').get(info.lastInsertRowid));
 });
 
 app.put('/api/admins/:id', auth.requireAdmin, (req, res) => {
   const admin = db.prepare('SELECT * FROM admins WHERE id = ?').get(req.params.id);
   if (!admin) return res.status(404).json({ error: 'Администратор не найден' });
-  const { name, callout_phone } = req.body || {};
-  db.prepare('UPDATE admins SET name=?, callout_phone=? WHERE id=?')
-    .run(name ?? admin.name, callout_phone ?? admin.callout_phone, admin.id);
+  const body = req.body || {};
+  const salonId = 'salon_id' in body ? (body.salon_id || null) : admin.salon_id;
+  db.prepare('UPDATE admins SET name=?, callout_phone=?, salon_id=? WHERE id=?')
+    .run(body.name ?? admin.name, body.callout_phone ?? admin.callout_phone, salonId, admin.id);
   res.json(db.prepare('SELECT * FROM admins WHERE id = ?').get(admin.id));
 });
 
@@ -501,8 +506,13 @@ app.get('/api/dashboard', auth.requireAdmin, (req, res) => {
     ORDER BY c.started_at DESC LIMIT 50
   `).all();
 
+  // администратор больше не привязан к объекту — для контекста показываем
+  // объект звонка, на котором ИИ впервые его обнаружил
   const unconfirmedAdmins = db.prepare(`
-    SELECT a.*, s.name AS salon_name FROM admins a JOIN salons s ON s.id = a.salon_id
+    SELECT a.*,
+      (SELECT sal.name FROM calls c JOIN salons sal ON sal.id = c.salon_id
+       WHERE c.matched_admin_id = a.id ORDER BY c.started_at ASC LIMIT 1) AS salon_name
+    FROM admins a
     WHERE a.status = 'unconfirmed' ORDER BY a.created_at DESC
   `).all();
 

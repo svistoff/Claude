@@ -110,11 +110,14 @@ CREATE TABLE IF NOT EXISTS ad_phone_numbers (
 
 -- ===== Администраторы =====
 -- Отдельно от users: администратор существует как метка для ИИ даже без логина.
--- Привязан ровно к одному объекту. user_id заполняется, только если владелец
--- выдал доступ к странице «Гости».
+-- Не привязан к конкретному объекту — одни и те же люди выходят на смену в
+-- разных салонах сети, ИИ узнаёт их по имени из разговора по всей сети.
+-- salon_id — необязательный "домашний" объект, нужен только для входа на
+-- страницу «Гости» (см. admins.user_id); в истории звонков объект виден
+-- по каждому конкретному звонку (calls.salon_id), а не по этому полю.
 CREATE TABLE IF NOT EXISTS admins (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  salon_id INTEGER NOT NULL REFERENCES salons(id) ON DELETE CASCADE,
+  salon_id INTEGER REFERENCES salons(id) ON DELETE SET NULL,
   name TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'confirmed', -- confirmed | unconfirmed
   user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
@@ -301,6 +304,36 @@ if (!telephonyColumns.includes('uis_timezone_offset_hours')) {
 const callColumns = db.prepare("PRAGMA table_info(calls)").all().map(c => c.name);
 if (!callColumns.includes('dialed_number')) {
   db.exec('ALTER TABLE calls ADD COLUMN dialed_number TEXT');
+}
+
+// администратор — это метка для ИИ по имени, не привязанная к конкретному
+// объекту (могут выходить на смену в разных салонах сети): salon_id раньше
+// был NOT NULL, теперь необязателен ("домашний" объект — только для входа
+// на страницу «Гости», если он выдан). ALTER TABLE не умеет снимать
+// NOT NULL/менять ON DELETE — пересобираем таблицу по стандартной схеме.
+const adminsSalonCol = db.prepare("PRAGMA table_info(admins)").all().find(c => c.name === 'salon_id');
+if (adminsSalonCol && adminsSalonCol.notnull) {
+  db.pragma('foreign_keys = OFF');
+  const rebuild = db.transaction(() => {
+    db.exec(`
+      CREATE TABLE admins_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        salon_id INTEGER REFERENCES salons(id) ON DELETE SET NULL,
+        name TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'confirmed',
+        user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        callout_phone TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      INSERT INTO admins_new (id, salon_id, name, status, user_id, callout_phone, created_at)
+        SELECT id, salon_id, name, status, user_id, callout_phone, created_at FROM admins;
+      DROP TABLE admins;
+      ALTER TABLE admins_new RENAME TO admins;
+      CREATE INDEX IF NOT EXISTS idx_admins_salon ON admins(salon_id);
+    `);
+  });
+  rebuild();
+  db.pragma('foreign_keys = ON');
 }
 
 // первичный владелец, если пользователей ещё нет

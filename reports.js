@@ -130,7 +130,9 @@ function answeredCallsQuery(where, params) {
 }
 
 async function renderAdminReport(adminId, period) {
-  const admin = db.prepare('SELECT a.*, s.name AS salon_name FROM admins a JOIN salons s ON s.id = a.salon_id WHERE a.id = ?').get(adminId);
+  // администратор не привязан к объекту — работает по всей сети,
+  // поэтому в подписи отчёта перечисляем объекты, где реально были звонки за период
+  const admin = db.prepare('SELECT * FROM admins WHERE id = ?').get(adminId);
   if (!admin) throw new Error('Администратор не найден');
 
   const calls = answeredCallsQuery('c.matched_admin_id = ? AND c.started_at >= ?', [adminId, periodStart(period)]);
@@ -138,7 +140,8 @@ async function renderAdminReport(adminId, period) {
   const noIntro = calls.filter(c => c.checklist_results && JSON.parse(c.checklist_results).some(i => /представ/i.test(i.text) && i.state === 'no')).length;
   const bookings = calls.filter(c => c.outcome === 'booking').length;
   const funnel = checklistFunnel(calls);
-  const narrative = await generateNarrative({ calls, contextLabel: `администратора ${admin.name} (${admin.salon_name})` });
+  const salonsTouched = [...new Set(calls.map(c => c.salon_name))].join(', ') || 'нет звонков за период';
+  const narrative = await generateNarrative({ calls, contextLabel: `администратора ${admin.name} (${salonsTouched})` });
 
   const body = `
     <h2>KPI</h2>${kpiBlock([
@@ -151,7 +154,7 @@ async function renderAdminReport(adminId, period) {
     ${narrativeBlocks(narrative)}
     <h2>Звонки за период</h2>${callsTable(calls)}
   `;
-  return page(`Отчёт по администратору: ${admin.name}`, `Объект: ${esc(admin.salon_name)} · Период: ${period === 'month' ? 'месяц' : 'неделя'}`, body);
+  return page(`Отчёт по администратору: ${admin.name}`, `Объекты: ${esc(salonsTouched)} · Период: ${period === 'month' ? 'месяц' : 'неделя'}`, body);
 }
 
 async function renderSalonReport(salonId, period) {
@@ -167,11 +170,14 @@ async function renderSalonReport(salonId, period) {
   const bookings = calls.filter(c => c.outcome === 'booking').length;
   const conversion = calls.length ? Math.round((bookings / calls.length) * 100) : 0;
 
+  // администратор больше не привязан к объекту — считаем тех, кто реально
+  // принимал звонки этого объекта за период (по calls, а не по admins.salon_id)
   const byAdmin = db.prepare(`
     SELECT a.name, COUNT(c.id) AS calls_count, AVG(c.checklist_score * 1.0 / NULLIF(c.checklist_total,0)) AS avg_pct
-    FROM admins a LEFT JOIN calls c ON c.matched_admin_id = a.id AND c.status='done' AND c.started_at >= ?
-    WHERE a.salon_id = ? GROUP BY a.id ORDER BY calls_count DESC
-  `).all(since, salonId);
+    FROM calls c JOIN admins a ON a.id = c.matched_admin_id
+    WHERE c.salon_id = ? AND c.status = 'done' AND c.started_at >= ?
+    GROUP BY a.id ORDER BY calls_count DESC
+  `).all(salonId, since);
 
   const funnel = checklistFunnel(calls);
   const narrative = await generateNarrative({ calls, contextLabel: `по объекту «${salon.name}»` });
@@ -184,7 +190,7 @@ async function renderSalonReport(salonId, period) {
       ['Перезвонили вовремя', onTime], ['Перезвонили позже', late], ['Не перезвонили', none],
       ['Конверсия в запись', conversion + '%']
     ])}
-    <h2>Администраторы объекта</h2>
+    <h2>Администраторы, принимавшие звонки</h2>
     <table><tr><th>Имя</th><th>Звонков</th><th>Средний % чек-листа</th></tr>${adminRows || '<tr><td colspan="3">Нет данных</td></tr>'}</table>
     <h2>Проблемные пункты чек-листа</h2>${funnelTable(funnel)}
     ${narrativeBlocks(narrative)}

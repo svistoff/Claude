@@ -418,7 +418,7 @@ RENDERERS.calls = async function renderCalls() {
     ${callsView === 'all' ? `
     <div class="card row">
       <select id="f-salon"><option value="">Все объекты</option>${SALONS.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select>
-      <select id="f-admin"><option value="">Все администраторы</option>${ADMINS.map(a=>`<option value="${a.id}">${esc(a.name)} (${esc(salonName(a.salon_id))})</option>`).join('')}</select>
+      <select id="f-admin"><option value="">Все администраторы</option>${ADMINS.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('')}</select>
       <select id="f-outcome"><option value="">Любой исход</option>
         <option value="booking">Запись</option><option value="interest">Интерес</option>
         <option value="callback">Перезвонить</option><option value="refusal">Отказ</option><option value="spam">Спам</option></select>
@@ -474,7 +474,7 @@ async function openCall(id) {
       <div><div>${esc(i.text)}</div>${i.evidence ? `<div class="muted">«${esc(i.evidence)}»</div>` : ''}</div>
     </div>`).join('');
 
-  const adminOptions = ADMINS.filter(a => a.salon_id === c.salon_id)
+  const adminOptions = ADMINS
     .map(a => `<option value="${a.id}" ${a.id===c.matched_admin_id?'selected':''}>${esc(a.name)}</option>`).join('');
 
   document.getElementById('modal-root').innerHTML = `
@@ -589,9 +589,9 @@ RENDERERS.admins = async function renderAdmins() {
     ${settingsTabsHtml('admins')}
     <div class="row between"><h2>Администраторы</h2><button class="primary" onclick="showAdminForm()">+ Добавить вручную</button></div>
     <div class="card">
-      <table><tr><th>Имя</th><th>Объект</th><th>Статус</th><th>Логин</th><th>Телефон UIS</th><th></th></tr>
+      <table><tr><th>Имя</th><th>Работал(а) в</th><th>Статус</th><th>Логин</th><th>Телефон UIS</th><th></th></tr>
         ${ADMINS.map(a => `<tr>
-          <td>${esc(a.name)}</td><td>${esc(a.salon_name)}</td>
+          <td>${esc(a.name)}</td><td>${esc(a.worked_salons || '—')}</td>
           <td>${a.status==='confirmed' ? '<span class="tag done">подтверждён</span>' : '<span class="tag warn">не подтверждён</span>'}</td>
           <td>${a.login_username ? esc(a.login_username) : '<span class="muted">нет</span>'}</td>
           <td>${esc(a.callout_phone||'—')}</td>
@@ -616,8 +616,8 @@ function showAdminForm() {
       <div class="modal">
         <h3>Новый администратор</h3>
         <div class="row" style="flex-direction:column;align-items:stretch">
-          <select id="a-salon">${SALONS.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select>
           <input id="a-name" placeholder="Имя (как представляется по телефону)">
+          <div class="muted" style="font-size:13px">Администратор не привязан к объекту — ИИ узнаёт по имени в любом салоне сети, а в истории звонков всегда видно, в какой салон поступил конкретный звонок.</div>
         </div>
         <div class="row between" style="margin-top:16px">
           <button onclick="document.querySelector('.modal-bg').remove()">Отмена</button>
@@ -627,7 +627,7 @@ function showAdminForm() {
     </div>`;
 }
 async function saveNewAdmin() {
-  await api('/admins', { method: 'POST', body: { salon_id: Number(document.getElementById('a-salon').value), name: document.getElementById('a-name').value.trim() } });
+  await api('/admins', { method: 'POST', body: { name: document.getElementById('a-name').value.trim() } });
   document.querySelector('.modal-bg').remove();
   RENDERERS.admins();
 }
@@ -641,6 +641,11 @@ function editAdmin(id) {
         <div class="row" style="flex-direction:column;align-items:stretch">
           <input id="a-name" value="${esc(a.name)}" placeholder="Имя">
           <input id="a-callout" value="${esc(a.callout_phone||'')}" placeholder="Телефон в приложении UIS (для клик-звонка)">
+          <label class="muted" style="font-size:13px;margin-top:8px">Домашний объект (только для входа на страницу «Гости», на распознавание ИИ не влияет)</label>
+          <select id="a-salon">
+            <option value="">— не выбран —</option>
+            ${SALONS.map(s=>`<option value="${s.id}" ${a.salon_id===s.id?'selected':''}>${esc(s.name)}</option>`).join('')}
+          </select>
         </div>
         <div class="row between" style="margin-top:16px">
           <button onclick="document.querySelector('.modal-bg').remove()">Отмена</button>
@@ -650,7 +655,12 @@ function editAdmin(id) {
     </div>`;
 }
 async function saveAdminEdit(id) {
-  await api(`/admins/${id}`, { method: 'PUT', body: { name: document.getElementById('a-name').value.trim(), callout_phone: document.getElementById('a-callout').value.trim() } });
+  const salonVal = document.getElementById('a-salon').value;
+  await api(`/admins/${id}`, { method: 'PUT', body: {
+    name: document.getElementById('a-name').value.trim(),
+    callout_phone: document.getElementById('a-callout').value.trim(),
+    salon_id: salonVal ? Number(salonVal) : null
+  } });
   document.querySelector('.modal-bg').remove();
   RENDERERS.admins();
 }
@@ -1036,7 +1046,7 @@ RENDERERS.reports = async function renderReports() {
       </div>
       <div class="card"><h3>По администратору</h3>
         <div class="row" style="flex-direction:column;align-items:stretch">
-          <select id="rep-admin">${ADMINS.map(a=>`<option value="${a.id}">${esc(a.name)} (${esc(salonName(a.salon_id))})</option>`).join('')}</select>
+          <select id="rep-admin">${ADMINS.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('')}</select>
           <select id="rep-admin-period"><option value="week">Неделя</option><option value="month">Месяц</option></select>
           <button class="primary" onclick="window.open('/api/reports/admin/'+document.getElementById('rep-admin').value+'?period='+document.getElementById('rep-admin-period').value)">Сформировать</button>
         </div>
