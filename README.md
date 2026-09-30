@@ -10,7 +10,7 @@
 
 **Где что лежит:**
 - Репозиторий: `svistoff/claude` (GitHub), рабочая ветка `claude/beautiful-carson-m0d46q`
-- VPS: `root@77.110.125.73` (хост `magic-copper`)
+- VPS: `root@45.146.90.128` (хост `magic-copper`)
 - На сервере код в `/root/repost-bot` (важно: НЕ `/opt/...` — все боты на этом
   VPS по конвенции лежат в `/root/<имя>`, см. `CLAUDE.md`)
 - Запуск — через **Supervisor** (program name `telegram-repost-bot`), не
