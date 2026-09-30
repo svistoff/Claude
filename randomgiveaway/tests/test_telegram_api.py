@@ -20,8 +20,8 @@ class FakeClient:
         self._payload = payload
         self.post_calls: list[dict] = []
 
-    async def post(self, url, json=None):
-        self.post_calls.append({"url": url, "json": json})
+    async def post(self, url, json=None, data=None, files=None):
+        self.post_calls.append({"url": url, "json": json, "data": data, "files": files})
         return FakeResponse(self._payload)
 
 
@@ -36,6 +36,27 @@ async def test_call_raises_friendly_error_on_not_ok():
     client = FakeClient({"ok": False, "description": "Unauthorized"})
     with pytest.raises(telegram_api.TelegramAPIError, match="Unauthorized"):
         await telegram_api._call("TOKEN", "getMe", {}, client)
+
+
+async def test_send_photo_sends_multipart_with_json_encoded_markup():
+    client = FakeClient({"ok": True, "result": {"chat": {"id": -100}, "message_id": 5}})
+    markup = {"inline_keyboard": [[{"text": "Участвую 🎉", "url": "https://t.me/mybot?start=join_1"}]]}
+    result = await telegram_api.send_photo(
+        "TOKEN", "@chan", b"bytes", "prize.jpg", "image/jpeg", "caption text", markup, client
+    )
+    assert result == {"chat": {"id": -100}, "message_id": 5}
+    call = client.post_calls[0]
+    assert call["url"] == "https://api.telegram.org/botTOKEN/sendPhoto"
+    assert call["data"]["chat_id"] == "@chan"
+    assert call["data"]["caption"] == "caption text"
+    assert call["data"]["reply_markup"] == telegram_api.json.dumps(markup, ensure_ascii=False)
+    assert call["files"]["photo"] == ("prize.jpg", b"bytes", "image/jpeg")
+
+
+async def test_send_photo_raises_on_error():
+    client = FakeClient({"ok": False, "description": "PHOTO_INVALID_DIMENSIONS"})
+    with pytest.raises(telegram_api.TelegramAPIError, match="PHOTO_INVALID_DIMENSIONS"):
+        await telegram_api.send_photo("TOKEN", "@chan", b"bytes", "a.jpg", "image/jpeg", "cap", client=client)
 
 
 async def test_is_channel_member_true_for_member_statuses():

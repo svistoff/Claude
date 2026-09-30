@@ -18,7 +18,6 @@ from randomgiveaway.api.schemas import (
     ParticipantOut,
     ParticipantsPreviewOut,
     PublicResultOut,
-    PublishTelegramRequest,
     WinnerOut,
 )
 from randomgiveaway.config import ENV_PATH, config
@@ -415,8 +414,15 @@ async def vk_oauth_callback(
     response_model=GiveawayOut,
     dependencies=[Depends(require_admin)],
 )
-async def publish_telegram_giveaway(giveaway_id: int, payload: PublishTelegramRequest) -> GiveawayOut:
-    g = await telegram_giveaway.publish_giveaway_post(giveaway_id, payload.text)
+async def publish_telegram_giveaway(
+    giveaway_id: int,
+    text: str = Form(...),
+    image: UploadFile | None = File(default=None),
+) -> GiveawayOut:
+    image_tuple = None
+    if image is not None and image.filename:
+        image_tuple = (await image.read(), image.filename, image.content_type or "application/octet-stream")
+    g = await telegram_giveaway.publish_giveaway_post(giveaway_id, text, image_tuple)
     return GiveawayOut.from_domain(g)
 
 

@@ -45,7 +45,15 @@ async def _get_bot_username() -> str:
     return _bot_username_cache
 
 
-async def publish_giveaway_post(giveaway_id: int, text: str) -> Giveaway:
+async def publish_giveaway_post(
+    giveaway_id: int,
+    text: str,
+    image: tuple[bytes, str, str] | None = None,
+) -> Giveaway:
+    """image — (содержимое файла, имя файла, content-type), если к посту
+    приложена картинка (необязательно). Тогда пост уходит через sendPhoto
+    (текст становится подписью — лимит Telegram 1024 символа, короче, чем
+    обычное сообщение) вместо sendMessage."""
     giveaway = await giveaway_service.get_giveaway(giveaway_id)
     if giveaway.source != "telegram":
         raise giveaway_service.GiveawayError(
@@ -55,10 +63,21 @@ async def publish_giveaway_post(giveaway_id: int, text: str) -> Giveaway:
         raise giveaway_service.GiveawayError("Этот розыгрыш уже опубликован в Telegram")
     if not (config.telegram_bot_token and config.telegram_channel):
         raise giveaway_service.GiveawayError("TELEGRAM_BOT_TOKEN / TELEGRAM_CHANNEL не заданы в .env")
+    if image is not None and len(text) > 1024:
+        raise giveaway_service.GiveawayError(
+            "С картинкой текст поста не может быть длиннее 1024 символов (ограничение Telegram "
+            "на подпись к фото) — уберите картинку или сократите текст."
+        )
 
     bot_username = await _get_bot_username()
     markup = telegram_api.join_button_markup(bot_username, giveaway_id)
-    result = await telegram_api.send_message(config.telegram_bot_token, config.telegram_channel, text, markup)
+    if image is not None:
+        photo_bytes, filename, content_type = image
+        result = await telegram_api.send_photo(
+            config.telegram_bot_token, config.telegram_channel, photo_bytes, filename, content_type, text, markup
+        )
+    else:
+        result = await telegram_api.send_message(config.telegram_bot_token, config.telegram_channel, text, markup)
 
     chat_id = str(result["chat"]["id"])
     message_id = result["message_id"]

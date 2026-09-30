@@ -29,6 +29,7 @@ export function HomePage() {
   const [source, setSource] = useState<Source>('instagram')
   const [postUrl, setPostUrl] = useState('')
   const [telegramText, setTelegramText] = useState('')
+  const [telegramImage, setTelegramImage] = useState<File | null>(null)
   const [title, setTitle] = useState('')
   const [file, setFile] = useState<File | null>(null)
   const [importFormat, setImportFormat] = useState<'csv' | 'json' | 'list'>('csv')
@@ -105,7 +106,7 @@ export function HomePage() {
       setGiveawayId(giveaway.id)
 
       if (source === 'telegram') {
-        const published = await publishTelegram(giveaway.id, telegramText.trim())
+        const published = await publishTelegram(giveaway.id, telegramText.trim(), telegramImage)
         setTelegramGiveaway(published)
         setStep('telegram-live')
         return
@@ -201,19 +202,35 @@ export function HomePage() {
                   </div>
                 </>
               ) : source === 'telegram' ? (
-                <div className="field">
-                  <label htmlFor="telegram-text">Текст поста для канала</label>
-                  <textarea
-                    id="telegram-text"
-                    rows={5}
-                    value={telegramText}
-                    onChange={(e) => setTelegramText(e.target.value)}
-                    placeholder={'Например: Разыгрываем билеты на фестиваль!\nЖми «Участвую» и приглашай друзей — больше шансов на победу.'}
-                  />
-                  <p className="field-hint">
-                    Бот сам опубликует этот текст в канал с кнопкой «Участвую» — ссылку на пост вставлять не нужно.
-                  </p>
-                </div>
+                <>
+                  <div className="field">
+                    <label htmlFor="telegram-text">Текст поста для канала</label>
+                    <textarea
+                      id="telegram-text"
+                      rows={5}
+                      value={telegramText}
+                      onChange={(e) => setTelegramText(e.target.value)}
+                      placeholder={'Например: Разыгрываем билеты на фестиваль!\nЖми «Участвую» и приглашай друзей — больше шансов на победу.'}
+                    />
+                    <p className="field-hint">
+                      Бот сам опубликует этот текст в канал с кнопкой «Участвую» — ссылку на пост вставлять не нужно.
+                    </p>
+                  </div>
+                  <div className="field">
+                    <label htmlFor="telegram-image">Картинка к посту (необязательно)</label>
+                    <input
+                      id="telegram-image"
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => setTelegramImage(e.target.files?.[0] ?? null)}
+                    />
+                    {telegramImage && (
+                      <p className="field-hint">
+                        {telegramImage.name} — с картинкой текст поста ограничен 1024 символами (подпись к фото).
+                      </p>
+                    )}
+                  </div>
+                </>
               ) : (
                 <div className="field">
                   <label htmlFor="post-url">Ссылка на пост</label>
@@ -376,6 +393,7 @@ export function HomePage() {
               onClick={() => {
                 setStep('setup')
                 setTelegramGiveaway(null)
+                setTelegramImage(null)
                 setPreview(null)
               }}
               disabled={loading}

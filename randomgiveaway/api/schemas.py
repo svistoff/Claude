@@ -22,10 +22,6 @@ class GiveawaySettingsIn(BaseModel):
         return GiveawaySettings(**self.model_dump())
 
 
-class PublishTelegramRequest(BaseModel):
-    text: str
-
-
 class CreateGiveawayRequest(BaseModel):
     source: str
     post_url: str

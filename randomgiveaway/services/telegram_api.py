@@ -3,6 +3,7 @@
 и README.md, «Подключение Telegram»."""
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import httpx
@@ -33,6 +34,32 @@ async def _call(
             await client.aclose()
 
 
+async def _call_multipart(
+    token: str,
+    method: str,
+    data: dict[str, Any],
+    files: dict[str, tuple[str, bytes, str]],
+    client: httpx.AsyncClient | None = None,
+) -> dict[str, Any]:
+    """Для методов вроде sendPhoto — файл нельзя передать в JSON-теле,
+    только multipart/form-data. reply_markup в multipart-запросе Telegram
+    ожидает JSON-строкой, а не вложенным объектом, в отличие от _call."""
+    owns_client = client is None
+    client = client or httpx.AsyncClient(timeout=30)
+    try:
+        resp = await client.post(f"{API_BASE.format(token=token)}/{method}", data=data, files=files)
+        try:
+            result = resp.json()
+        except ValueError as exc:
+            raise TelegramAPIError(f"Не удалось разобрать ответ Telegram: {resp.text[:300]}") from exc
+        if not result.get("ok"):
+            raise TelegramAPIError(result.get("description") or f"Telegram API вернул ошибку: {result}")
+        return result["result"]
+    finally:
+        if owns_client:
+            await client.aclose()
+
+
 async def get_me(token: str, client: httpx.AsyncClient | None = None) -> dict[str, Any]:
     return await _call(token, "getMe", {}, client)
 
@@ -48,6 +75,23 @@ async def send_message(
     if reply_markup is not None:
         payload["reply_markup"] = reply_markup
     return await _call(token, "sendMessage", payload, client)
+
+
+async def send_photo(
+    token: str,
+    chat_id: str,
+    photo: bytes,
+    filename: str,
+    content_type: str,
+    caption: str,
+    reply_markup: dict[str, Any] | None = None,
+    client: httpx.AsyncClient | None = None,
+) -> dict[str, Any]:
+    data: dict[str, Any] = {"chat_id": chat_id, "caption": caption}
+    if reply_markup is not None:
+        data["reply_markup"] = json.dumps(reply_markup, ensure_ascii=False)
+    files = {"photo": (filename, photo, content_type)}
+    return await _call_multipart(token, "sendPhoto", data, files, client)
 
 
 async def get_chat_member(

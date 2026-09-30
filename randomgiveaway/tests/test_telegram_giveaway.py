@@ -138,6 +138,44 @@ async def test_publish_giveaway_post_sets_post_url_and_rejects_double_publish(mo
             raise AssertionError("Повторная публикация должна была отклониться")
 
 
+async def test_publish_giveaway_post_with_image_uses_send_photo(monkeypatch):
+    with TestClient(app) as client:
+        gid = _create_telegram_giveaway(client)["id"]
+        _patch_config(monkeypatch, telegram_bot_token="TOKEN", telegram_channel="@chan")
+
+        async def fake_get_me(token, client=None):
+            return {"username": "mybot"}
+
+        sent = {}
+
+        async def fake_send_photo(token, chat_id, photo, filename, content_type, caption, reply_markup=None, client=None):
+            sent.update(photo=photo, filename=filename, content_type=content_type, caption=caption)
+            return {"chat": {"id": -100123}, "message_id": 43}
+
+        monkeypatch.setattr(telegram_giveaway.telegram_api, "get_me", fake_get_me)
+        monkeypatch.setattr(telegram_giveaway.telegram_api, "send_photo", fake_send_photo)
+
+        giveaway = await telegram_giveaway.publish_giveaway_post(
+            gid, "Розыгрыш с фото!", (b"bytes", "prize.jpg", "image/jpeg")
+        )
+        assert giveaway.post_url == "https://t.me/chan/43"
+        assert sent["filename"] == "prize.jpg"
+        assert sent["caption"] == "Розыгрыш с фото!"
+
+
+async def test_publish_giveaway_post_rejects_long_caption_with_image(monkeypatch):
+    with TestClient(app) as client:
+        gid = _create_telegram_giveaway(client)["id"]
+        _patch_config(monkeypatch, telegram_bot_token="TOKEN", telegram_channel="@chan")
+
+        try:
+            await telegram_giveaway.publish_giveaway_post(gid, "x" * 1025, (b"bytes", "a.jpg", "image/jpeg"))
+        except giveaway_service.GiveawayError as exc:
+            assert "1024" in str(exc)
+        else:
+            raise AssertionError("Длинная подпись с картинкой должна была отклониться")
+
+
 async def test_handle_update_join_then_referral(monkeypatch):
     with TestClient(app) as client:
         gid = _create_telegram_giveaway(client)["id"]

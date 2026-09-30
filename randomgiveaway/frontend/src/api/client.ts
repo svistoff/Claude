@@ -83,11 +83,13 @@ export function loadCommentsLive(id: number): Promise<ParticipantsPreview> {
   return request<ParticipantsPreview>(`/api/giveaways/${id}/load-comments`, { method: 'POST' })
 }
 
-export function publishTelegram(id: number, text: string): Promise<Giveaway> {
+export function publishTelegram(id: number, text: string, image: File | null): Promise<Giveaway> {
+  const form = new FormData()
+  form.append('text', text)
+  if (image) form.append('image', image)
   return request<Giveaway>(`/api/giveaways/${id}/telegram/publish`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text }),
+    body: form,
   })
 }
 

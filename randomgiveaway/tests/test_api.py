@@ -278,7 +278,7 @@ def test_telegram_publish_requires_admin_token(monkeypatch):
             headers={"X-Admin-Token": "secret-token"},
         ).json()
         resp = client.post(
-            f"/api/giveaways/{giveaway['id']}/telegram/publish", json={"text": "hi"}
+            f"/api/giveaways/{giveaway['id']}/telegram/publish", data={"text": "hi"}
         )
         assert resp.status_code == 401
 
@@ -304,12 +304,46 @@ def test_telegram_publish_full_flow(monkeypatch):
             "/api/giveaways", json={"source": "telegram", "post_url": "", "settings": {}}
         ).json()
         resp = client.post(
-            f"/api/giveaways/{giveaway['id']}/telegram/publish", json={"text": "Розыгрыш!"}
+            f"/api/giveaways/{giveaway['id']}/telegram/publish", data={"text": "Розыгрыш!"}
         )
         assert resp.status_code == 200, resp.text
         body = resp.json()
         assert body["post_url"] == "https://t.me/chan/7"
         assert body["telegram_published"] is True
+
+
+def test_telegram_publish_with_image_uses_send_photo(monkeypatch):
+    from randomgiveaway.services import telegram_giveaway as tg_module
+
+    _patch_telegram_config(monkeypatch, telegram_bot_token="TOKEN", telegram_channel="@chan")
+
+    async def fake_get_me(token, client=None):
+        return {"username": "mybot"}
+
+    sent_photo = {}
+
+    async def fake_send_photo(token, chat_id, photo, filename, content_type, caption, reply_markup=None, client=None):
+        sent_photo.update(photo=photo, filename=filename, content_type=content_type, caption=caption)
+        return {"chat": {"id": -100999}, "message_id": 9}
+
+    monkeypatch.setattr(tg_module.telegram_api, "get_me", fake_get_me)
+    monkeypatch.setattr(tg_module.telegram_api, "send_photo", fake_send_photo)
+
+    with TestClient(app) as client:
+        giveaway = client.post(
+            "/api/giveaways", json={"source": "telegram", "post_url": "", "settings": {}}
+        ).json()
+        resp = client.post(
+            f"/api/giveaways/{giveaway['id']}/telegram/publish",
+            data={"text": "Розыгрыш с картинкой!"},
+            files={"image": ("prize.jpg", b"fake-image-bytes", "image/jpeg")},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["post_url"] == "https://t.me/chan/9"
+        assert sent_photo["filename"] == "prize.jpg"
+        assert sent_photo["content_type"] == "image/jpeg"
+        assert sent_photo["caption"] == "Розыгрыш с картинкой!"
+        assert sent_photo["photo"] == b"fake-image-bytes"
 
 
 def test_telegram_webhook_rejects_wrong_secret(monkeypatch):
