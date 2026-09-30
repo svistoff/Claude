@@ -1,5 +1,5 @@
 import confetti from 'canvas-confetti'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { getResult, listParticipants } from '../api/client'
@@ -31,7 +31,7 @@ function displayName(w: Winner): string {
 
 function fireConfetti() {
   const end = Date.now() + 1500
-  const colors = ['#7c5cff', '#34d399', '#f5f5f7']
+  const colors = ['#8ed462', '#2ba0ff', '#ff705d', '#f5e211']
   ;(function frame() {
     confetti({ particleCount: 3, angle: 60, spread: 55, origin: { x: 0, y: 0.7 }, colors })
     confetti({ particleCount: 3, angle: 120, spread: 55, origin: { x: 1, y: 0.7 }, colors })
@@ -89,6 +89,14 @@ export function DrawPage() {
 
   const current = sequence[queueIndex]
 
+  // window.setTimeout captures whatever function instance exists at the
+  // moment it's scheduled — since startCurrentReveal is redefined every
+  // render (closing over the current `current`/`queueIndex`), calling it
+  // straight from a timeout scheduled just after setQueueIndex would still
+  // run the *stale* pre-update closure. Routing through a ref that's
+  // refreshed every render sidesteps that.
+  const startCurrentRevealRef = useRef<() => void>(() => {})
+
   function toggleFullscreen() {
     if (!document.fullscreenElement) {
       document.documentElement.requestFullscreen().catch(() => {})
@@ -129,16 +137,22 @@ export function DrawPage() {
     }
     window.setTimeout(step, 60)
   }
+  startCurrentRevealRef.current = startCurrentReveal
 
   function nextAfterReveal() {
     if (queueIndex + 1 < sequence.length) {
-      const next = queueIndex + 1
-      setQueueIndex(next)
+      setQueueIndex(queueIndex + 1)
       setPhase('intro')
-      window.setTimeout(startCurrentReveal, 1100)
+      window.setTimeout(() => startCurrentRevealRef.current(), 1100)
     } else {
       setPhase('final')
     }
+  }
+
+  function replayFromStart() {
+    setQueueIndex(0)
+    setPhase('intro')
+    window.setTimeout(() => startCurrentRevealRef.current(), 600)
   }
 
   const publicUrl = result ? `${window.location.origin}/result/${result.giveaway.public_id}` : ''
@@ -274,11 +288,15 @@ export function DrawPage() {
               Участников: {result.giveaway.participants_count}
             </div>
 
-            <button className="btn btn-primary" onClick={handleShare} style={{ marginTop: 24 }}>
+            <button className="btn btn-secondary" onClick={replayFromStart} style={{ marginTop: 24 }}>
+              🔁 Повторить анимацию
+            </button>
+            <div style={{ height: 12 }} />
+            <button className="btn btn-primary" onClick={handleShare}>
               {copied ? 'Ссылка скопирована ✓' : 'Поделиться результатом'}
             </button>
             <div style={{ height: 12 }} />
-            <button className="btn btn-secondary" onClick={() => navigate('/')}>
+            <button className="btn btn-ghost" onClick={() => navigate('/')}>
               Провести новый розыгрыш
             </button>
           </motion.div>
