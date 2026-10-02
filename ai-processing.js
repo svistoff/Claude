@@ -255,7 +255,12 @@ function tryCreateBooking(call, salon, parsed) {
   `).run(call.client_id, salon.id, call.id, parsed.booking.when_text || parsed.booking.when_iso || 'без уточнённого времени', scheduledDate);
 }
 
-async function processCall(callId) {
+// reuseTranscript=true пропускает скачивание записи и повторную транскрибацию,
+// если расшифровка уже сохранена с прошлого раза — используется массовым
+// пересчётом старых звонков по новой логике оценки (см. scripts/reanalyze-calls.js):
+// не тратит деньги и время на то, что уже есть, и работает даже если запись
+// в UIS к этому моменту уже истекла/удалена.
+async function processCall(callId, { reuseTranscript = false } = {}) {
   const call = db.prepare('SELECT * FROM calls WHERE id = ?').get(callId);
   if (!call) return;
 
@@ -266,7 +271,7 @@ async function processCall(callId) {
     db.prepare(`UPDATE calls SET status='error', error_message='Не задан ключ OpenAI в настройках' WHERE id=?`).run(callId);
     return;
   }
-  if (!call.recording_url) {
+  if (!(reuseTranscript && call.transcript) && !call.recording_url) {
     db.prepare(`UPDATE calls SET status='error', error_message='Нет ссылки на запись звонка' WHERE id=?`).run(callId);
     return;
   }
@@ -274,11 +279,17 @@ async function processCall(callId) {
   db.prepare(`UPDATE calls SET status='processing' WHERE id=?`).run(callId);
 
   try {
-    const buffer = await downloadRecording(call.recording_url);
-    const { text: transcript, costUsd: transcribeCost } = await transcribeAudio(
-      buffer, settings.transcribe_model, settings.openai_api_key, call.duration_sec
-    );
-    logUsage(callId, 'transcribe', transcribeCost);
+    let transcript;
+    if (reuseTranscript && call.transcript) {
+      transcript = call.transcript;
+    } else {
+      const buffer = await downloadRecording(call.recording_url);
+      const transcribed = await transcribeAudio(
+        buffer, settings.transcribe_model, settings.openai_api_key, call.duration_sec
+      );
+      transcript = transcribed.text;
+      logUsage(callId, 'transcribe', transcribed.costUsd);
+    }
 
     // администраторы — общий список по всей сети: один и тот же человек может
     // в разные смены выходить в разных салонах, ИИ узнаёт по имени, не по объекту
