@@ -52,15 +52,30 @@ function buildAnalysisPrompt({ companyContext, transcript, salon, admins, checkl
     ? admins.map(a => `- "${a.name}" (id=${a.id}, статус: ${a.status === 'confirmed' ? 'подтверждён' : 'не подтверждён'})`).join('\n')
     : '(справочник администраторов пока пуст)';
 
-  const checklistList = checklist.map((item, i) => `${i + 1}. [id=${item.id}] ${item.text}`).join('\n');
+  const checklistList = checklist.map((item, i) => {
+    const flags = [`вес=${item.weight}`];
+    if (item.critical) flags.push('КРИТИЧНЫЙ');
+    const hint = item.not_applicable_hint ? ` | когда НЕ применим: ${item.not_applicable_hint}` : '';
+    return `${i + 1}. [id=${item.id}] ${item.text} (${flags.join(', ')})${hint}`;
+  }).join('\n');
   const objectKind = salon.type === 'sauna' ? 'сауна' : 'салон массажа';
   const callContext = direction === 'out'
     ? `Это ИСХОДЯЩИЙ звонок — вероятно, перезвон администратора клиенту после пропущенного звонка${callbackStatus ? ` (перезвонили ${callbackStatus === 'on_time' ? 'вовремя' : 'позже обычного окна'})` : ''}. Разбери его по тому же чек-листу, как обычный разговор.`
     : 'Это входящий звонок клиента.';
 
-  const system = `Ты — ассистент отдела контроля качества сети массажных салонов и сауны.
+  const system = `Ты — AI-аудитор качества телефонных звонков администраторов сети массажных салонов и сауны.
 Контекст компании: ${companyContext || 'Сеть массажных салонов и сауна, администраторы принимают звонки и записывают клиентов.'}
 Этот объект: ${objectKind} «${salon.name}». ${callContext}
+
+ГЛАВНЫЙ ПРИНЦИП: ты НЕ проверяешь, произнёс ли администратор все пункты стандартного
+скрипта. Сначала определи контекст — зачем клиент позвонил, что он уже знает, насколько
+он готов к записи/визиту, какой результат достигнут — и только потом оценивай, какие
+пункты чек-листа вообще были нужны В ЭТОМ конкретном разговоре. Нельзя штрафовать за
+пункт, выполнение которого не требовалось (например, гостю, который уже всё знает и
+просто уточняет цену перед тем как приехать, не нужна полная презентация салона).
+Оценивай смысл сказанного, а не дословное совпадение со скриптом — если то же самое
+сказано другими словами, пункт считается выполненным. Отказ клиента или любой другой
+результат сам по себе не является ошибкой администратора, если тот действовал верно.
 
 Задачи по расшифровке звонка:
 
@@ -77,26 +92,56 @@ function buildAnalysisPrompt({ companyContext, transcript, salon, admins, checkl
    отвечать в разных объектах сети):
 ${adminsList}
 
-2. Проверить чек-лист конкретных пунктов — по каждому определить состояние:
-   "yes" (чётко проговорено/сделано), "partial" (затронуто вскользь/не полностью),
-   "no" (не было). К каждому пункту — короткая цитата-подтверждение (evidence).
-   Чек-лист этого объекта:
+2. Определить контекст звонка:
+   - primary_scenario — свободная короткая фраза по-русски, что это был за звонок
+     (например: "повторный клиент, уточнение цены", "новый клиент, запись", "жалоба").
+   - client_type — "NEW" (новый клиент), "RETURNING" (уже был/звонил раньше),
+     "UNKNOWN" (невозможно определить по разговору).
+   - client_intent — насколько клиент готов к действию: "INFORMATION" (просто узнаёт),
+     "CONSIDERING" ("я подумаю"), "READY_TO_BOOK" (просит записать), "READY_TO_VISIT"
+     (уже решил приехать/записался в разговоре), "COMPLAINT" (жалоба), "OTHER".
+
+3. Проверить пункты чек-листа — но СНАЧАЛА для каждого пункта реши, был ли он вообще
+   применим (applicable) в данной ситуации, с учётом подсказки "когда НЕ применим",
+   если она указана у пункта, и общего смысла разговора. Если пункт не нужен был в
+   этой ситуации — applicable=false, status="NA" (это НЕ штраф, НЕ ошибка). Если пункт
+   применим, определи status:
+   - "PASS" — чётко выполнен (по смыслу, не обязательно теми же словами);
+   - "PARTIAL" — затронут частично/вскользь;
+   - "FAIL" — применим, но не выполнен;
+   - "UNCERTAIN" — невозможно достоверно определить по расшифровке (плохое качество
+     записи, обрыв и т.п.) — это НЕ штраф, не выдумывай результат, если не уверен(а).
+   К каждому пункту — короткая цитата-подтверждение (evidence) и краткое объяснение
+   (reason), плюс confidence от 0 до 1 (насколько ты уверен(а) в этом статусе).
+   Чек-лист этого объекта (вес и критичность — для справки, расчёт баллов делает CRM):
 ${checklistList}
 
-3. Сделать разбор звонка: резюме, что было сделано хорошо (strengths), что плохо
-   (weaknesses), конкретные рекомендации (recommendations).
+4. Отдельно выявить КРИТИЧЕСКИЕ ОШИБКИ (critical_errors) — это не то же самое, что
+   невыполненный пункт чек-листа. Критическая ошибка — существенный и однозначный
+   промах: неверная цена/условия/время, игнорирование прямого вопроса клиента,
+   грубость, вводящая в заблуждение информация, ошибка при оформлении записи. НЕ
+   считай критической ошибкой просто отсутствие необязательного пункта скрипта.
+   Для каждой — type (одно из: WRONG_PRICE, WRONG_CONDITIONS, WRONG_TIME,
+   WRONG_AVAILABILITY, DIRECT_QUESTION_IGNORED, RUDE_BEHAVIOR, MISLEADING_INFORMATION,
+   BOOKING_ERROR, OTHER_CRITICAL), description, evidence (цитата), confidence (0-1).
 
-4. Советы по удержанию (retention_advice) — отдельно: что администратор могла(-л)
+5. Сделать разбор звонка: резюме, что было сделано хорошо (strengths), что плохо
+   (weaknesses), конкретные рекомендации по улучшению (recommendations) — это
+   предложения "как можно было сделать ещё лучше", а не перечень ошибок (ошибки уже
+   в critical_errors); если гость и так получил всё нужное — не придумывай рекомендации
+   искусственно, короткое "—" вполне нормальный ответ.
+
+6. Советы по удержанию (retention_advice) — отдельно: что администратор могла(-л)
    сделать, чтобы клиент не "слился" (предложить другое время, обозначить выгоду,
    взять контакт для напоминания и т.п.). Если клиент и так записался — короткое "—".
 
-5. Определить исход (outcome): "booking" (запись подтверждена), "interest" (интерес,
+7. Определить исход (outcome): "booking" (запись подтверждена), "interest" (интерес,
    но без записи), "callback" (просили перезвонить/клиент подумает), "refusal" (отказ),
    "spam" (нецелевой/рекламный/ошибочный звонок — не в счёт статистики).
 
-6. Если в разговоре прозвучало имя клиента — верни его в client_name (иначе null).
+8. Если в разговоре прозвучало имя клиента — верни его в client_name (иначе null).
 
-7. Если запись подтверждена (пункт "booking") — заполни объект booking: confirmed=true,
+9. Если запись подтверждена (пункт "booking") — заполни объект booking: confirmed=true,
    when_text — как это прозвучало ("завтра в 15:00"), when_iso — попытка перевести в
    ISO 8601 (используй сегодняшнюю дату как точку отсчёта, если это возможно понять из
    контекста; если не уверен — null, but when_text заполни всегда).
@@ -106,7 +151,11 @@ ${checklistList}
   "detected_admin_name": string | null,
   "matched_admin_name": string | null,
   "is_new_admin": boolean,
-  "checklist": [ { "item_id": number, "state": "yes"|"partial"|"no", "evidence": string } ],
+  "primary_scenario": string,
+  "client_type": "NEW"|"RETURNING"|"UNKNOWN",
+  "client_intent": "INFORMATION"|"CONSIDERING"|"READY_TO_BOOK"|"READY_TO_VISIT"|"COMPLAINT"|"OTHER",
+  "checklist": [ { "item_id": number, "applicable": boolean, "status": "PASS"|"FAIL"|"PARTIAL"|"NA"|"UNCERTAIN", "evidence": string, "reason": string, "confidence": number } ],
+  "critical_errors": [ { "type": string, "description": string, "evidence": string, "confidence": number } ],
   "summary": string,
   "strengths": string,
   "weaknesses": string,
@@ -147,18 +196,37 @@ async function analyzeTranscript(args) {
   return { parsed, costUsd };
 }
 
+const VALID_STATUSES = ['PASS', 'FAIL', 'PARTIAL', 'NA', 'UNCERTAIN'];
+
+// Пункт, который ИИ не нужно штрафовать, если он не применим в данной
+// ситуации (NA) или его состояние нельзя достоверно определить (UNCERTAIN) —
+// см. тех. задание "контекстная оценка качества", разделы 11-14.
 function mergeChecklist(templateItems, aiResults) {
   const byId = new Map((aiResults || []).map(r => [Number(r.item_id), r]));
   return templateItems.map(item => {
     const r = byId.get(item.id);
-    const state = r && ['yes', 'partial', 'no'].includes(r.state) ? r.state : 'no';
-    return { item_id: item.id, text: item.text, state, evidence: r ? (r.evidence || '') : '' };
+    const status = r && VALID_STATUSES.includes(r.status) ? r.status : 'UNCERTAIN';
+    const coefficient = item.partial_coefficient ?? 0.5;
+    const earned = status === 'PASS' ? item.weight : status === 'PARTIAL' ? item.weight * coefficient : 0;
+    return {
+      item_id: item.id, text: item.text, weight: item.weight, critical: !!item.critical,
+      applicable: status !== 'NA', status, earned,
+      evidence: r ? (r.evidence || '') : '', reason: r ? (r.reason || '') : '',
+      confidence: r && typeof r.confidence === 'number' ? r.confidence : null
+    };
   });
 }
 
-function checklistScore(mergedChecklist) {
-  const weight = { yes: 1, partial: 0.5, no: 0 };
-  return mergedChecklist.reduce((sum, i) => sum + weight[i.state], 0);
+// quality_score = earned_points / maximum_applicable_points — NA и UNCERTAIN
+// исключаются из знаменателя (не являются ни штрафом, ни выполнением).
+function scoreChecklist(mergedChecklist) {
+  let earned = 0, maxApplicable = 0;
+  for (const item of mergedChecklist) {
+    if (item.status === 'NA' || item.status === 'UNCERTAIN') continue;
+    earned += item.earned;
+    maxApplicable += item.weight;
+  }
+  return { earned, maxApplicable };
 }
 
 function resolveAdmin(admins, parsed) {
@@ -226,7 +294,8 @@ async function processCall(callId) {
 
     const matchedAdminId = resolveAdmin(admins, parsed);
     const merged = mergeChecklist(checklist, parsed.checklist);
-    const score = checklistScore(merged);
+    const { earned, maxApplicable } = scoreChecklist(merged);
+    const criticalErrors = Array.isArray(parsed.critical_errors) ? parsed.critical_errors : [];
 
     if (call.client_id && parsed.client_name) {
       db.prepare(`UPDATE clients SET name = COALESCE(name, ?), updated_at = datetime('now') WHERE id = ?`)
@@ -237,12 +306,17 @@ async function processCall(callId) {
       UPDATE calls SET
         status = 'done', transcript = ?, detected_admin_name = ?, matched_admin_id = ?,
         checklist_results = ?, checklist_score = ?, checklist_total = ?,
+        primary_scenario = ?, client_type = ?, client_intent = ?, critical_errors = ?,
         summary = ?, strengths = ?, weaknesses = ?, recommendations = ?, retention_advice = ?,
         outcome = ?, processed_at = datetime('now')
       WHERE id = ?
     `).run(
       transcript, parsed.detected_admin_name || null, matchedAdminId,
-      JSON.stringify(merged), score, merged.length,
+      JSON.stringify(merged), earned, maxApplicable,
+      parsed.primary_scenario || null,
+      ['NEW', 'RETURNING', 'UNKNOWN'].includes(parsed.client_type) ? parsed.client_type : null,
+      ['INFORMATION', 'CONSIDERING', 'READY_TO_BOOK', 'READY_TO_VISIT', 'COMPLAINT', 'OTHER'].includes(parsed.client_intent) ? parsed.client_intent : null,
+      criticalErrors.length ? JSON.stringify(criticalErrors) : null,
       parsed.summary || null, parsed.strengths || null, parsed.weaknesses || null,
       parsed.recommendations || null, parsed.retention_advice || null,
       ['booking', 'interest', 'callback', 'refusal', 'spam'].includes(parsed.outcome) ? parsed.outcome : null,

@@ -392,22 +392,39 @@ app.get('/api/checklist', (req, res) => {
 });
 
 app.post('/api/checklist', auth.requireAdmin, (req, res) => {
-  const { text, template, salon_id, position } = req.body || {};
+  const { text, template, salon_id, position, weight, critical, salary_penalty_allowed, partial_coefficient, not_applicable_hint } = req.body || {};
   if (!text) return res.status(400).json({ error: 'Текст пункта обязателен' });
   if (!salon_id && template !== 'salon' && template !== 'sauna') {
     return res.status(400).json({ error: 'Укажите template (salon/sauna) для общего пункта или salon_id для пункта объекта' });
   }
-  const info = db.prepare('INSERT INTO checklist_items (template, salon_id, text, position) VALUES (?, ?, ?, ?)')
-    .run(salon_id ? null : template, salon_id || null, text.trim(), position || 0);
+  const info = db.prepare(`
+    INSERT INTO checklist_items (template, salon_id, text, position, weight, critical, salary_penalty_allowed, partial_coefficient, not_applicable_hint)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    salon_id ? null : template, salon_id || null, text.trim(), position || 0,
+    weight || 1, critical ? 1 : 0, salary_penalty_allowed === false ? 0 : 1,
+    partial_coefficient ?? 0.5, (not_applicable_hint || '').trim() || null
+  );
   res.json(db.prepare('SELECT * FROM checklist_items WHERE id = ?').get(info.lastInsertRowid));
 });
 
 app.put('/api/checklist/:id', auth.requireAdmin, (req, res) => {
   const item = db.prepare('SELECT * FROM checklist_items WHERE id = ?').get(req.params.id);
   if (!item) return res.status(404).json({ error: 'Пункт не найден' });
-  const { text, position, active } = req.body || {};
-  db.prepare('UPDATE checklist_items SET text=?, position=?, active=? WHERE id=?')
-    .run(text ?? item.text, position ?? item.position, active === undefined ? item.active : (active ? 1 : 0), item.id);
+  const b = req.body || {};
+  db.prepare(`
+    UPDATE checklist_items SET
+      text=?, position=?, active=?, weight=?, critical=?, salary_penalty_allowed=?,
+      partial_coefficient=?, not_applicable_hint=?
+    WHERE id=?
+  `).run(
+    b.text ?? item.text, b.position ?? item.position, b.active === undefined ? item.active : (b.active ? 1 : 0),
+    b.weight ?? item.weight, b.critical === undefined ? item.critical : (b.critical ? 1 : 0),
+    b.salary_penalty_allowed === undefined ? item.salary_penalty_allowed : (b.salary_penalty_allowed ? 1 : 0),
+    b.partial_coefficient ?? item.partial_coefficient,
+    'not_applicable_hint' in b ? ((b.not_applicable_hint || '').trim() || null) : item.not_applicable_hint,
+    item.id
+  );
   res.json(db.prepare('SELECT * FROM checklist_items WHERE id = ?').get(item.id));
 });
 

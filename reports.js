@@ -75,28 +75,45 @@ function kpiBlock(items) {
   return `<div class="kpi">${items.map(([label, value]) => `<div>${esc(label)}<br><b>${esc(value)}</b></div>`).join('')}</div>`;
 }
 
+// старые звонки хранят {state: yes|partial|no}, новые — {status: PASS|FAIL|PARTIAL|NA|UNCERTAIN}
+function statusOf(item) {
+  if (item.status) return item.status;
+  if (item.state === 'yes') return 'PASS';
+  if (item.state === 'partial') return 'PARTIAL';
+  if (item.state === 'no') return 'FAIL';
+  return 'UNCERTAIN';
+}
+
+// NA/UNCERTAIN не считаются ни выполнением, ни невыполнением — исключаются
+// из знаменателя статистики (см. тех. задание "контекстная оценка", разделы 36-37)
 function checklistFunnel(calls) {
   const byText = new Map();
   for (const c of calls) {
     if (!c.checklist_results) continue;
     for (const item of JSON.parse(c.checklist_results)) {
-      if (!byText.has(item.text)) byText.set(item.text, { yes: 0, partial: 0, no: 0 });
-      byText.get(item.text)[item.state]++;
+      if (!byText.has(item.text)) byText.set(item.text, { pass: 0, partial: 0, fail: 0, na: 0, uncertain: 0 });
+      const status = statusOf(item);
+      const agg = byText.get(item.text);
+      if (status === 'PASS') agg.pass++;
+      else if (status === 'PARTIAL') agg.partial++;
+      else if (status === 'FAIL') agg.fail++;
+      else if (status === 'NA') agg.na++;
+      else agg.uncertain++;
     }
   }
   return Array.from(byText.entries()).map(([text, agg]) => {
-    const total = agg.yes + agg.partial + agg.no;
-    const pct = total ? Math.round(((agg.yes + agg.partial * 0.5) / total) * 100) : 0;
-    return { text, pct, ...agg };
+    const applicable = agg.pass + agg.partial + agg.fail;
+    const pct = applicable ? Math.round(((agg.pass + agg.partial * 0.5) / applicable) * 100) : 0;
+    return { text, pct, applicable, ...agg };
   }).sort((a, b) => a.pct - b.pct);
 }
 
 function funnelTable(funnel) {
   const rows = funnel.map(f => `
     <tr><td>${esc(f.text)}</td>
-    <td><div class="bar"><div class="bar-fill" style="width:${f.pct}%"></div></div>${f.pct}%</td>
-    <td>✅${f.yes} ⚠️${f.partial} ❌${f.no}</td></tr>`).join('');
-  return `<table><tr><th>Пункт</th><th>Выполнение</th><th>Детали</th></tr>${rows || '<tr><td colspan="3">Нет данных</td></tr>'}</table>`;
+    <td>${f.applicable ? `<div class="bar"><div class="bar-fill" style="width:${f.pct}%"></div></div>${f.pct}%` : '<span class="muted">не применялось</span>'}</td>
+    <td>✅${f.pass} ⚠️${f.partial} ❌${f.fail}${f.na ? ` ➖${f.na}` : ''}${f.uncertain ? ` ❓${f.uncertain}` : ''}</td></tr>`).join('');
+  return `<table><tr><th>Пункт</th><th>Выполнение (из применимых)</th><th>Детали</th></tr>${rows || '<tr><td colspan="3">Нет данных</td></tr>'}</table>`;
 }
 
 function narrativeBlocks(n) {
@@ -108,15 +125,20 @@ function narrativeBlocks(n) {
 }
 
 function callsTable(calls) {
-  const rows = calls.slice(0, 100).map(c => `
+  const rows = calls.slice(0, 100).map(c => {
+    let criticalCount = 0;
+    try { criticalCount = c.critical_errors ? JSON.parse(c.critical_errors).length : 0; } catch { /* noop */ }
+    return `
     <tr>
       <td>${esc(c.started_at)}</td><td>${esc(c.salon_name || '')}</td>
       <td>${esc(c.matched_admin_name || c.detected_admin_name || '—')}</td>
       <td>${c.checklist_score ?? '—'}/${c.checklist_total ?? '—'}</td>
+      <td>${criticalCount ? `⚠️${criticalCount}` : '—'}</td>
       <td>${esc(c.outcome || '—')}</td><td>${esc(c.summary || '')}</td>
-    </tr>`).join('');
-  return `<table><tr><th>Дата</th><th>Объект</th><th>Администратор</th><th>Чек-лист</th><th>Исход</th><th>Резюме</th></tr>
-    ${rows || '<tr><td colspan="6">Нет звонков за период</td></tr>'}</table>`;
+    </tr>`;
+  }).join('');
+  return `<table><tr><th>Дата</th><th>Объект</th><th>Администратор</th><th>Чек-лист</th><th>Крит. ошибки</th><th>Исход</th><th>Резюме</th></tr>
+    ${rows || '<tr><td colspan="7">Нет звонков за период</td></tr>'}</table>`;
 }
 
 function answeredCallsQuery(where, params) {

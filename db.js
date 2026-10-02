@@ -336,6 +336,29 @@ if (adminsSalonCol && adminsSalonCol.notnull) {
   db.pragma('foreign_keys = ON');
 }
 
+// контекстная оценка звонков (вес/критичность пункта чек-листа + подсказка,
+// когда пункт не применим, чтобы ИИ не штрафовал за то, что в конкретной
+// ситуации не требовалось) — см. тех. задание "контекстная оценка качества"
+const checklistItemColumns = db.prepare("PRAGMA table_info(checklist_items)").all().map(c => c.name);
+if (!checklistItemColumns.includes('weight')) {
+  db.exec(`
+    ALTER TABLE checklist_items ADD COLUMN weight INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE checklist_items ADD COLUMN critical INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE checklist_items ADD COLUMN salary_penalty_allowed INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE checklist_items ADD COLUMN partial_coefficient REAL NOT NULL DEFAULT 0.5;
+    ALTER TABLE checklist_items ADD COLUMN not_applicable_hint TEXT;
+  `);
+}
+const callColumns2 = db.prepare("PRAGMA table_info(calls)").all().map(c => c.name);
+if (!callColumns2.includes('primary_scenario')) {
+  db.exec(`
+    ALTER TABLE calls ADD COLUMN primary_scenario TEXT;
+    ALTER TABLE calls ADD COLUMN client_type TEXT;
+    ALTER TABLE calls ADD COLUMN client_intent TEXT;
+    ALTER TABLE calls ADD COLUMN critical_errors TEXT;
+  `);
+}
+
 // первичный владелец, если пользователей ещё нет
 const usersCount = db.prepare('SELECT COUNT(*) AS c FROM users').get().c;
 if (usersCount === 0) {

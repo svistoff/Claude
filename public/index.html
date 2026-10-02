@@ -47,6 +47,7 @@
   .modal { background:#fff; border-radius:12px; padding:20px; width:100%; max-width:720px; }
   .checklist-item { display:flex; gap:8px; align-items:flex-start; padding:8px 0; border-bottom:1px solid var(--border); }
   .checklist-item .mark { font-size:16px; width:24px; }
+  .checklist-item.muted { opacity:0.55; }
   .muted { color:var(--muted); font-size:12px; }
   .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
   .grid3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; }
@@ -465,14 +466,41 @@ async function loadCalls() {
   `;
 }
 
+// старые звонки хранят checklist_results в формате {state: yes|partial|no} —
+// новые уже в {status: PASS|FAIL|PARTIAL|NA|UNCERTAIN}; приводим к единому виду для отображения
+function checklistStatusOf(i) {
+  if (i.status) return i.status;
+  if (i.state === 'yes') return 'PASS';
+  if (i.state === 'partial') return 'PARTIAL';
+  if (i.state === 'no') return 'FAIL';
+  return 'UNCERTAIN';
+}
+const CLIENT_TYPE_LABEL = { NEW: 'новый клиент', RETURNING: 'повторный клиент', UNKNOWN: 'неизвестно' };
+const CLIENT_INTENT_LABEL = { INFORMATION: 'уточняет информацию', CONSIDERING: 'думает', READY_TO_BOOK: 'готов записаться', READY_TO_VISIT: 'готов приехать', COMPLAINT: 'жалоба', OTHER: 'другое' };
+
 async function openCall(id) {
   const c = await api('/calls/' + id);
-  const stateIcon = { yes: '✅', partial: '⚠️', no: '❌' };
-  const checklist = (c.checklist_results || []).map(i => `
-    <div class="checklist-item">
-      <div class="mark">${stateIcon[i.state] || '❌'}</div>
-      <div><div>${esc(i.text)}</div>${i.evidence ? `<div class="muted">«${esc(i.evidence)}»</div>` : ''}</div>
-    </div>`).join('');
+  const statusIcon = { PASS: '✅', PARTIAL: '⚠️', FAIL: '❌', NA: '➖', UNCERTAIN: '❓' };
+  const checklist = (c.checklist_results || []).map(i => {
+    const status = checklistStatusOf(i);
+    const muted = status === 'NA' || status === 'UNCERTAIN' ? ' muted' : '';
+    const note = status === 'NA' ? 'не применялось' : status === 'UNCERTAIN' ? 'не удалось определить' : '';
+    return `
+    <div class="checklist-item${muted}">
+      <div class="mark">${statusIcon[status] || '❓'}</div>
+      <div><div>${esc(i.text)}${i.critical ? ' <span class="tag warn">критичный</span>' : ''}</div>
+      ${note ? `<div class="muted">${note}</div>` : ''}
+      ${i.evidence ? `<div class="muted">«${esc(i.evidence)}»</div>` : ''}</div>
+    </div>`;
+  }).join('');
+
+  const criticalErrors = (() => { try { return JSON.parse(c.critical_errors || '[]'); } catch { return []; } })();
+
+  const scenarioLine = [
+    c.primary_scenario ? esc(c.primary_scenario) : null,
+    c.client_type ? CLIENT_TYPE_LABEL[c.client_type] || esc(c.client_type) : null,
+    c.client_intent ? CLIENT_INTENT_LABEL[c.client_intent] || esc(c.client_intent) : null
+  ].filter(Boolean).join(' · ');
 
   const adminOptions = ADMINS
     .map(a => `<option value="${a.id}" ${a.id===c.matched_admin_id?'selected':''}>${esc(a.name)}</option>`).join('');
@@ -486,6 +514,7 @@ async function openCall(id) {
         </div>
         <p class="muted">Длительность: ${c.duration_sec}с · Направление: ${c.direction==='in'?'входящий':'исходящий'} · Клиент: ${esc(c.client_name || c.caller_phone || '—')}</p>
         <p class="muted">Набранный номер: ${esc(c.dialed_number || '—')} · Тип объекта / чек-лист: ${c.salon_type==='sauna'?'сауна':'салон'}</p>
+        ${scenarioLine ? `<p class="muted">Сценарий: ${scenarioLine}</p>` : ''}
 
         <div class="row">
           <label>Администратор:
@@ -496,7 +525,8 @@ async function openCall(id) {
         </div>
 
         ${c.status === 'error' ? `<p style="color:#d33">Ошибка обработки: ${esc(c.error_message||'')}</p>` : ''}
-        ${c.checklist_score!=null ? `<h4>Чек-лист: ${c.checklist_score} из ${c.checklist_total}</h4>${checklist}` : ''}
+        ${c.checklist_score!=null ? `<h4>Quality Score: ${Math.round((c.checklist_score/(c.checklist_total||1))*100)}% (${c.checklist_score} из ${c.checklist_total} применимых баллов)</h4>${checklist}` : ''}
+        ${criticalErrors.length ? `<h4 style="color:#d33">⚠️ Критические ошибки</h4><ul>${criticalErrors.map(e => `<li><b>${esc(e.description||e.type||'')}</b>${e.evidence?` — «${esc(e.evidence)}»`:''}</li>`).join('')}</ul>` : ''}
         ${c.summary ? `<h4>Резюме</h4><p>${esc(c.summary)}</p>` : ''}
         ${c.strengths ? `<h4>Что так</h4><p>${esc(c.strengths)}</p>` : ''}
         ${c.weaknesses ? `<h4>Что не так</h4><p>${esc(c.weaknesses)}</p>` : ''}
@@ -850,41 +880,94 @@ async function deleteSalonLabel(salonId, labelId) {
 }
 
 // ================= ЧЕК-ЛИСТЫ =================
+let CHECKLIST_ITEMS = [];
+
 RENDERERS.checklist = async function renderChecklist() {
   const [salonTpl, saunaTpl] = await Promise.all([api('/checklist?template=salon'), api('/checklist?template=sauna')]);
+  CHECKLIST_ITEMS = [...salonTpl, ...saunaTpl];
   const main = document.getElementById('main');
+  const itemRow = i => `<tr>
+    <td>${esc(i.text)}${i.not_applicable_hint ? `<div class="muted" style="font-size:12px">не применим: ${esc(i.not_applicable_hint)}</div>` : ''}</td>
+    <td>${i.weight}</td>
+    <td>${i.critical ? '<span class="tag warn">да</span>' : '—'}</td>
+    <td>${i.salary_penalty_allowed ? '' : '<span class="tag">нет</span>'}</td>
+    <td>${i.active?'':'<span class="tag">выключен</span>'}</td>
+    <td class="row">
+      <button onclick="editChecklistItem(${i.id})">Изменить</button>
+      <button onclick="toggleItem(${i.id}, ${i.active?0:1})">${i.active?'Выключить':'Включить'}</button>
+      <button class="danger" onclick="deleteItem(${i.id})">Удалить</button>
+    </td></tr>`;
   const tplBlock = (title, tpl, items) => `
     <div class="card">
-      <div class="row between"><h3 style="margin:0">Шаблон «${title}»</h3><button onclick="addTemplateItem('${tpl}')">+ Пункт</button></div>
-      <table>${items.map(i => `<tr><td>${esc(i.text)}</td><td>${i.active?'':'<span class="tag">выключен</span>'}</td>
-        <td class="row"><button onclick="toggleItem(${i.id}, ${i.active?0:1})">${i.active?'Выключить':'Включить'}</button>
-        <button class="danger" onclick="deleteItem(${i.id})">Удалить</button></td></tr>`).join('')}</table>
+      <div class="row between"><h3 style="margin:0">Шаблон «${title}»</h3><button onclick="showChecklistItemForm({template:'${tpl}'})">+ Пункт</button></div>
+      <table><tr><th>Текст</th><th>Вес</th><th>Критичный</th><th>Без штрафа ЗП</th><th></th><th></th></tr>
+        ${items.map(itemRow).join('')}</table>
     </div>`;
 
   main.innerHTML = `
     ${settingsTabsHtml('checklist')}
     <h2>Чек-листы контроля скрипта</h2>
+    <p class="muted">Вес — сколько баллов даёт пункт при выполнении. Критичный — явная грубая ошибка, если
+    не выполнен (отдельно от обычных пунктов). «Без штрафа ЗП» — пункт участвует в Quality Score, но не
+    должен влиять на зарплатный расчёт. «Когда не применим» — подсказка для ИИ, в каких ситуациях пункт
+    не нужен (тогда это NA, а не минус балл) — например, «клиент уже был и знает все условия».</p>
     ${tplBlock('Салон', 'salon', salonTpl)}
     ${tplBlock('Сауна', 'sauna', saunaTpl)}
     <div class="card">
       <h3>Личные пункты объектов (добавки поверх шаблона / приватные списки)</h3>
       ${SALONS.map(s => `<div style="margin-bottom:12px">
-        <div class="row between"><b>${esc(s.name)}</b> <button onclick="addSalonItem(${s.id})">+ Пункт для этого объекта</button></div>
+        <div class="row between"><b>${esc(s.name)}</b> <button onclick="showChecklistItemForm({salon_id:${s.id}})">+ Пункт для этого объекта</button></div>
       </div>`).join('')}
       <p class="muted">Отвязать объект от шаблона целиком можно на вкладке «Салоны».</p>
     </div>
+    <div id="modal-root"></div>
   `;
 };
-async function addTemplateItem(tpl) {
-  const text = prompt('Текст пункта шаблона «' + (tpl==='sauna'?'Сауна':'Салон') + '»:');
-  if (!text) return;
-  await api('/checklist', { method: 'POST', body: { text, template: tpl } });
-  RENDERERS.checklist();
+
+function checklistItemFormHtml(item) {
+  const title = item.id ? 'Изменить пункт' : 'Новый пункт';
+  return `
+    <div class="modal-bg" onclick="if(event.target===this)this.remove()">
+      <div class="modal">
+        <h3>${title}</h3>
+        <div class="row" style="flex-direction:column;align-items:stretch">
+          <textarea id="ci-text" placeholder="Текст пункта">${esc(item.text||'')}</textarea>
+          <label>Вес<input id="ci-weight" type="number" min="1" value="${item.weight ?? 1}"></label>
+          <label class="row"><input id="ci-critical" type="checkbox" ${item.critical?'checked':''}> Критичный пункт (грубая ошибка, если не выполнен)</label>
+          <label class="row"><input id="ci-salary" type="checkbox" ${item.salary_penalty_allowed===false?'':'checked'}> Невыполнение может влиять на зарплату</label>
+          <textarea id="ci-hint" placeholder="Когда пункт НЕ применим (необязательно) — например: «клиент уже был и знает все условия»">${esc(item.not_applicable_hint||'')}</textarea>
+        </div>
+        <div class="row between" style="margin-top:16px">
+          <button onclick="document.querySelector('.modal-bg').remove()">Отмена</button>
+          <button class="primary" onclick="saveChecklistItem(${item.id||'null'}, ${item.template?`'${item.template}'`:'null'}, ${item.salon_id||'null'})">Сохранить</button>
+        </div>
+      </div>
+    </div>`;
 }
-async function addSalonItem(salonId) {
-  const text = prompt('Текст пункта только для этого объекта:');
-  if (!text) return;
-  await api('/checklist', { method: 'POST', body: { text, salon_id: salonId } });
+function showChecklistItemForm(item) {
+  document.getElementById('modal-root').innerHTML = checklistItemFormHtml(item);
+}
+function editChecklistItem(id) {
+  const item = CHECKLIST_ITEMS.find(i => i.id === id);
+  if (!item) return;
+  document.getElementById('modal-root').innerHTML = checklistItemFormHtml(item);
+}
+async function saveChecklistItem(id, template, salonId) {
+  const body = {
+    text: document.getElementById('ci-text').value.trim(),
+    weight: Number(document.getElementById('ci-weight').value) || 1,
+    critical: document.getElementById('ci-critical').checked,
+    salary_penalty_allowed: document.getElementById('ci-salary').checked,
+    not_applicable_hint: document.getElementById('ci-hint').value.trim()
+  };
+  if (!body.text) return;
+  if (id) {
+    await api('/checklist/' + id, { method: 'PUT', body });
+  } else {
+    if (template) body.template = template; else body.salon_id = salonId;
+    await api('/checklist', { method: 'POST', body });
+  }
+  document.querySelector('.modal-bg')?.remove();
   RENDERERS.checklist();
 }
 async function toggleItem(id, active) { await api('/checklist/' + id, { method: 'PUT', body: { active } }); RENDERERS.checklist(); }
