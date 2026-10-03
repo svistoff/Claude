@@ -15,6 +15,25 @@ const { getEffectiveChecklist } = require('./lib');
 
 const OPENAI_BASE = 'https://api.openai.com/v1';
 
+// node-fetch сам по себе никогда не отваливается по тайм-ауту — если сеть
+// "подвисла" (соединение установлено, но ответ не приходит — ровно то, что
+// уже один раз ловили с UIS из-за DPI-блокировки), запрос висит бесконечно.
+// Для массового пересчёта звонков (scripts/reanalyze-calls.js) это фатально:
+// одно зависшее соединение блокирует всю последовательную очередь навсегда.
+// Поэтому у каждого внешнего запроса — явный тайм-аут через AbortController.
+async function fetchWithTimeout(url, opts, timeoutMs) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...opts, signal: controller.signal });
+  } catch (err) {
+    if (err.name === 'AbortError') throw new Error(`Таймаут запроса (${timeoutMs / 1000}с): ${url}`);
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function getAiSettings() {
   return db.prepare('SELECT * FROM ai_settings WHERE id = 1').get();
 }
@@ -24,7 +43,7 @@ function logUsage(callId, kind, costUsd) {
 }
 
 async function downloadRecording(url) {
-  const resp = await fetch(url);
+  const resp = await fetchWithTimeout(url, {}, 60_000);
   if (!resp.ok) throw new Error(`Не удалось скачать запись звонка (HTTP ${resp.status})`);
   return Buffer.from(await resp.arrayBuffer());
 }
@@ -35,11 +54,11 @@ async function transcribeAudio(buffer, model, apiKey, durationSec) {
   form.append('model', model);
   form.append('language', 'ru');
 
-  const resp = await fetch(`${OPENAI_BASE}/audio/transcriptions`, {
+  const resp = await fetchWithTimeout(`${OPENAI_BASE}/audio/transcriptions`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}`, ...form.getHeaders() },
     body: form
-  });
+  }, 90_000);
   const json = await resp.json();
   if (!resp.ok) throw new Error(`OpenAI transcribe error: ${json.error?.message || resp.status}`);
 
@@ -174,7 +193,7 @@ ${checklistList}
 // с любым другим числом.
 async function analyzeTranscript(args) {
   const { system, user } = buildAnalysisPrompt(args);
-  const resp = await fetch(`${OPENAI_BASE}/chat/completions`, {
+  const resp = await fetchWithTimeout(`${OPENAI_BASE}/chat/completions`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${args.apiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -182,7 +201,7 @@ async function analyzeTranscript(args) {
       messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
       response_format: { type: 'json_object' }
     })
-  });
+  }, 120_000);
   const json = await resp.json();
   if (!resp.ok) throw new Error(`OpenAI analysis error: ${json.error?.message || resp.status}`);
 

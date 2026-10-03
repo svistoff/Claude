@@ -39,12 +39,25 @@ async function uisRequest(method, params) {
     method,
     params: { access_token: settings.uis_api_key, ...params }
   };
-  const resp = await fetch(DATA_API_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-    agent: uisProxyAgent || undefined
-  });
+  // без явного тайм-аута зависшее (но не разорванное) соединение — ровно то,
+  // что уже ловили при DPI-блокировке — блокировало бы опрос навсегда
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30_000);
+  let resp;
+  try {
+    resp = await fetch(DATA_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      agent: uisProxyAgent || undefined,
+      signal: controller.signal
+    });
+  } catch (err) {
+    if (err.name === 'AbortError') throw new Error(`Таймаут запроса к UIS (30с): ${method}`);
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
   const json = await resp.json();
   if (json.error) {
     const details = json.error.data ? ` | data: ${JSON.stringify(json.error.data)}` : '';
