@@ -300,6 +300,26 @@ button:active, .pressable:active { transform: scale(0.97); }
 .segment button[aria-selected="false"] { color: var(--muted); font-weight: 500; }
 .seg-note { font: 400 12px var(--font-ui); color: var(--muted); margin-top: 8px; text-align: center; }
 
+/* Список моделей ИИ (группировка по провайдеру) */
+.model-list { display: flex; flex-direction: column; gap: 6px; }
+.model-list .mg-head {
+  font: 500 11px var(--font-ui); color: var(--muted); text-transform: uppercase;
+  letter-spacing: 0.04em; margin: 10px 2px 2px;
+}
+.model-list .mg-head:first-child { margin-top: 0; }
+.model-list button.model-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  width: 100%; text-align: left; padding: 11px 14px; border-radius: 10px;
+  background: var(--surface-solid); border: 1px solid var(--border);
+  color: var(--text); font: 500 15px var(--font-ui);
+}
+.model-list button.model-row:active { background: var(--surface-2); }
+.model-list button.model-row[aria-selected="true"] {
+  border-color: var(--accent); background: var(--surface-2);
+}
+.model-list button.model-row .tick { color: var(--accent); font-size: 15px; opacity: 0; }
+.model-list button.model-row[aria-selected="true"] .tick { opacity: 1; }
+
 .list { display: flex; flex-direction: column; gap: 8px; }
 .list-item {
   padding: 12px 14px; border-radius: 12px; background: var(--surface-solid);

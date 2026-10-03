@@ -20,6 +20,23 @@ llm:
   max_tokens: 4096
   # request_timeout — таймаут одного запроса к API, сек.
   request_timeout: 120
+  # Каталог моделей для переключателя (мультимодельность). Если пусто — берётся
+  # встроенный каталог (providers.py): DeepSeek + OpenAI + OpenRouter(Claude/Gemini).
+  # Модель видна в UI, только если задан ключ её провайдера в .env.
+  # Провайдеры: deepseek / openai / openrouter.
+  # models:
+  #   - { id: deepseek-flash,  provider: deepseek,   label: "DeepSeek Flash" }
+  #   - { id: gpt-5,           provider: openai,     label: "GPT-5" }
+  #   - { id: anthropic/claude-sonnet-5-5, provider: openrouter, label: "Claude Sonnet 5.5" }
+  models: []
+
+# --- Генерация изображений (fal.ai) -----------------------------------------
+# Инструмент generate_image. Требует FAL_KEY в .env (иначе инструмент выключен).
+image:
+  provider: fal
+  # Модель fal.ai. schnell — быстрая/дешёвая; для качества: fal-ai/flux/dev.
+  model: fal-ai/flux/schnell
+  base_url: https://fal.run
 
 # --- Тарифы DeepSeek (USD за 1M токенов) ------------------------------------
 # Вынесены в одно место (раздел 27 ТЗ). Обновляйте при смене тарифа.

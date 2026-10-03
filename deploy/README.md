@@ -39,6 +39,10 @@ sudo -u aiagent nano /opt/ai-agent/.env
 
 Заполните в `.env`:
 - `DEEPSEEK_API_KEY` — ключ официального DeepSeek API;
+- `OPENAI_API_KEY`, `OPENROUTER_API_KEY` — (опц.) другие LLM-провайдеры. OpenRouter
+  одним ключом даёт Claude/GPT/Gemini. Модель появляется в переключателе UI, только
+  если задан ключ её провайдера;
+- `FAL_KEY` — (опц.) ключ fal.ai для генерации изображений (инструмент `generate_image`);
 - `GITHUB_TOKEN` — (опц., Фаза 2) fine-grained PAT: Contents R/W, Pull requests R/W,
   Checks/Commit statuses R — только на нужные репозитории;
 - `ADMIN_USER`, `ADMIN_PASSWORD_HASH` — хэш от `python -m app.scripts.hash_password '...'`;

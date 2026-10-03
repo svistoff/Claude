@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from . import browser, filesystem, git, github, terminal
+from . import browser, filesystem, git, github, image, terminal
 from .base import ToolContext, ToolResult
 
 # --- Схемы инструментов (function calling) ----------------------------------
@@ -133,6 +133,25 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "generate_image",
+            "description": ("Сгенерировать изображение по текстовому описанию (fal.ai). "
+                            "Картинка показывается пользователю в чате. Используй, когда просят "
+                            "нарисовать/сгенерировать изображение, иллюстрацию, логотип и т.п."),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "prompt": {"type": "string", "description": "Что нарисовать (можно по-английски для качества)"},
+                    "image_size": {"type": "string",
+                                   "enum": ["square", "square_hd", "landscape_4_3", "landscape_16_9",
+                                            "portrait_4_3", "portrait_16_9"]},
+                },
+                "required": ["prompt"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "github",
             "description": ("Операции с GitHub через API: info (remote/ветка), branches (список веток), "
                             "ci_status (статус проверок CI по HEAD), create_pr (создать Pull Request — "
@@ -216,6 +235,10 @@ def _dispatch_browser(ctx: ToolContext, a: dict) -> ToolResult:
     return browser.browser_tool(ctx, action, **kwargs)
 
 
+def _dispatch_generate_image(ctx: ToolContext, a: dict) -> ToolResult:
+    return image.generate_image(ctx, a["prompt"], a.get("image_size", "landscape_4_3"))
+
+
 _DISPATCH: dict[str, Callable[[ToolContext, dict], ToolResult]] = {
     "read_file": _dispatch_read,
     "list_files": _dispatch_list,
@@ -226,6 +249,7 @@ _DISPATCH: dict[str, Callable[[ToolContext, dict], ToolResult]] = {
     "git": _dispatch_git,
     "github": _dispatch_github,
     "browser": _dispatch_browser,
+    "generate_image": _dispatch_generate_image,
 }
 
 

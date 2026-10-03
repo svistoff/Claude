@@ -19,6 +19,7 @@ def get_settings_route(user: str = Depends(auth.require_user)) -> dict:
     return {
         "model": settings_store.current_model(),
         "available_models": settings_store.available_models(),
+        "models": settings_store.available_models_detailed(),
     }
 
 

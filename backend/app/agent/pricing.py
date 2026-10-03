@@ -11,6 +11,18 @@ from datetime import datetime, timezone
 from ..config import get_app_config
 from .runtime import Usage
 
+# Приблизительные тарифы (USD за 1M токенов) для каталога моделей — fallback,
+# если в config.yaml не заданы точные. Для не-DeepSeek пиковых часов нет.
+DEFAULT_RATES: dict[str, dict] = {
+    "deepseek-flash":  {"input": 0.15, "input_cache_hit": 0.003, "output": 0.60},
+    "deepseek-v4-pro": {"input": 0.66, "input_cache_hit": 0.022, "output": 1.98},
+    "gpt-5":           {"input": 1.25, "input_cache_hit": 0.0, "output": 10.0},
+    "gpt-5-mini":      {"input": 0.25, "input_cache_hit": 0.0, "output": 2.0},
+    "anthropic/claude-sonnet-5-5": {"input": 2.0, "input_cache_hit": 0.0, "output": 10.0},
+    "anthropic/claude-opus-5-5":   {"input": 4.0, "input_cache_hit": 0.0, "output": 20.0},
+    "google/gemini-2.5-pro":       {"input": 1.25, "input_cache_hit": 0.0, "output": 10.0},
+}
+
 
 def _is_peak(now: datetime, windows: list[list[int]]) -> bool:
     # Пик только пн–пт (0=пн … 4=пт).
@@ -25,10 +37,11 @@ def estimate_cost(usage: Usage) -> dict:
 
     pricing = get_app_config().pricing
     model = current_model()
-    rates = pricing.models.get(model, pricing.default)
+    rates = pricing.models.get(model) or DEFAULT_RATES.get(model) or pricing.default
 
+    # Пиковые часы — только у DeepSeek.
     now = datetime.now(timezone.utc)
-    peak = _is_peak(now, pricing.peak_windows_utc)
+    peak = model.startswith("deepseek") and _is_peak(now, pricing.peak_windows_utc)
     mult = pricing.peak_multiplier if peak else 1.0
 
     per_m = 1_000_000

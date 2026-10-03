@@ -227,37 +227,38 @@ $("#btn-project").addEventListener("click", () => { renderProjectsSheet(); openS
 // ============================================================================
 //  Настройки — переключатель модели (segmented control)
 // ============================================================================
+const PROVIDER_LABELS = { deepseek: "DeepSeek", openai: "OpenAI", openrouter: "OpenRouter" };
 async function loadSettings() {
   const data = await (await api("/api/settings")).json();
-  state.models = data.available_models; state.model = data.model;
-  buildSegment();
+  // models — [{id,label,provider}]; available_models — legacy список id (fallback).
+  state.models = (data.models && data.models.length)
+    ? data.models
+    : (data.available_models || []).map((id) => ({ id, label: id, provider: "deepseek" }));
+  state.model = data.model;
+  buildModelList();
 }
-function buildSegment() {
-  const seg = $("#model-segment");
-  seg.querySelectorAll("button").forEach((b) => b.remove());
-  const n = state.models.length;
-  state.models.forEach((m, i) => {
-    const b = el("button", null, m.replace("deepseek-", ""));
-    b.setAttribute("aria-selected", String(m === state.model));
-    b.addEventListener("click", () => switchModel(m, i));
-    seg.appendChild(b);
+function buildModelList() {
+  const box = $("#model-list");
+  box.textContent = "";
+  let lastProvider = null;
+  state.models.forEach((m) => {
+    if (m.provider !== lastProvider) {
+      lastProvider = m.provider;
+      box.appendChild(el("div", "mg-head", PROVIDER_LABELS[m.provider] || m.provider));
+    }
+    const b = el("button", "model-row pressable");
+    b.setAttribute("aria-selected", String(m.id === state.model));
+    b.appendChild(el("span", "name", m.label || m.id));
+    b.appendChild(el("span", "tick", "✓"));
+    b.addEventListener("click", () => switchModel(m.id));
+    box.appendChild(b);
   });
-  positionPill();
 }
-function positionPill() {
-  const i = Math.max(0, state.models.indexOf(state.model));
-  const n = state.models.length || 1;
-  const pill = $("#seg-pill");
-  pill.style.width = `calc((100% - 6px) / ${n})`;
-  pill.style.transform = `translateX(calc(${i} * 100%))`;
-}
-async function switchModel(m, i) {
-  const prev = state.model; state.model = m;
-  $("#model-segment").querySelectorAll("button").forEach((b, idx) =>
-    b.setAttribute("aria-selected", String(idx === i)));
-  positionPill();
-  const r = await api("/api/settings/model", { method: "POST", body: JSON.stringify({ model: m }) });
-  if (!r.ok) { state.model = prev; buildSegment(); alert("Не удалось переключить модель."); }
+async function switchModel(id) {
+  const prev = state.model; state.model = id;
+  buildModelList();
+  const r = await api("/api/settings/model", { method: "POST", body: JSON.stringify({ model: id }) });
+  if (!r.ok) { state.model = prev; buildModelList(); alert("Не удалось переключить модель."); }
 }
 $("#btn-settings").addEventListener("click", () => openSheet("settings"));
 $("#btn-logout").addEventListener("click", async () => {

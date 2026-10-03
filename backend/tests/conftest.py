@@ -18,3 +18,6 @@ os.environ.setdefault(
 os.environ.setdefault("SECRET_KEY", "test-secret-key-not-for-prod")
 os.environ.setdefault("COOKIE_SECURE", "false")
 os.environ.setdefault("DATABASE_URL", f"sqlite:///{tempfile.mkdtemp()}/test.db")
+# Ключ DeepSeek-провайдера, чтобы его модели были доступны в переключателе
+# (available_models фильтрует по наличию ключа). Остальные провайдеры — без ключа.
+os.environ.setdefault("DEEPSEEK_API_KEY", "test-deepseek-key")

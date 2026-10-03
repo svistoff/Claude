@@ -34,6 +34,13 @@ class Settings(BaseSettings):
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-flash"
 
+    # Доп. LLM-провайдеры (OpenAI-совместимые). Пусто — провайдер выключен.
+    openai_api_key: str = ""
+    openrouter_api_key: str = ""
+
+    # Генерация изображений (fal.ai).
+    fal_key: str = ""
+
     # GitHub (Фаза 2) — fine-grained PAT с минимальными правами.
     github_token: str = ""
 
@@ -61,11 +68,19 @@ class ProjectConfig(BaseModel):
 class LLMConfig(BaseModel):
     provider: str = "deepseek"
     model: str = "deepseek-flash"
-    # Модели, доступные для переключения в UI (раздел 43 ТЗ).
+    # Модели, доступные для переключения в UI (раздел 43 ТЗ). Legacy — список id DeepSeek.
     available_models: list[str] = ["deepseek-flash", "deepseek-v4-pro"]
+    # Каталог моделей с провайдерами (переопределяет встроенный). Пусто — встроенный.
+    models: list[dict] = []
     temperature: float = 0.2
     max_tokens: int = 4096
     request_timeout: int = 120
+
+
+class ImageConfig(BaseModel):
+    provider: str = "fal"
+    model: str = "fal-ai/flux/schnell"   # быстрая/дешёвая модель генерации
+    base_url: str = "https://fal.run"
 
 
 class PricingConfig(BaseModel):
@@ -121,6 +136,7 @@ class AppConfig(BaseModel):
     agent: AgentConfig = AgentConfig()
     uploads: UploadConfig = UploadConfig()
     browser: BrowserConfig = BrowserConfig()
+    image: ImageConfig = ImageConfig()
     projects: list[ProjectConfig] = []
     # Родительская папка, внутри которой агент может создавать новые проекты
     # (кнопка «+ Новый проект»). None — создание новых проектов отключено.

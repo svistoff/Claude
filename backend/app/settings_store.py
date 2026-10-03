@@ -1,11 +1,12 @@
 """Рантайм-настройки: выбранная LLM-модель (переключается в UI, хранится в БД).
 
-Приоритет: значение из БД (выбор пользователя) → config.llm.model (env/yaml).
-Переключение не требует правки .env и перезапуска.
+Доступные модели берутся из каталога провайдеров (providers.py) — только те,
+у чьих провайдеров задан ключ. Выбор не требует правки .env и перезапуска.
 """
 
 from __future__ import annotations
 
+from . import providers
 from .config import get_app_config
 from .database import repo
 
@@ -13,12 +14,20 @@ _MODEL_KEY = "llm_model"
 
 
 def available_models() -> list[str]:
-    cfg = get_app_config().llm
-    models = list(cfg.available_models)
-    # Гарантируем, что текущая модель из конфига тоже есть в списке.
-    if cfg.model and cfg.model not in models:
-        models.insert(0, cfg.model)
-    return models
+    ids = providers.available_model_ids()
+    default = get_app_config().llm.model
+    if default and default not in ids:
+        ids.insert(0, default)
+    return ids
+
+
+def available_models_detailed() -> list[dict]:
+    """[{id, label, provider}] доступных моделей — для UI."""
+    detailed = providers.available_models()
+    default = get_app_config().llm.model
+    if default and not any(m["id"] == default for m in detailed):
+        detailed.insert(0, {"id": default, "label": default, "provider": "deepseek"})
+    return detailed
 
 
 def current_model() -> str:

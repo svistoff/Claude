@@ -27,6 +27,17 @@ def _root(project: str) -> Path:
     return root
 
 
+@router.get("/media/{media_id}")
+def media(media_id: str, user: str = Depends(auth.require_user)):
+    import re
+    from ..tools.image import media_dir
+    if not re.fullmatch(r"[a-f0-9]{1,32}", media_id):
+        raise HTTPException(400, "Неверный id.")
+    for f in media_dir().glob(media_id + ".*"):
+        return FileResponse(str(f), headers={"Cache-Control": "private, max-age=3600"})
+    raise HTTPException(404, "Изображение не найдено.")
+
+
 @router.get("/download")
 def download(project: str, path: str, user: str = Depends(auth.require_user)):
     root = _root(project)

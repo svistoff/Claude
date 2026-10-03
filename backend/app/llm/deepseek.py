@@ -23,6 +23,7 @@ class DeepSeekProvider(LLMProvider):
         temperature: float = 0.2,
         max_tokens: int = 4096,
         request_timeout: int = 120,
+        extra_headers: dict | None = None,
     ) -> None:
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
@@ -30,6 +31,7 @@ class DeepSeekProvider(LLMProvider):
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.request_timeout = request_timeout
+        self.extra_headers = extra_headers or {}
 
     async def stream(
         self,
@@ -55,6 +57,7 @@ class DeepSeekProvider(LLMProvider):
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
+            **self.extra_headers,
         }
         url = f"{self.base_url}/chat/completions"
 
