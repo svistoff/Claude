@@ -8,7 +8,58 @@ from typing import Any
 from sqlalchemy import select
 
 from . import get_session
-from .models import AppSetting, Conversation, Message, Project, ToolCallLog
+from .models import AppSetting, Conversation, Folder, Message, Project, ToolCallLog
+
+
+# --- Папки чатов ------------------------------------------------------------
+
+def create_folder(name: str) -> str:
+    with get_session() as db:
+        f = Folder(name=name[:128])
+        db.add(f)
+        db.commit()
+        return f.id
+
+
+def list_folders() -> list[dict]:
+    with get_session() as db:
+        rows = db.execute(select(Folder).order_by(Folder.created_at)).scalars().all()
+        return [{"id": f.id, "name": f.name} for f in rows]
+
+
+def rename_folder(folder_id: str, name: str) -> bool:
+    with get_session() as db:
+        f = db.get(Folder, folder_id)
+        if f is None:
+            return False
+        f.name = name[:128] or f.name
+        db.commit()
+        return True
+
+
+def delete_folder(folder_id: str) -> bool:
+    """Удалить папку; её чаты переносятся в «без папки» (не удаляются)."""
+    with get_session() as db:
+        f = db.get(Folder, folder_id)
+        if f is None:
+            return False
+        for c in db.execute(select(Conversation).where(Conversation.folder_id == folder_id)).scalars():
+            c.folder_id = None
+        db.delete(f)
+        db.commit()
+        return True
+
+
+def move_conversation(conv_id: str, folder_id: str | None) -> bool:
+    with get_session() as db:
+        c = db.get(Conversation, conv_id)
+        if c is None:
+            return False
+        if folder_id and db.get(Folder, folder_id) is None:
+            return False
+        c.folder_id = folder_id
+        db.commit()
+        return True
 
 
 def get_setting(key: str) -> str | None:
@@ -53,7 +104,7 @@ def list_conversations(limit: int = 50) -> list[dict[str, Any]]:
         ).scalars().all()
         return [
             {"id": c.id, "project": c.project, "title": c.title,
-             "updated_at": c.updated_at.isoformat()}
+             "folder_id": c.folder_id, "updated_at": c.updated_at.isoformat()}
             for c in rows
         ]
 

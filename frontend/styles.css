@@ -318,6 +318,11 @@ button:active, .pressable:active { transform: scale(0.97); }
 }
 .chat-edit:active { background: var(--surface-2); }
 .chat-del { color: var(--danger); }
+.folder-head { display: flex; align-items: center; gap: 6px; margin: 16px 0 6px; padding: 0 2px; }
+.folder-head:first-child { margin-top: 2px; }
+.folder-name { flex: 1; font: 600 13px var(--font-ui); color: var(--muted); letter-spacing: 0.02em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.folder-head .chat-edit { width: 30px; height: 30px; }
 
 /* Индикатор «агент думает» */
 .thinking {

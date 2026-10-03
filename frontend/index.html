@@ -56,7 +56,10 @@
   <aside id="sheet-chats" class="sheet left" hidden>
     <div class="row-between">
       <h2>Чаты</h2>
-      <button id="btn-new-chat" class="btn-accent pressable" style="padding:9px 14px;font-size:14px;">＋ Новый</button>
+      <div style="display:flex;gap:6px;">
+        <button id="btn-new-folder" class="btn-ghost pressable" style="flex:none;padding:8px 10px;font-size:13px;">＋ Папка</button>
+        <button id="btn-new-chat" class="btn-accent pressable" style="padding:8px 12px;font-size:13px;">＋ Чат</button>
+      </div>
     </div>
     <div id="chats-list" class="list sheet-scroll"></div>
   </aside>

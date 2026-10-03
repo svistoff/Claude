@@ -132,9 +132,52 @@ class RenameBody(BaseModel):
     title: str
 
 
+class FolderBody(BaseModel):
+    name: str
+
+
+class MoveBody(BaseModel):
+    folder_id: str | None = None
+
+
 @router.get("/chats")
 def list_chats(user: str = Depends(auth.require_user)) -> dict:
-    return {"chats": repo.list_conversations()}
+    return {"chats": repo.list_conversations(), "folders": repo.list_folders()}
+
+
+@router.get("/folders")
+def list_folders(user: str = Depends(auth.require_user)) -> dict:
+    return {"folders": repo.list_folders()}
+
+
+@router.post("/folders")
+def create_folder(body: FolderBody, user: str = Depends(auth.require_csrf)) -> dict:
+    if not body.name.strip():
+        raise HTTPException(400, "Название папки не должно быть пустым.")
+    return {"ok": True, "id": repo.create_folder(body.name.strip())}
+
+
+@router.post("/folders/{folder_id}/rename")
+def rename_folder(folder_id: str, body: FolderBody, user: str = Depends(auth.require_csrf)) -> dict:
+    if not body.name.strip():
+        raise HTTPException(400, "Название не должно быть пустым.")
+    if not repo.rename_folder(folder_id, body.name.strip()):
+        raise HTTPException(404, "Папка не найдена.")
+    return {"ok": True}
+
+
+@router.delete("/folders/{folder_id}")
+def delete_folder(folder_id: str, user: str = Depends(auth.require_csrf)) -> dict:
+    if not repo.delete_folder(folder_id):
+        raise HTTPException(404, "Папка не найдена.")
+    return {"ok": True}
+
+
+@router.post("/chat/{conv_id}/move")
+def move_chat(conv_id: str, body: MoveBody, user: str = Depends(auth.require_csrf)) -> dict:
+    if not repo.move_conversation(conv_id, body.folder_id):
+        raise HTTPException(404, "Чат или папка не найдены.")
+    return {"ok": True}
 
 
 @router.post("/chat/{conv_id}/rename")

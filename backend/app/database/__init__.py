@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from ..config import BACKEND_DIR, get_settings
@@ -33,6 +33,17 @@ def init_db() -> None:
     _engine = create_engine(_make_url(), connect_args=connect_args, future=True)
     _SessionLocal = sessionmaker(bind=_engine, autoflush=False, expire_on_commit=False)
     Base.metadata.create_all(_engine)
+    _migrate(_engine)
+
+
+def _migrate(engine) -> None:
+    """Лёгкие миграции для уже существующих БД (добавление новых колонок)."""
+    insp = inspect(engine)
+    if "conversations" in insp.get_table_names():
+        cols = {c["name"] for c in insp.get_columns("conversations")}
+        if "folder_id" not in cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE conversations ADD COLUMN folder_id VARCHAR(32)"))
 
 
 def get_session() -> Session:

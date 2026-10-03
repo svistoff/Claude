@@ -269,25 +269,88 @@ $("#btn-logout").addEventListener("click", async () => {
 // ============================================================================
 $("#btn-menu").addEventListener("click", async () => { await loadChats(); openSheet("chats"); });
 $("#btn-new-chat").addEventListener("click", () => { newChat(); closeSheet("chats"); });
+let foldersCache = [];
 async function loadChats() {
   const data = await (await api("/api/chats")).json();
+  foldersCache = data.folders || [];
   const list = $("#chats-list"); list.innerHTML = "";
-  data.chats.forEach((c) => {
-    const row = el("div", "list-item pressable chat-row");
-    const main = el("div", "chat-main");
-    main.appendChild(el("div", "title", c.title || "Без названия"));
-    main.appendChild(el("div", "when", `${c.project} · ${new Date(c.updated_at).toLocaleString()}`));
-    main.addEventListener("click", () => openChat(c.id));
-    const edit = el("button", "chat-edit", "✎");
-    edit.title = "Переименовать";
-    edit.addEventListener("click", (e) => { e.stopPropagation(); renameChat(c); });
-    const del = el("button", "chat-edit chat-del", "🗑");
-    del.title = "Удалить";
-    del.addEventListener("click", (e) => { e.stopPropagation(); deleteChat(c); });
-    row.appendChild(main); row.appendChild(edit); row.appendChild(del);
-    list.appendChild(row);
+  if (!data.chats.length && !foldersCache.length) { list.appendChild(el("div", "muted", "Пока нет чатов.")); return; }
+
+  const byFolder = {}; const none = [];
+  data.chats.forEach((c) => { if (c.folder_id) (byFolder[c.folder_id] = byFolder[c.folder_id] || []).push(c); else none.push(c); });
+
+  foldersCache.forEach((f) => {
+    renderFolderHeader(list, f);
+    const items = byFolder[f.id] || [];
+    items.forEach((c) => renderChatRow(list, c));
+    if (!items.length) list.appendChild(el("div", "muted", "— пусто —"));
   });
-  if (!data.chats.length) list.appendChild(el("div", "muted", "Пока нет чатов."));
+  if (none.length) {
+    if (foldersCache.length) renderFolderHeader(list, null);
+    none.forEach((c) => renderChatRow(list, c));
+  }
+}
+function renderFolderHeader(list, f) {
+  const h = el("div", "folder-head");
+  h.appendChild(el("span", "folder-name", "📁 " + (f ? f.name : "Без папки")));
+  if (f) {
+    const ren = el("button", "chat-edit", "✎");
+    ren.addEventListener("click", () => renameFolder(f));
+    const del = el("button", "chat-edit chat-del", "🗑");
+    del.addEventListener("click", () => deleteFolder(f));
+    h.appendChild(ren); h.appendChild(del);
+  }
+  list.appendChild(h);
+}
+function renderChatRow(list, c) {
+  const row = el("div", "chat-row");
+  const main = el("div", "list-item pressable chat-main");
+  main.appendChild(el("div", "title", c.title || "Без названия"));
+  main.appendChild(el("div", "when", `${c.project} · ${new Date(c.updated_at).toLocaleString()}`));
+  main.addEventListener("click", () => openChat(c.id));
+  const mv = el("button", "chat-edit", "📁"); mv.title = "В папку";
+  mv.addEventListener("click", (e) => { e.stopPropagation(); moveChat(c); });
+  const edit = el("button", "chat-edit", "✎"); edit.title = "Переименовать";
+  edit.addEventListener("click", (e) => { e.stopPropagation(); renameChat(c); });
+  const del = el("button", "chat-edit chat-del", "🗑"); del.title = "Удалить";
+  del.addEventListener("click", (e) => { e.stopPropagation(); deleteChat(c); });
+  row.appendChild(main); row.appendChild(mv); row.appendChild(edit); row.appendChild(del);
+  list.appendChild(row);
+}
+$("#btn-new-folder").addEventListener("click", createFolder);
+async function createFolder() {
+  const name = prompt("Название папки:", "");
+  if (!name || !name.trim()) return;
+  await api("/api/folders", { method: "POST", body: JSON.stringify({ name: name.trim() }) });
+  loadChats();
+}
+async function renameFolder(f) {
+  const name = prompt("Новое название папки:", f.name);
+  if (name === null || !name.trim()) return;
+  await api("/api/folders/" + f.id + "/rename", { method: "POST", body: JSON.stringify({ name: name.trim() }) });
+  loadChats();
+}
+async function deleteFolder(f) {
+  if (!confirm(`Удалить папку «${f.name}»? Чаты из неё не удалятся, станут «без папки».`)) return;
+  await api("/api/folders/" + f.id, { method: "DELETE" });
+  loadChats();
+}
+async function moveChat(c) {
+  const opts = ["0 — Без папки", ...foldersCache.map((f, i) => `${i + 1} — ${f.name}`)];
+  const ans = prompt("Куда переместить? Введи номер или новое имя папки:\n" + opts.join("\n"), "");
+  if (ans === null) return;
+  const t = ans.trim(); if (!t) return;
+  let folderId = null;
+  if (/^\d+$/.test(t)) {
+    const n = parseInt(t, 10);
+    if (n === 0) folderId = null;
+    else { const f = foldersCache[n - 1]; if (!f) { alert("Нет такого номера."); return; } folderId = f.id; }
+  } else {
+    const r = await (await api("/api/folders", { method: "POST", body: JSON.stringify({ name: t }) })).json();
+    folderId = r.id;
+  }
+  await api("/api/chat/" + c.id + "/move", { method: "POST", body: JSON.stringify({ folder_id: folderId }) });
+  loadChats();
 }
 async function renameChat(c) {
   const name = prompt("Новое название чата:", c.title || "");

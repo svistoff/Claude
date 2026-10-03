@@ -26,12 +26,23 @@ class Base(DeclarativeBase):
     pass
 
 
+class Folder(Base):
+    """Папка для группировки чатов."""
+
+    __tablename__ = "folders"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    name: Mapped[str] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
 class Conversation(Base):
     __tablename__ = "conversations"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
     project: Mapped[str] = mapped_column(String(128))
     title: Mapped[str] = mapped_column(String(256), default="Новый чат")
+    folder_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_now, onupdate=_now)
 
