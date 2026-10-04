@@ -124,6 +124,21 @@ function narrativeBlocks(n) {
     <h2>Вывод для владельца</h2><p>${esc(n.conclusion)}</p>`;
 }
 
+// та же тепловая шкала (красный->жёлтый->зелёный), что и в интерфейсе — вместо
+// голой дроби "из применимых баллов", см. public/index.html's qualityColor()
+function qualityColor(pct) {
+  const stops = pct <= 50 ? [[0xdd,0x33,0x33],[0xc9,0x8a,0x00]] : [[0xc9,0x8a,0x00],[0x2a,0x9d,0x5c]];
+  const t = pct <= 50 ? pct / 50 : (pct - 50) / 50;
+  const [r1,g1,b1] = stops[0], [r2,g2,b2] = stops[1];
+  const r = Math.round(r1 + (r2-r1)*t), g = Math.round(g1 + (g2-g1)*t), b = Math.round(b1 + (b2-b1)*t);
+  return `rgb(${r},${g},${b})`;
+}
+function qualityBadge(score, total) {
+  if (score == null || !total) return '—';
+  const pct = Math.round((score / total) * 100);
+  return `<span style="font-weight:600;color:${qualityColor(pct)}">${pct}%</span>`;
+}
+
 function callsTable(calls) {
   const rows = calls.slice(0, 100).map(c => {
     let criticalCount = 0;
@@ -132,7 +147,7 @@ function callsTable(calls) {
     <tr>
       <td>${esc(c.started_at)}</td><td>${esc(c.salon_name || '')}</td>
       <td>${esc(c.matched_admin_name || c.detected_admin_name || '—')}</td>
-      <td>${c.checklist_score ?? '—'}/${c.checklist_total ?? '—'}</td>
+      <td>${qualityBadge(c.checklist_score, c.checklist_total)}</td>
       <td>${criticalCount ? `⚠️${criticalCount}` : '—'}</td>
       <td>${esc(c.outcome || '—')}</td><td>${esc(c.summary || '')}</td>
     </tr>`;

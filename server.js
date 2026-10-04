@@ -568,7 +568,22 @@ app.get('/api/dashboard', auth.requireAdmin, (req, res) => {
     if (unmarked > 0) unclosedDays.push({ salon_id: s.id, salon_name: s.name, date: today, unmarked_count: unmarked });
   }
 
-  res.json({ missed_no_callback: missedNoCallback.map(formatCall), unconfirmed_admins: unconfirmedAdmins, unclosed_days: unclosedDays });
+  // рейтинг администраторов по Quality Score за последние 30 дней — только
+  // звонки, у которых вообще есть применимые пункты чек-листа (checklist_total > 0)
+  const adminRanking = db.prepare(`
+    SELECT a.id, a.name, COUNT(c.id) AS calls_count,
+      AVG(c.checklist_score * 1.0 / c.checklist_total) AS avg_pct,
+      SUM(CASE WHEN c.critical_errors IS NOT NULL THEN 1 ELSE 0 END) AS critical_count
+    FROM admins a JOIN calls c ON c.matched_admin_id = a.id
+    WHERE c.status = 'done' AND c.checklist_total > 0 AND c.started_at >= datetime('now', '-30 days')
+    GROUP BY a.id
+    ORDER BY avg_pct DESC
+  `).all();
+
+  res.json({
+    missed_no_callback: missedNoCallback.map(formatCall), unconfirmed_admins: unconfirmedAdmins,
+    unclosed_days: unclosedDays, admin_ranking: adminRanking
+  });
 });
 
 // calls.started_at хранится в часовом поясе аккаунта UIS (см. telephony.js) —
