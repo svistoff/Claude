@@ -629,6 +629,7 @@ RENDERERS.admins = async function renderAdmins() {
             ${a.status!=='confirmed' ? `<button class="ok" onclick="confirmAdmin(${a.id})">Подтвердить</button>` : ''}
             <button onclick="editAdmin(${a.id})">Изменить</button>
             <button onclick="manageLogin(${a.id})">${a.login_username?'Логин':'Выдать доступ'}</button>
+            <button onclick="showMergeAdminForm(${a.id})">Объединить с...</button>
             <button class="danger" onclick="rejectAdminRow(${a.id})">Удалить</button>
           </td>
         </tr>`).join('')}
@@ -639,6 +640,36 @@ RENDERERS.admins = async function renderAdmins() {
 };
 
 async function rejectAdminRow(id) { if (!confirm('Удалить администратора из справочника?')) return; await api(`/admins/${id}`, {method:'DELETE'}); RENDERERS.admins(); }
+
+// объединение дублей — например, ИИ один раз распознал "Оксана", другой раз
+// "Роксана" из-за качества записи и завёл две разные карточки на одного человека
+function showMergeAdminForm(id) {
+  const a = ADMINS.find(x => x.id === id);
+  const others = ADMINS.filter(x => x.id !== id);
+  document.getElementById('modal-root').innerHTML = `
+    <div class="modal-bg" onclick="if(event.target===this)this.remove()">
+      <div class="modal">
+        <h3>Объединить «${esc(a.name)}» с...</h3>
+        <p class="muted">Все звонки «${esc(a.name)}» перейдут к выбранному администратору, а «${esc(a.name)}» удалится из справочника. Используйте, если это один и тот же человек, просто ИИ по-разному распознал имя.</p>
+        <select id="merge-target">${others.map(o=>`<option value="${o.id}">${esc(o.name)} (${esc(o.worked_salons||'—')})</option>`).join('')}</select>
+        <div class="row between" style="margin-top:16px">
+          <button onclick="document.querySelector('.modal-bg').remove()">Отмена</button>
+          <button class="danger" onclick="mergeAdmin(${id})">Объединить</button>
+        </div>
+      </div>
+    </div>`;
+}
+async function mergeAdmin(id) {
+  const targetId = Number(document.getElementById('merge-target').value);
+  try {
+    await api(`/admins/${id}/merge-into/${targetId}`, { method: 'POST' });
+  } catch (e) {
+    alert(e.message || 'Не удалось объединить');
+    return;
+  }
+  document.querySelector('.modal-bg')?.remove();
+  RENDERERS.admins();
+}
 
 function showAdminForm() {
   document.getElementById('modal-root').innerHTML = `

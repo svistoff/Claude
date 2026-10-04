@@ -349,6 +349,28 @@ app.delete('/api/admins/:id', auth.requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
+// объединить дубликат (например, ИИ один раз распознал "Оксана", другой раз
+// "Роксана" из-за качества записи, и завёл два разных справочных имени) —
+// все звонки дубликата переезжают на основную запись, дубликат удаляется
+app.post('/api/admins/:id/merge-into/:targetId', auth.requireAdmin, (req, res) => {
+  const source = db.prepare('SELECT * FROM admins WHERE id = ?').get(req.params.id);
+  const target = db.prepare('SELECT * FROM admins WHERE id = ?').get(req.params.targetId);
+  if (!source || !target) return res.status(404).json({ error: 'Администратор не найден' });
+  if (source.id === target.id) return res.status(400).json({ error: 'Нельзя объединить администратора с самим собой' });
+  if (source.user_id && target.user_id) {
+    return res.status(400).json({ error: 'У обоих есть логин на страницу «Гости» — сначала отзовите один из них вручную' });
+  }
+  const merge = db.transaction(() => {
+    db.prepare('UPDATE calls SET matched_admin_id = ? WHERE matched_admin_id = ?').run(target.id, source.id);
+    if (source.user_id && !target.user_id) {
+      db.prepare('UPDATE admins SET user_id = ? WHERE id = ?').run(source.user_id, target.id);
+    }
+    db.prepare('DELETE FROM admins WHERE id = ?').run(source.id);
+  });
+  merge();
+  res.json({ ok: true });
+});
+
 // выдать/отозвать доступ к странице «Гости»
 app.put('/api/admins/:id/login', auth.requireAdmin, (req, res) => {
   const admin = db.prepare('SELECT * FROM admins WHERE id = ?').get(req.params.id);

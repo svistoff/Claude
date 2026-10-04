@@ -48,11 +48,16 @@ async function downloadRecording(url) {
   return Buffer.from(await resp.arrayBuffer());
 }
 
-async function transcribeAudio(buffer, model, apiKey, durationSec) {
+// promptHint — список известных имён администраторов и объектов, который
+// подсказывает модели транскрибации, какие имена собственные ожидать (у
+// Whisper/4o-transcribe для этого есть штатный параметр prompt) — заметно
+// снижает путаницу вроде "Роксана" -> "Оксана" на телефонном звуке.
+async function transcribeAudio(buffer, model, apiKey, durationSec, promptHint) {
   const form = new FormData();
   form.append('file', buffer, { filename: 'call.mp3', contentType: 'audio/mpeg' });
   form.append('model', model);
   form.append('language', 'ru');
+  if (promptHint) form.append('prompt', promptHint);
 
   const resp = await fetchWithTimeout(`${OPENAI_BASE}/audio/transcriptions`, {
     method: 'POST',
@@ -298,22 +303,28 @@ async function processCall(callId, { reuseTranscript = false } = {}) {
   db.prepare(`UPDATE calls SET status='processing' WHERE id=?`).run(callId);
 
   try {
+    // администраторы — общий список по всей сети: один и тот же человек может
+    // в разные смены выходить в разных салонах, ИИ узнаёт по имени, не по объекту
+    const admins = db.prepare('SELECT * FROM admins').all();
+    const checklist = getEffectiveChecklist(salon);
+
     let transcript;
     if (reuseTranscript && call.transcript) {
       transcript = call.transcript;
     } else {
       const buffer = await downloadRecording(call.recording_url);
+      // только подтверждённые имена — неподтверждённые могут быть уже
+      // ошибочными распознаваниями, не стоит их закреплять подсказкой
+      const confirmedNames = admins.filter(a => a.status === 'confirmed').map(a => a.name);
+      const promptHint = confirmedNames.length
+        ? `Администраторы салонов: ${confirmedNames.join(', ')}. Объект: ${salon.name}.`
+        : undefined;
       const transcribed = await transcribeAudio(
-        buffer, settings.transcribe_model, settings.openai_api_key, call.duration_sec
+        buffer, settings.transcribe_model, settings.openai_api_key, call.duration_sec, promptHint
       );
       transcript = transcribed.text;
       logUsage(callId, 'transcribe', transcribed.costUsd);
     }
-
-    // администраторы — общий список по всей сети: один и тот же человек может
-    // в разные смены выходить в разных салонах, ИИ узнаёт по имени, не по объекту
-    const admins = db.prepare('SELECT * FROM admins').all();
-    const checklist = getEffectiveChecklist(salon);
 
     const { parsed, costUsd: analysisCost } = await analyzeTranscript({
       transcript, companyContext: settings.company_context, salon, admins, checklist,
