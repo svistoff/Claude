@@ -545,6 +545,15 @@ app.get('/api/dashboard', auth.requireAdmin, (req, res) => {
     ORDER BY c.started_at DESC LIMIT 50
   `).all();
 
+  // срочное к разбору — звонки с найденными критическими ошибками за последние 14 дней
+  const criticalCalls = db.prepare(`
+    SELECT c.*, s.name AS salon_name, a.name AS matched_admin_name
+    FROM calls c JOIN salons s ON s.id = c.salon_id
+    LEFT JOIN admins a ON a.id = c.matched_admin_id
+    WHERE c.critical_errors IS NOT NULL AND c.started_at >= datetime('now', '-14 days')
+    ORDER BY c.started_at DESC LIMIT 50
+  `).all();
+
   // администратор больше не привязан к объекту — для контекста показываем
   // объект звонка, на котором ИИ впервые его обнаружил
   const unconfirmedAdmins = db.prepare(`
@@ -582,7 +591,7 @@ app.get('/api/dashboard', auth.requireAdmin, (req, res) => {
 
   res.json({
     missed_no_callback: missedNoCallback.map(formatCall), unconfirmed_admins: unconfirmedAdmins,
-    unclosed_days: unclosedDays, admin_ranking: adminRanking
+    unclosed_days: unclosedDays, admin_ranking: adminRanking, critical_calls: criticalCalls.map(formatCall)
   });
 });
 
