@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -15,6 +16,10 @@ from .security import SecurityError, resolve_within_root
 
 # Имя проекта: слаг из латиницы/цифр/-/_ (без точек, слэшей, пробелов).
 _NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+
+# Папки, которые не показываем в обзоре (мусор/служебное).
+_SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv",
+              ".idea", ".vscode", ".cache", ".pytest_cache", ".mypy_cache"}
 
 
 class ProjectError(Exception):
@@ -89,3 +94,163 @@ def create_project(name: str, git_init: bool = True) -> dict:
 
     repo.add_project(name, str(target))
     return {"name": name, "path": str(target), "available": True, "kind": "custom"}
+
+
+# --- Обзор папок сервера и добавление существующей папки как проекта --------
+
+def browse_roots() -> list[Path]:
+    """Корни, доступные для обзора в UI.
+
+    Явно заданы в config.yaml (browse_roots) — используем их. Иначе берём
+    родителей существующих проектов + сам workspace. Это ограничивает обзор
+    областями, где реально лежат проекты (не весь диск).
+    """
+    cfg = get_app_config()
+    roots: list[Path] = []
+    seen: set[str] = set()
+
+    def _add(p: Path) -> None:
+        try:
+            rp = p.resolve()
+        except OSError:
+            return
+        if str(rp) not in seen and rp.is_dir():
+            seen.add(str(rp))
+            roots.append(rp)
+
+    if cfg.browse_roots:
+        for r in cfg.browse_roots:
+            _add(Path(r))
+    else:
+        for proj in all_projects():
+            parent = Path(proj["path"]).parent
+            _add(parent)
+        if cfg.workspace:
+            _add(Path(cfg.workspace))
+    return roots
+
+
+def _within_roots(path: Path, roots: list[Path]) -> bool:
+    return any(path == r or r in path.parents for r in roots)
+
+
+def _existing_paths() -> set[str]:
+    return {str(Path(p["path"]).resolve()) for p in all_projects()}
+
+
+def browse_dirs(path: str | None) -> dict:
+    """Листинг подпапок для выбора проекта.
+
+    Без path — показываем список корней. С path — подпапки внутри него (строго
+    в границах корней). Для каждой папки отмечаем доступность для пользователя,
+    под которым работает сервис, и является ли она уже проектом.
+    """
+    roots = browse_roots()
+    if not roots:
+        return {"current": None, "parent": None, "roots": [], "entries": [],
+                "error": "Обзор папок не настроен (browse_roots / workspace в config.yaml)."}
+
+    existing = _existing_paths()
+
+    # Верхний уровень: перечень корней как «папок».
+    if not path:
+        entries = [_entry(r, existing) for r in roots]
+        return {"current": None, "parent": None,
+                "roots": [str(r) for r in roots], "entries": entries}
+
+    try:
+        cur = Path(path).resolve()
+    except OSError as exc:
+        raise ProjectError(f"Некорректный путь: {exc}") from exc
+    if not _within_roots(cur, roots):
+        raise ProjectError("Путь вне разрешённых для обзора папок.")
+    if not cur.is_dir():
+        raise ProjectError("Папка не найдена.")
+
+    entries: list[dict] = []
+    try:
+        for child in sorted(cur.iterdir(), key=lambda p: p.name.lower()):
+            if not child.is_dir() or child.name in _SKIP_DIRS:
+                continue
+            entries.append(_entry(child, existing))
+    except PermissionError:
+        raise ProjectError("Нет доступа к папке (нужен setfacl для пользователя сервиса).")
+
+    # Родитель — только если не поднимаемся выше корня.
+    parent = None if cur in roots else str(cur.parent)
+    return {"current": _entry(cur, existing), "parent": parent,
+            "roots": [str(r) for r in roots], "entries": entries}
+
+
+def _entry(p: Path, existing: set[str]) -> dict:
+    accessible = os.access(p, os.R_OK | os.X_OK)
+    return {
+        "name": p.name or str(p),
+        "path": str(p),
+        "accessible": accessible,
+        "writable": accessible and os.access(p, os.W_OK),
+        "is_project": str(p) in existing,
+    }
+
+
+def _slugify(text: str) -> str:
+    s = re.sub(r"[^a-z0-9_-]+", "-", (text or "").strip().lower()).strip("-_")
+    s = re.sub(r"-{2,}", "-", s)[:64]
+    if not s or not re.match(r"^[a-z0-9]", s):
+        s = ("p-" + s).strip("-")[:64] or "project"
+    return s
+
+
+def _unique_name(base: str) -> str:
+    existing = {p["name"] for p in all_projects()}
+    if base not in existing:
+        return base
+    for i in range(2, 1000):
+        cand = f"{base}-{i}"[:64]
+        if cand not in existing:
+            return cand
+    raise ProjectError("Не удалось подобрать уникальное имя проекта.")
+
+
+def add_existing_project(path: str, name: str | None = None) -> dict:
+    """Добавить уже существующую папку сервера как проект (без создания файлов)."""
+    roots = browse_roots()
+    if not roots:
+        raise ProjectError("Обзор папок не настроен (browse_roots / workspace в config.yaml).")
+    try:
+        target = Path(path).resolve()
+    except OSError as exc:
+        raise ProjectError(f"Некорректный путь: {exc}") from exc
+    if not _within_roots(target, roots):
+        raise ProjectError("Путь вне разрешённых для обзора папок.")
+    if not target.is_dir():
+        raise ProjectError(f"Папка не существует: {target}")
+    if not os.access(target, os.R_OK | os.X_OK):
+        raise ProjectError(
+            "Нет доступа к папке у пользователя сервиса. Дай доступ на сервере:\n"
+            f"  sudo setfacl -R -m u:aiagent:rwX \"{target}\"\n"
+            f"  sudo setfacl -m u:aiagent:x \"{target.parent}\""
+        )
+
+    if str(target) in _existing_paths():
+        raise ProjectError("Эта папка уже добавлена как проект.")
+
+    # Имя: заданное пользователем или из названия папки.
+    if name and name.strip():
+        slug = (name.strip().lower()
+                if _NAME_RE.match(name.strip().lower()) else _slugify(name))
+        if slug in {p["name"] for p in all_projects()}:
+            raise ProjectError(f"Проект '{slug}' уже существует.")
+    else:
+        slug = _unique_name(_slugify(target.name))
+
+    repo.add_project(slug, str(target))
+    return {"name": slug, "path": str(target), "available": True, "kind": "custom"}
+
+
+def remove_project(name: str) -> None:
+    """Убрать проект, добавленный через UI (конфиговые удалить нельзя)."""
+    if name in get_project_map():
+        raise ProjectError("Проект задан в config.yaml — его нельзя удалить из интерфейса.")
+    if not repo.remove_project(name):
+        raise ProjectError(f"Проект '{name}' не найден.")

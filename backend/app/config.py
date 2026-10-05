@@ -141,6 +141,9 @@ class AppConfig(BaseModel):
     # Родительская папка, внутри которой агент может создавать новые проекты
     # (кнопка «+ Новый проект»). None — создание новых проектов отключено.
     workspace: str | None = None
+    # Корневые папки, которые можно просматривать в UI при добавлении проекта
+    # («обзор папок»). Пусто — берутся родители существующих проектов + workspace.
+    browse_roots: list[str] = []
     secret_patterns: list[str] = []
     terminal_policy: TerminalPolicy = TerminalPolicy()
 

@@ -222,6 +222,17 @@ def get_custom_project_path(name: str) -> str | None:
         return p.path if p else None
 
 
+def remove_project(name: str) -> bool:
+    """Удалить пользовательский проект из БД (папка на диске не трогается)."""
+    with get_session() as db:
+        p = db.get(Project, name)
+        if p is None:
+            return False
+        db.delete(p)
+        db.commit()
+        return True
+
+
 def _msg_dict(m: Message) -> dict[str, Any]:
     return {
         "role": m.role,

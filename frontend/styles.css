@@ -327,7 +327,29 @@ button:active, .pressable:active { transform: scale(0.97); }
 }
 .list-item:active { background: var(--surface-2); }
 .list-item .title { font: 500 15px var(--font-ui); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.list-item .when { color: var(--muted); font: 400 12px var(--font-ui); margin-top: 2px; }
+.list-item .when { color: var(--muted); font: 400 12px var(--font-ui); margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list-item[disabled] { opacity: 0.5; }
+.list-item.accent-item { border-color: var(--accent); }
+.list-item.accent-item .title { color: var(--accent); }
+
+/* Строка проекта/папки с кнопкой действия справа (✕ убрать, ＋ добавить) */
+.proj-row { display: flex; align-items: stretch; gap: 8px; }
+.proj-row .list-item { flex: 1; min-width: 0; }
+.proj-del {
+  flex: none; width: 40px; border-radius: 12px; border: 1px solid var(--border);
+  background: var(--surface-solid); color: var(--muted); font-size: 16px;
+}
+.proj-del:active { background: var(--surface-2); }
+
+/* Обзор папок сервера */
+.browse-head { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+.browse-back { border: 1px solid var(--border); background: var(--surface-solid);
+  color: var(--text); border-radius: 8px; padding: 6px 10px; font: 500 13px var(--font-ui); }
+.browse-back:active { background: var(--surface-2); }
+.browse-path { flex: 1; min-width: 0; color: var(--muted); font: 400 12px var(--font-mono);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
+.browse-empty { padding: 8px 4px; }
 .chat-row { display: flex; align-items: center; gap: 8px; background: var(--surface-solid);
   border: 1px solid var(--border); border-radius: 12px; }
 .chat-row .list-item { border: none; background: none; }

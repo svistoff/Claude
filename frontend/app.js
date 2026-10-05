@@ -184,10 +184,10 @@ async function showApp() {
 // ============================================================================
 //  Проекты
 // ============================================================================
-let projectsCache = [], canCreate = false;
+let projectsCache = [], canCreate = false, canBrowse = false;
 async function loadProjects(selectName) {
   const data = await (await api("/api/projects")).json();
-  projectsCache = data.projects; canCreate = data.can_create;
+  projectsCache = data.projects; canCreate = data.can_create; canBrowse = data.can_browse;
   const wanted = selectName && projectsCache.find((p) => p.name === selectName);
   const first = wanted || projectsCache.find((p) => p.available);
   if (first) { state.project = first.name; $("#project-name").textContent = first.name; }
@@ -195,16 +195,30 @@ async function loadProjects(selectName) {
 function renderProjectsSheet() {
   const list = $("#projects-list"); list.innerHTML = "";
   projectsCache.forEach((p) => {
+    const row = el("div", "proj-row");
     const b = el("button", "list-item pressable");
-    b.appendChild(el("div", "title", p.name + (p.available ? "" : " · нет")));
-    if (p.kind === "custom") b.appendChild(el("div", "when", "создан в UI"));
+    b.appendChild(el("div", "title", p.name + (p.available ? "" : " · нет доступа")));
+    b.appendChild(el("div", "when", p.kind === "custom" ? p.path : "из config.yaml"));
     if (!p.available) b.disabled = true;
-    b.addEventListener("click", () => { selectProject(p.name); });
-    list.appendChild(b);
+    b.addEventListener("click", () => selectProject(p.name));
+    row.appendChild(b);
+    if (p.kind === "custom") {
+      const x = el("button", "proj-del pressable", "✕");
+      x.title = "Убрать из списка (папка на диске не удаляется)";
+      x.addEventListener("click", (e) => { e.stopPropagation(); deleteProject(p.name); });
+      row.appendChild(x);
+    }
+    list.appendChild(row);
   });
+  if (canBrowse) {
+    const b = el("button", "list-item pressable accent-item");
+    b.appendChild(el("div", "title", "📁 Добавить папку с сервера"));
+    b.addEventListener("click", () => openBrowser(null));
+    list.appendChild(b);
+  }
   if (canCreate) {
     const b = el("button", "list-item pressable");
-    b.appendChild(el("div", "title", "＋ Новый проект"));
+    b.appendChild(el("div", "title", "＋ Создать новый проект"));
     b.addEventListener("click", createProject);
     list.appendChild(b);
   }
@@ -217,6 +231,78 @@ async function createProject() {
   const name = prompt("Имя нового проекта (латиница, цифры, дефис):", "");
   if (!name) return;
   const r = await api("/api/projects/new", { method: "POST", body: JSON.stringify({ name: name.trim() }) });
+  const data = await r.json();
+  if (!r.ok) { alert("Не удалось: " + (data.detail || r.status)); return; }
+  await loadProjects(data.project.name); renderProjectsSheet();
+  selectProject(data.project.name);
+}
+async function deleteProject(name) {
+  if (!confirm(`Убрать проект «${name}» из списка? Папка и файлы на сервере останутся.`)) return;
+  const r = await api("/api/projects/" + encodeURIComponent(name), { method: "DELETE" });
+  if (!r.ok) { const d = await r.json().catch(() => ({})); alert("Не удалось: " + (d.detail || r.status)); return; }
+  if (state.project === name) { state.project = null; $("#project-name").textContent = "—"; }
+  await loadProjects(state.project); renderProjectsSheet();
+}
+
+// --- Обзор папок сервера (добавление существующей папки как проекта) --------
+async function openBrowser(path) {
+  const list = $("#projects-list"); list.innerHTML = "";
+  let data;
+  try {
+    const r = await api("/api/projects/browse" + (path ? "?path=" + encodeURIComponent(path) : ""));
+    data = await r.json();
+    if (!r.ok) throw new Error(data.detail || r.status);
+  } catch (e) { list.appendChild(el("div", "error", "Не удалось открыть: " + e.message)); return; }
+
+  // Шапка: назад к проектам + текущий путь.
+  const head = el("div", "browse-head");
+  const back = el("button", "browse-back pressable", "‹ Проекты");
+  back.addEventListener("click", renderProjectsSheet);
+  head.appendChild(back);
+  if (data.current) head.appendChild(el("div", "browse-path", data.current.path));
+  list.appendChild(head);
+
+  // «Выбрать эту папку» — для текущей (если доступна и ещё не проект).
+  if (data.current && !data.current.is_project) {
+    const pick = el("button", "list-item pressable accent-item");
+    pick.appendChild(el("div", "title", "✓ Добавить эту папку как проект"));
+    pick.appendChild(el("div", "when", data.current.path));
+    if (!data.current.writable) { pick.disabled = true;
+      pick.querySelector(".when").textContent = "нет доступа на запись"; }
+    pick.addEventListener("click", () => addExisting(data.current.path, data.current.name));
+    list.appendChild(pick);
+  }
+  // Вверх по дереву.
+  if (data.parent) {
+    const up = el("button", "list-item pressable");
+    up.appendChild(el("div", "title", "↑ Вверх"));
+    up.addEventListener("click", () => openBrowser(data.parent));
+    list.appendChild(up);
+  }
+  // Подпапки.
+  if (!data.entries.length) list.appendChild(el("div", "muted browse-empty", "Вложенных папок нет."));
+  data.entries.forEach((d) => {
+    const row = el("div", "proj-row");
+    const b = el("button", "list-item pressable");
+    const title = d.name + (d.is_project ? " · уже проект" : "") + (d.accessible ? "" : " · нет доступа");
+    b.appendChild(el("div", "title", title));
+    if (d.accessible) b.addEventListener("click", () => openBrowser(d.path));
+    else b.disabled = true;
+    row.appendChild(b);
+    if (d.accessible && !d.is_project && d.writable) {
+      const add = el("button", "proj-del pressable", "＋");
+      add.title = "Добавить как проект";
+      add.addEventListener("click", (e) => { e.stopPropagation(); addExisting(d.path, d.name); });
+      row.appendChild(add);
+    }
+    list.appendChild(row);
+  });
+}
+async function addExisting(path, suggested) {
+  const name = prompt("Имя проекта (пусто — из названия папки):", suggested || "");
+  if (name === null) return;  // отмена
+  const r = await api("/api/projects/add", {
+    method: "POST", body: JSON.stringify({ path, name: name.trim() || null }) });
   const data = await r.json();
   if (!r.ok) { alert("Не удалось: " + (data.detail || r.status)); return; }
   await loadProjects(data.project.name); renderProjectsSheet();
