@@ -682,21 +682,67 @@ async function rejectAdminRow(id) { if (!confirm('Удалить админис�
 // исходящие перезвоны) — отвечает на "где посмотреть критические ошибки".
 // Запись звонка слушается прямо из карточки звонка (см. openCall) — через
 // UIS отдельно заходить не нужно.
+// агрегирует, какие пункты чек-листа у этого набора звонков чаще всего
+// проваливаются/частично выполняются — та же логика, что и в печатных
+// отчётах (reports.js:checklistFunnel), но на клиенте, т.к. список звонков
+// уже загружен; NA/UNCERTAIN не портят процент (см. checklistStatusOf)
+function buildChecklistFunnel(calls) {
+  const byText = new Map();
+  for (const c of calls) {
+    if (!c.checklist_results) continue;
+    for (const item of c.checklist_results) {
+      const status = checklistStatusOf(item);
+      if (!byText.has(item.text)) byText.set(item.text, { pass: 0, partial: 0, fail: 0, na: 0, uncertain: 0 });
+      const agg = byText.get(item.text);
+      if (status === 'PASS') agg.pass++;
+      else if (status === 'PARTIAL') agg.partial++;
+      else if (status === 'FAIL') agg.fail++;
+      else if (status === 'NA') agg.na++;
+      else agg.uncertain++;
+    }
+  }
+  return Array.from(byText.entries()).map(([text, agg]) => {
+    const applicable = agg.pass + agg.partial + agg.fail;
+    const pct = applicable ? Math.round(((agg.pass + agg.partial * 0.5) / applicable) * 100) : null;
+    return { text, pct, applicable, ...agg };
+  }).sort((a, b) => (a.pct ?? 101) - (b.pct ?? 101)); // без применимых случаев — в конец
+}
+
 async function openAdminProfile(id) {
   const a = ADMINS.find(x => x.id === id);
   if (!a) return;
   const calls = await api('/calls?admin_id=' + id);
   const scored = calls.filter(c => c.checklist_total);
   const avgPct = scored.length ? Math.round(scored.reduce((s,c) => s + c.checklist_score/c.checklist_total, 0) / scored.length * 100) : null;
-  let criticalCount = 0;
   const bookingCount = calls.filter(c => c.outcome === 'booking').length;
-  calls.forEach(c => { try { criticalCount += c.critical_errors ? JSON.parse(c.critical_errors).length : 0; } catch { /* noop */ } });
+
+  const criticalItems = [];
+  calls.forEach(c => {
+    if (!c.critical_errors) return;
+    try { JSON.parse(c.critical_errors).forEach(e => criticalItems.push({ call: c, error: e })); } catch { /* noop */ }
+  });
+
+  const funnel = buildChecklistFunnel(calls).filter(f => f.applicable > 0 || f.na || f.uncertain);
+
   const rows = calls.map(c => `<tr>
     <td>${esc(c.started_at)}</td><td>${esc(c.salon_name)}</td><td>${c.direction==='in'?'вх':'исх'}</td>
     <td>${qualityBadge(c.checklist_score, c.checklist_total)}</td>
     <td>${esc(c.outcome||'—')}</td>
     <td><button onclick="openCall(${c.id})">Открыть</button></td>
   </tr>`);
+
+  const criticalRows = criticalItems.map(({call, error}) => `<tr>
+    <td>${esc(call.started_at)}</td><td>${esc(call.salon_name)}</td>
+    <td><b>${esc(error.description || error.type || '')}</b>${error.evidence ? `<div class="muted">«${esc(error.evidence)}»</div>` : ''}</td>
+    <td><button onclick="openCall(${call.id})">Открыть</button></td>
+  </tr>`);
+
+  const funnelRows = funnel.map(f => `<tr>
+    <td>${esc(f.text)}</td>
+    <td>${f.applicable ? `<span style="font-weight:600;color:${qualityColor(f.pct)}">${f.pct}%</span>` : '<span class="muted">не применялось</span>'}</td>
+    <td>✅${f.pass} ⚠️${f.partial} ❌${f.fail}${f.na ? ` ➖${f.na}` : ''}${f.uncertain ? ` ❓${f.uncertain}` : ''}</td>
+  </tr>`);
+
   document.getElementById('modal-root').innerHTML = `
     <div class="modal-bg" onclick="if(event.target===this)this.remove()">
       <div class="modal" style="max-width:900px">
@@ -708,9 +754,19 @@ async function openAdminProfile(id) {
         <div class="row" style="gap:24px;margin:14px 0">
           <div><b style="font-size:20px">${calls.length}</b><div class="muted">звонков</div></div>
           <div><b style="font-size:20px;${avgPct!=null?`color:${qualityColor(avgPct)}`:''}">${avgPct==null?'—':avgPct+'%'}</b><div class="muted">Quality Score</div></div>
-          <div><b style="font-size:20px">${criticalCount}</b><div class="muted">критических ошибок</div></div>
+          <div><b style="font-size:20px">${criticalItems.length}</b><div class="muted">критических ошибок</div></div>
           <div><b style="font-size:20px">${bookingCount}</b><div class="muted">записей</div></div>
         </div>
+
+        ${criticalItems.length ? `
+        <h4 style="color:#d33">⚠️ Критические ошибки</h4>
+        <table><tr><th>Дата</th><th>Объект</th><th>Ошибка</th><th></th></tr>${criticalRows.join('')}</table>` : ''}
+
+        ${funnel.length ? `
+        <h4>📉 По пунктам чек-листа (где слабее всего)</h4>
+        <table><tr><th>Пункт</th><th>Выполнение</th><th>Детали</th></tr>${paginatedRows(funnelRows, 8)}</table>` : ''}
+
+        <h4>Звонки</h4>
         <table><tr><th>Дата</th><th>Объект</th><th>Напр.</th><th>Чек-лист</th><th>Исход</th><th></th></tr>
           ${paginatedRows(rows, 20) || '<tr><td colspan="6" class="muted">Звонков нет</td></tr>'}
         </table>
