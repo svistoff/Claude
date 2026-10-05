@@ -459,7 +459,7 @@ async function loadCalls() {
   const statusLabel = { new:'новый', processing:'обработка', done:'готово', error:'ошибка', missed:'пропущен', skipped:'без ответа', imported:'историческое (без ИИ)' };
   const rows = calls.map(c => `
         <tr>
-          <td>${esc(c.started_at)}</td><td>${esc(c.salon_name)}</td><td>${c.direction==='in'?'вх':'исх'}</td>
+          <td>${esc(c.started_at)}</td><td>${esc(c.salon_name)}${c.is_ad_call ? ' <span class="tag">анкета</span>' : ''}</td><td>${c.direction==='in'?'вх':'исх'}</td>
           <td>${esc(c.caller_phone||'—')}</td><td>${esc(c.client_name||'—')}</td>
           <td>${esc(c.matched_admin_name || c.detected_admin_name || '—')}</td>
           <td>${qualityBadge(c.checklist_score, c.checklist_total)}</td>
@@ -532,7 +532,7 @@ async function openCall(id) {
           <button onclick="document.querySelector('.modal-bg').remove()">✕</button>
         </div>
         <p class="muted">Длительность: ${c.duration_sec}с · Направление: ${c.direction==='in'?'входящий':'исходящий'} · Клиент: ${esc(c.client_name || c.caller_phone || '—')}</p>
-        <p class="muted">Набранный номер: ${esc(c.dialed_number || '—')} · Тип объекта / чек-лист: ${c.salon_type==='sauna'?'сауна':'салон'}</p>
+        <p class="muted">Набранный номер: ${esc(c.dialed_number || '—')} · Тип объекта / чек-лист: ${c.is_ad_call ? 'анкета (рекламный номер)' : (c.salon_type==='sauna'?'сауна':'салон')}</p>
         ${scenarioLine ? `<p class="muted">Сценарий: ${scenarioLine}</p>` : ''}
         ${c.recording_url ? `<audio controls preload="none" src="${esc(c.recording_url)}" style="width:100%;margin:8px 0"></audio>` : ''}
 
@@ -712,7 +712,10 @@ async function openAdminProfile(id) {
   const a = ADMINS.find(x => x.id === id);
   if (!a) return;
   const calls = await api('/calls?admin_id=' + id);
-  const scored = calls.filter(c => c.checklist_total);
+  // анкетные/рекламные звонки оцениваются по отдельному чек-листу "Анкета" —
+  // не должны портить/улучшать общий Quality Score и разбор по пунктам
+  const scoreableCalls = calls.filter(c => !c.is_ad_call);
+  const scored = scoreableCalls.filter(c => c.checklist_total);
   const avgPct = scored.length ? Math.round(scored.reduce((s,c) => s + c.checklist_score/c.checklist_total, 0) / scored.length * 100) : null;
   const bookingCount = calls.filter(c => c.outcome === 'booking').length;
 
@@ -722,10 +725,10 @@ async function openAdminProfile(id) {
     try { JSON.parse(c.critical_errors).forEach(e => criticalItems.push({ call: c, error: e })); } catch { /* noop */ }
   });
 
-  const funnel = buildChecklistFunnel(calls).filter(f => f.applicable > 0 || f.na || f.uncertain);
+  const funnel = buildChecklistFunnel(scoreableCalls).filter(f => f.applicable > 0 || f.na || f.uncertain);
 
   const rows = calls.map(c => `<tr>
-    <td>${esc(c.started_at)}</td><td>${esc(c.salon_name)}</td><td>${c.direction==='in'?'вх':'исх'}</td>
+    <td>${esc(c.started_at)}</td><td>${esc(c.salon_name)}${c.is_ad_call ? ' <span class="tag">анкета</span>' : ''}</td><td>${c.direction==='in'?'вх':'исх'}</td>
     <td>${qualityBadge(c.checklist_score, c.checklist_total)}</td>
     <td>${esc(c.outcome||'—')}</td>
     <td><button onclick="openCall(${c.id})">Открыть</button></td>
@@ -1047,8 +1050,8 @@ async function deleteSalonLabel(salonId, labelId) {
 let CHECKLIST_ITEMS = [];
 
 RENDERERS.checklist = async function renderChecklist() {
-  const [salonTpl, saunaTpl] = await Promise.all([api('/checklist?template=salon'), api('/checklist?template=sauna')]);
-  CHECKLIST_ITEMS = [...salonTpl, ...saunaTpl];
+  const [salonTpl, saunaTpl, anketaTpl] = await Promise.all([api('/checklist?template=salon'), api('/checklist?template=sauna'), api('/checklist?template=anketa')]);
+  CHECKLIST_ITEMS = [...salonTpl, ...saunaTpl, ...anketaTpl];
   const main = document.getElementById('main');
   const itemRow = i => `<tr>
     <td>${esc(i.text)}${i.not_applicable_hint ? `<div class="muted" style="font-size:12px">не применим: ${esc(i.not_applicable_hint)}</div>` : ''}</td>
@@ -1077,6 +1080,10 @@ RENDERERS.checklist = async function renderChecklist() {
     не нужен (тогда это NA, а не минус балл) — например, «клиент уже был и знает все условия».</p>
     ${tplBlock('Салон', 'salon', salonTpl)}
     ${tplBlock('Сауна', 'sauna', saunaTpl)}
+    <p class="muted">«Анкета» — для звонков на рекламный/анкетный номер (раздел «Анкеты»): администратор
+    заранее знает, что звонок не по скрипту конкретного объекта, поэтому оценивается отдельно и не входит
+    в общий рейтинг Quality Score. Единый на всю сеть, без привязки к объекту.</p>
+    ${tplBlock('Анкета', 'anketa', anketaTpl)}
     <div class="card">
       <h3>Личные пункты объектов (добавки поверх шаблона / приватные списки)</h3>
       ${SALONS.map(s => `<div style="margin-bottom:12px">

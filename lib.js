@@ -57,6 +57,24 @@ function getEffectiveChecklist(salon) {
   `).all(salon.id, salon.type, salon.id);
 }
 
+// Чек-лист для звонков на анкетный/рекламный номер (см. ad_phone_numbers) —
+// администратор заранее знает от ЮИС, что это не обычный звонок в объект, и
+// не обязан вести его по скрипту конкретного салона/сауны. Единый на всю
+// сеть, без привязки к объекту и без override'ов — объект тут не при чём.
+function getAnketaChecklist() {
+  return db.prepare(`
+    SELECT * FROM checklist_items WHERE template = 'anketa' AND salon_id IS NULL AND active = 1 ORDER BY position, id
+  `).all();
+}
+
+// Набор нормализованных анкетных/рекламных номеров (см. ad_phone_numbers) —
+// используется, чтобы понять, что звонок пришёл не "в объект", а "в анкету"
+// (calls.dialed_number у таких звонков совпадает с одним из этих номеров).
+function getAdPhoneNumberSet() {
+  const rows = db.prepare('SELECT phone FROM ad_phone_numbers').all();
+  return new Set(rows.map(r => r.phone).filter(Boolean));
+}
+
 // Карта "нормализованный номер -> salon_id" по всем активным объектам:
 // основной номер салона + все доп. номера (например, с рекламных площадок
 // с переадресацией на этот салон). Используется телефонией, чтобы разложить
@@ -128,7 +146,7 @@ function canAccessSalon(user, salonId) {
 }
 
 module.exports = {
-  normalizePhone, findOrCreateClient, getEffectiveChecklist, getSalonPhoneMap,
-  getSharedIvrNumberSet, getExcludedNumberSet, getExcludedCallerNumberSet,
+  normalizePhone, findOrCreateClient, getEffectiveChecklist, getAnketaChecklist, getSalonPhoneMap,
+  getSharedIvrNumberSet, getExcludedNumberSet, getExcludedCallerNumberSet, getAdPhoneNumberSet,
   getActionNameSalonMap, adminForUser, canAccessSalon
 };

@@ -11,7 +11,7 @@
 const fetch = require('node-fetch');
 const FormData = require('form-data');
 const db = require('./db');
-const { getEffectiveChecklist } = require('./lib');
+const { getEffectiveChecklist, getAnketaChecklist, getAdPhoneNumberSet } = require('./lib');
 
 const OPENAI_BASE = 'https://api.openai.com/v1';
 
@@ -71,7 +71,7 @@ async function transcribeAudio(buffer, model, apiKey, durationSec, promptHint) {
   return { text: json.text || '', costUsd };
 }
 
-function buildAnalysisPrompt({ companyContext, transcript, salon, admins, checklist, direction, callbackStatus }) {
+function buildAnalysisPrompt({ companyContext, transcript, salon, admins, checklist, direction, callbackStatus, isAdCall }) {
   const adminsList = admins.length
     ? admins.map(a => `- "${a.name}" (id=${a.id}, статус: ${a.status === 'confirmed' ? 'подтверждён' : 'не подтверждён'})`).join('\n')
     : '(справочник администраторов пока пуст)';
@@ -86,10 +86,13 @@ function buildAnalysisPrompt({ companyContext, transcript, salon, admins, checkl
   const callContext = direction === 'out'
     ? `Это ИСХОДЯЩИЙ звонок — вероятно, перезвон администратора клиенту после пропущенного звонка${callbackStatus ? ` (перезвонили ${callbackStatus === 'on_time' ? 'вовремя' : 'позже обычного окна'})` : ''}. Разбери его по тому же чек-листу, как обычный разговор.`
     : 'Это входящий звонок клиента.';
+  const objectLine = isAdCall
+    ? `Этот звонок пришёл на РЕКЛАМНЫЙ/АНКЕТНЫЙ номер (администратору перед ответом ЮИС озвучивает это голосом) — клиент звонит по конкретному объявлению/анкете, а не в объект «${salon.name}» напрямую. Администратор в курсе источника звонка и не обязан вести его по стандартному скрипту объекта — ниже отдельный чек-лист именно для таких звонков, оценивай строго по нему, а не по общим правилам объекта.`
+    : `Этот объект: ${objectKind} «${salon.name}».`;
 
   const system = `Ты — AI-аудитор качества телефонных звонков администраторов сети массажных салонов и сауны.
 Контекст компании: ${companyContext || 'Сеть массажных салонов и сауна, администраторы принимают звонки и записывают клиентов.'}
-Этот объект: ${objectKind} «${salon.name}». ${callContext}
+${objectLine} ${callContext}
 
 ГЛАВНЫЙ ПРИНЦИП: ты НЕ проверяешь, произнёс ли администратор все пункты стандартного
 скрипта. Сначала определи контекст — зачем клиент позвонил, что он уже знает, насколько
@@ -306,7 +309,12 @@ async function processCall(callId, { reuseTranscript = false } = {}) {
     // администраторы — общий список по всей сети: один и тот же человек может
     // в разные смены выходить в разных салонах, ИИ узнаёт по имени, не по объекту
     const admins = db.prepare('SELECT * FROM admins').all();
-    const checklist = getEffectiveChecklist(salon);
+
+    // звонок на рекламный/анкетный номер (см. ad_phone_numbers) — администратор
+    // заранее знает об этом от ЮИС и не обязан вести его по скрипту объекта,
+    // поэтому оценивается по отдельному сетевому чек-листу "Анкета"
+    const isAdCall = !!(call.dialed_number && getAdPhoneNumberSet().has(call.dialed_number));
+    const checklist = isAdCall ? getAnketaChecklist() : getEffectiveChecklist(salon);
 
     let transcript;
     if (reuseTranscript && call.transcript) {
@@ -328,7 +336,7 @@ async function processCall(callId, { reuseTranscript = false } = {}) {
 
     const { parsed, costUsd: analysisCost } = await analyzeTranscript({
       transcript, companyContext: settings.company_context, salon, admins, checklist,
-      direction: call.direction, callbackStatus: call.callback_status,
+      direction: call.direction, callbackStatus: call.callback_status, isAdCall,
       model: settings.analysis_model, apiKey: settings.openai_api_key
     });
     logUsage(callId, 'analysis', analysisCost);

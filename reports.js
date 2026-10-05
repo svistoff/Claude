@@ -158,7 +158,8 @@ function callsTable(calls) {
 
 function answeredCallsQuery(where, params) {
   return db.prepare(`
-    SELECT c.*, s.name AS salon_name, a.name AS matched_admin_name
+    SELECT c.*, s.name AS salon_name, a.name AS matched_admin_name,
+      EXISTS(SELECT 1 FROM ad_phone_numbers an WHERE an.phone = c.dialed_number) AS is_ad_call
     FROM calls c JOIN salons s ON s.id = c.salon_id
     LEFT JOIN admins a ON a.id = c.matched_admin_id
     WHERE c.status = 'done' AND ${where}
@@ -173,10 +174,13 @@ async function renderAdminReport(adminId, period) {
   if (!admin) throw new Error('Администратор не найден');
 
   const calls = answeredCallsQuery('c.matched_admin_id = ? AND c.started_at >= ?', [adminId, periodStart(period)]);
-  const avgPct = calls.length ? Math.round(calls.reduce((s, c) => s + (c.checklist_score / (c.checklist_total || 1)), 0) / calls.length * 100) : 0;
-  const noIntro = calls.filter(c => c.checklist_results && JSON.parse(c.checklist_results).some(i => /представ/i.test(i.text) && i.state === 'no')).length;
+  // звонки на анкетный/рекламный номер оцениваются по отдельному чек-листу
+  // "Анкета" (см. ai-processing.js) — не должны портить/улучшать общий Quality Score
+  const scoredCalls = calls.filter(c => !c.is_ad_call);
+  const avgPct = scoredCalls.length ? Math.round(scoredCalls.reduce((s, c) => s + (c.checklist_score / (c.checklist_total || 1)), 0) / scoredCalls.length * 100) : 0;
+  const noIntro = scoredCalls.filter(c => c.checklist_results && JSON.parse(c.checklist_results).some(i => /представ/i.test(i.text) && i.state === 'no')).length;
   const bookings = calls.filter(c => c.outcome === 'booking').length;
-  const funnel = checklistFunnel(calls);
+  const funnel = checklistFunnel(scoredCalls);
   const salonsTouched = [...new Set(calls.map(c => c.salon_name))].join(', ') || 'нет звонков за период';
   const narrative = await generateNarrative({ calls, contextLabel: `администратора ${admin.name} (${salonsTouched})` });
 
@@ -208,15 +212,17 @@ async function renderSalonReport(salonId, period) {
   const conversion = calls.length ? Math.round((bookings / calls.length) * 100) : 0;
 
   // администратор больше не привязан к объекту — считаем тех, кто реально
-  // принимал звонки этого объекта за период (по calls, а не по admins.salon_id)
+  // принимал звонки этого объекта за период (по calls, а не по admins.salon_id);
+  // анкетные звонки (отдельный чек-лист "Анкета") не портят/улучшают средний балл
   const byAdmin = db.prepare(`
     SELECT a.name, COUNT(c.id) AS calls_count, AVG(c.checklist_score * 1.0 / NULLIF(c.checklist_total,0)) AS avg_pct
     FROM calls c JOIN admins a ON a.id = c.matched_admin_id
     WHERE c.salon_id = ? AND c.status = 'done' AND c.started_at >= ?
+      AND NOT EXISTS (SELECT 1 FROM ad_phone_numbers an WHERE an.phone = c.dialed_number)
     GROUP BY a.id ORDER BY calls_count DESC
   `).all(salonId, since);
 
-  const funnel = checklistFunnel(calls);
+  const funnel = checklistFunnel(calls.filter(c => !c.is_ad_call));
   const narrative = await generateNarrative({ calls, contextLabel: `по объекту «${salon.name}»` });
 
   const adminRows = byAdmin.map(a => `<tr><td>${esc(a.name)}</td><td>${a.calls_count}</td><td>${a.avg_pct ? Math.round(a.avg_pct * 100) + '%' : '—'}</td></tr>`).join('');

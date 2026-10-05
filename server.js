@@ -408,7 +408,7 @@ app.get('/api/checklist', (req, res) => {
     return res.json(getEffectiveChecklist(salon));
   }
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Укажите salon_id' });
-  const template = req.query.template === 'sauna' ? 'sauna' : 'salon';
+  const template = ['sauna', 'anketa'].includes(req.query.template) ? req.query.template : 'salon';
   const items = db.prepare('SELECT * FROM checklist_items WHERE template = ? AND salon_id IS NULL ORDER BY position, id').all(template);
   res.json(items);
 });
@@ -416,8 +416,8 @@ app.get('/api/checklist', (req, res) => {
 app.post('/api/checklist', auth.requireAdmin, (req, res) => {
   const { text, template, salon_id, position, weight, critical, salary_penalty_allowed, partial_coefficient, not_applicable_hint } = req.body || {};
   if (!text) return res.status(400).json({ error: 'Текст пункта обязателен' });
-  if (!salon_id && template !== 'salon' && template !== 'sauna') {
-    return res.status(400).json({ error: 'Укажите template (salon/sauna) для общего пункта или salon_id для пункта объекта' });
+  if (!salon_id && !['salon', 'sauna', 'anketa'].includes(template)) {
+    return res.status(400).json({ error: 'Укажите template (salon/sauna/anketa) для общего пункта или salon_id для пункта объекта' });
   }
   const info = db.prepare(`
     INSERT INTO checklist_items (template, salon_id, text, position, weight, critical, salary_penalty_allowed, partial_coefficient, not_applicable_hint)
@@ -491,7 +491,8 @@ app.get('/api/calls', (req, res) => {
 
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const rows = db.prepare(`
-    SELECT c.*, s.name AS salon_name, a.name AS matched_admin_name, cl.name AS client_name
+    SELECT c.*, s.name AS salon_name, a.name AS matched_admin_name, cl.name AS client_name,
+      EXISTS(SELECT 1 FROM ad_phone_numbers an WHERE an.phone = c.dialed_number) AS is_ad_call
     FROM calls c
     JOIN salons s ON s.id = c.salon_id
     LEFT JOIN admins a ON a.id = c.matched_admin_id
@@ -506,7 +507,8 @@ app.get('/api/calls', (req, res) => {
 
 app.get('/api/calls/:id', (req, res) => {
   const call = db.prepare(`
-    SELECT c.*, s.name AS salon_name, s.type AS salon_type, a.name AS matched_admin_name, cl.name AS client_name, cl.phone AS client_phone_norm
+    SELECT c.*, s.name AS salon_name, s.type AS salon_type, a.name AS matched_admin_name, cl.name AS client_name, cl.phone AS client_phone_norm,
+      EXISTS(SELECT 1 FROM ad_phone_numbers an WHERE an.phone = c.dialed_number) AS is_ad_call
     FROM calls c JOIN salons s ON s.id = c.salon_id
     LEFT JOIN admins a ON a.id = c.matched_admin_id
     LEFT JOIN clients cl ON cl.id = c.client_id
@@ -578,13 +580,16 @@ app.get('/api/dashboard', auth.requireAdmin, (req, res) => {
   }
 
   // рейтинг администраторов по Quality Score за последние 30 дней — только
-  // звонки, у которых вообще есть применимые пункты чек-листа (checklist_total > 0)
+  // звонки, у которых вообще есть применимые пункты чек-листа (checklist_total > 0),
+  // и не звонки на анкетный/рекламный номер (см. ad_phone_numbers) — те оценены
+  // по отдельному чек-листу "Анкета" и не должны портить/улучшать общий рейтинг
   const adminRanking = db.prepare(`
     SELECT a.id, a.name, COUNT(c.id) AS calls_count,
       AVG(c.checklist_score * 1.0 / c.checklist_total) AS avg_pct,
       SUM(CASE WHEN c.critical_errors IS NOT NULL THEN 1 ELSE 0 END) AS critical_count
     FROM admins a JOIN calls c ON c.matched_admin_id = a.id
     WHERE c.status = 'done' AND c.checklist_total > 0 AND c.started_at >= datetime('now', '-30 days')
+      AND NOT EXISTS (SELECT 1 FROM ad_phone_numbers an WHERE an.phone = c.dialed_number)
     GROUP BY a.id
     ORDER BY avg_pct DESC
   `).all();
