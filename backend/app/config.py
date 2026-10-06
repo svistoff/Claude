@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     # Генерация изображений (fal.ai).
     fal_key: str = ""
 
+    # Наставник: доставка напоминаний в Telegram (раздел 30 ТЗ).
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
+
     # GitHub (Фаза 2) — fine-grained PAT с минимальными правами.
     github_token: str = ""
 
@@ -81,6 +85,14 @@ class ImageConfig(BaseModel):
     provider: str = "fal"
     model: str = "fal-ai/flux/schnell"   # быстрая/дешёвая модель генерации
     base_url: str = "https://fal.run"
+
+
+class MentorConfig(BaseModel):
+    # Наставник-планировщик: ежедневные советы в Telegram (раздел 30 ТЗ).
+    enabled: bool = True
+    # Смещение часового пояса пользователя от UTC (часы). Время напоминаний
+    # задаётся в этом поясе. МСК = 3, Екатеринбург = 5.
+    tz_offset_hours: int = 3
 
 
 class PricingConfig(BaseModel):
@@ -137,6 +149,7 @@ class AppConfig(BaseModel):
     uploads: UploadConfig = UploadConfig()
     browser: BrowserConfig = BrowserConfig()
     image: ImageConfig = ImageConfig()
+    mentor: MentorConfig = MentorConfig()
     projects: list[ProjectConfig] = []
     # Родительская папка, внутри которой агент может создавать новые проекты
     # (кнопка «+ Новый проект»). None — создание новых проектов отключено.

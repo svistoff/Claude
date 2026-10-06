@@ -88,6 +88,39 @@ class AppSetting(Base):
     value: Mapped[str] = mapped_column(String(512), default="")
 
 
+class Reminder(Base):
+    """Напоминание наставника: ежедневный совет по проекту в Telegram."""
+
+    __tablename__ = "reminders"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    # Проект (имя) — к чему относится совет. None = без привязки (общий).
+    project: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # Цель/контекст: путь до первого рубля, что уже сделано, что мешает.
+    goal: Mapped[str] = mapped_column(Text, default="")
+    # Время отправки в локальном поясе пользователя, строка "HH:MM".
+    time_local: Mapped[str] = mapped_column(String(5), default="09:00")
+    # Только по будням (пн–пт).
+    weekdays_only: Mapped[bool] = mapped_column(Boolean, default=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Дата последней отправки "YYYY-MM-DD" (защита от повторной отправки за день).
+    last_sent_date: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
+class ReminderLog(Base):
+    """История отправленных советов (для UI и чтобы не терять контекст)."""
+
+    __tablename__ = "reminder_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    reminder_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    project: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    text: Mapped[str] = mapped_column(Text, default="")
+    ok: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
 class ToolCallLog(Base):
     __tablename__ = "tool_calls"
 

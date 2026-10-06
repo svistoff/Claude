@@ -31,6 +31,7 @@
       <div class="grow"></div>
       <button id="btn-project" class="pill pressable"><span id="project-name">—</span><span class="chev">▼</span></button>
       <button id="btn-git" class="icon-btn" aria-label="Git">⑂</button>
+      <button id="btn-mentor" class="icon-btn" aria-label="Наставник">🎯</button>
       <button id="btn-settings" class="icon-btn" aria-label="Настройки">⚙</button>
     </header>
 
@@ -85,6 +86,29 @@
     <div class="sheet-actions">
       <button id="btn-logout" class="btn-ghost pressable">Выйти</button>
     </div>
+  </div>
+
+  <!-- Лист: наставник (планировщик + Telegram) -->
+  <div id="sheet-mentor" class="sheet bottom" hidden>
+    <div class="grabber"></div>
+    <h2>Наставник</h2>
+    <div id="mentor-tg" class="mentor-status"></div>
+    <div id="mentor-list" class="list sheet-scroll"></div>
+
+    <div class="field-label">Новое напоминание</div>
+    <div class="mentor-form">
+      <select id="mentor-project" class="mentor-input"></select>
+      <div class="mentor-row">
+        <input id="mentor-time" class="mentor-input" type="time" value="09:00">
+        <label class="mentor-check"><input id="mentor-weekdays" type="checkbox"> только будни</label>
+      </div>
+      <textarea id="mentor-goal" class="mentor-input" rows="3"
+        placeholder="Цель: кто клиент, за что платит, что мешает первому рублю…"></textarea>
+      <button id="mentor-add" class="btn-accent pressable">Добавить напоминание</button>
+    </div>
+
+    <div class="field-label">Последние советы</div>
+    <div id="mentor-recent" class="mentor-recent"></div>
   </div>
 
   <!-- Лист: Git (снизу) -->

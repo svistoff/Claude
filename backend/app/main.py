@@ -10,9 +10,10 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .api import (auth_routes, browser_routes, chat, files, git_routes,
-                  github_routes, projects, settings, uploads)
+                  github_routes, mentor, projects, settings, uploads)
 from .config import BACKEND_DIR
 from .database import init_db
+from .mentor import scheduler as mentor_scheduler
 
 FRONTEND_DIR = BACKEND_DIR.parent / "frontend"
 
@@ -20,7 +21,11 @@ FRONTEND_DIR = BACKEND_DIR.parent / "frontend"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    yield
+    mentor_scheduler.start()  # фоновый планировщик напоминаний (наставник)
+    try:
+        yield
+    finally:
+        mentor_scheduler.stop()
 
 
 app = FastAPI(title="AI Coding Agent", version="0.1.0",
@@ -46,6 +51,7 @@ app.include_router(files.router)
 app.include_router(settings.router)
 app.include_router(uploads.router)
 app.include_router(browser_routes.router)
+app.include_router(mentor.router)
 
 
 @app.get("/api/health")

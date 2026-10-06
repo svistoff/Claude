@@ -175,6 +175,7 @@ async function showApp() {
     projects: new Sheet($("#sheet-projects"), "bottom"),
     settings: new Sheet($("#sheet-settings"), "bottom"),
     git: new Sheet($("#sheet-git"), "bottom"),
+    mentor: new Sheet($("#sheet-mentor"), "bottom"),
   };
   await loadProjects();
   await loadSettings();
@@ -350,6 +351,97 @@ $("#btn-settings").addEventListener("click", () => openSheet("settings"));
 $("#btn-logout").addEventListener("click", async () => {
   await api("/api/logout", { method: "POST" }); location.reload();
 });
+
+// ============================================================================
+//  Наставник — напоминания в Telegram (планировщик)
+// ============================================================================
+const DOW = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
+async function openMentor() {
+  // Проекты в выпадающий список.
+  const sel = $("#mentor-project"); sel.innerHTML = "";
+  sel.appendChild(el("option", null, "— без проекта —"));
+  (projectsCache || []).forEach((p) => {
+    const o = el("option", null, p.name); o.value = p.name; sel.appendChild(o);
+  });
+  await loadMentor();
+  openSheet("mentor");
+}
+async function loadMentor() {
+  const data = await (await api("/api/mentor")).json();
+  const tg = $("#mentor-tg");
+  tg.className = "mentor-status " + (data.telegram_configured ? "ok" : "warn");
+  tg.textContent = data.telegram_configured
+    ? "✓ Telegram подключён — напоминания будут приходить в чат."
+    : "⚠ Telegram не настроен. Задай TELEGRAM_BOT_TOKEN и TELEGRAM_CHAT_ID в .env на сервере.";
+
+  const list = $("#mentor-list"); list.innerHTML = "";
+  if (!data.reminders.length) list.appendChild(el("div", "muted", "Пока нет напоминаний."));
+  data.reminders.forEach((r) => list.appendChild(renderReminder(r)));
+
+  const recent = $("#mentor-recent"); recent.innerHTML = "";
+  if (!data.recent.length) recent.appendChild(el("div", "muted", "Советов пока не было."));
+  data.recent.forEach((l) => {
+    const d = el("div", "mentor-log" + (l.ok ? "" : " bad"));
+    d.appendChild(el("div", "mentor-log-head",
+      `${l.project || "без проекта"} · ${new Date(l.created_at).toLocaleString()}${l.ok ? "" : " · не доставлено"}`));
+    d.appendChild(el("div", "mentor-log-text", l.text));
+    recent.appendChild(d);
+  });
+}
+function renderReminder(r) {
+  const row = el("div", "reminder");
+  const top = el("div", "reminder-top");
+  const when = r.time_local + (r.weekdays_only ? " · будни" : " · ежедневно");
+  top.appendChild(el("div", "reminder-title", (r.project || "без проекта") + " · " + when));
+  const toggle = el("button", "reminder-toggle pressable", r.enabled ? "вкл" : "выкл");
+  toggle.setAttribute("aria-selected", String(r.enabled));
+  toggle.addEventListener("click", () => patchReminder(r.id, { enabled: !r.enabled }));
+  top.appendChild(toggle);
+  row.appendChild(top);
+  if (r.goal) row.appendChild(el("div", "reminder-goal", r.goal));
+  const acts = el("div", "reminder-acts");
+  const test = el("button", "reminder-btn pressable", "Прислать сейчас");
+  test.addEventListener("click", () => testReminder(r.id, test));
+  const del = el("button", "reminder-btn danger pressable", "Удалить");
+  del.addEventListener("click", () => deleteReminder(r.id));
+  acts.appendChild(test); acts.appendChild(del);
+  row.appendChild(acts);
+  return row;
+}
+async function addReminder() {
+  const project = $("#mentor-project").value || null;
+  const time_local = $("#mentor-time").value || "09:00";
+  const weekdays_only = $("#mentor-weekdays").checked;
+  const goal = $("#mentor-goal").value.trim();
+  const r = await api("/api/mentor/reminders", { method: "POST",
+    body: JSON.stringify({ project, time_local, weekdays_only, goal }) });
+  const data = await r.json();
+  if (!r.ok) { alert("Не удалось: " + (data.detail || r.status)); return; }
+  $("#mentor-goal").value = "";
+  await loadMentor();
+}
+async function patchReminder(id, fields) {
+  const r = await api("/api/mentor/reminders/" + id, { method: "PATCH", body: JSON.stringify(fields) });
+  if (!r.ok) { const d = await r.json().catch(() => ({})); alert("Не удалось: " + (d.detail || r.status)); return; }
+  await loadMentor();
+}
+async function deleteReminder(id) {
+  if (!confirm("Удалить напоминание?")) return;
+  const r = await api("/api/mentor/reminders/" + id, { method: "DELETE" });
+  if (!r.ok) { alert("Не удалось удалить."); return; }
+  await loadMentor();
+}
+async function testReminder(id, btn) {
+  const prev = btn.textContent; btn.textContent = "…"; btn.disabled = true;
+  const r = await api("/api/mentor/test", { method: "POST", body: JSON.stringify({ id }) });
+  const data = await r.json().catch(() => ({}));
+  btn.textContent = prev; btn.disabled = false;
+  if (!r.ok) { alert("Ошибка: " + (data.detail || r.status)); return; }
+  await loadMentor();
+  if (!data.ok) alert("Совет создан, но не отправлен: " + (data.error || "проверь Telegram"));
+}
+$("#btn-mentor").addEventListener("click", openMentor);
+$("#mentor-add").addEventListener("click", addReminder);
 
 // ============================================================================
 //  Чаты (история)

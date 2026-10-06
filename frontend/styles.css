@@ -350,6 +350,38 @@ button:active, .pressable:active { transform: scale(0.97); }
 .browse-path { flex: 1; min-width: 0; color: var(--muted); font: 400 12px var(--font-mono);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
 .browse-empty { padding: 8px 4px; }
+
+/* Наставник (планировщик + Telegram) */
+.mentor-status { font: 400 13px var(--font-ui); padding: 10px 12px; border-radius: 10px;
+  border: 1px solid var(--border); margin-bottom: 10px; }
+.mentor-status.ok { color: var(--text); background: var(--surface-2); }
+.mentor-status.warn { color: var(--accent); border-color: var(--accent); }
+.mentor-form { display: flex; flex-direction: column; gap: 8px; }
+.mentor-input { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border);
+  background: var(--surface-solid); color: var(--text); font: 400 14px var(--font-ui); }
+textarea.mentor-input { resize: vertical; font-family: var(--font-ui); }
+.mentor-row { display: flex; align-items: center; gap: 12px; }
+.mentor-row .mentor-input { flex: none; width: auto; }
+.mentor-check { display: flex; align-items: center; gap: 6px; color: var(--muted);
+  font: 400 13px var(--font-ui); }
+.reminder { padding: 12px 14px; border-radius: 12px; background: var(--surface-solid);
+  border: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
+.reminder-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.reminder-title { font: 500 14px var(--font-ui); }
+.reminder-toggle { flex: none; padding: 4px 10px; border-radius: 7px; border: 1px solid var(--border);
+  background: var(--surface-2); color: var(--muted); font: 500 12px var(--font-ui); }
+.reminder-toggle[aria-selected="true"] { border-color: var(--accent); color: var(--accent); }
+.reminder-goal { font: 400 13px var(--font-ui); color: var(--muted); white-space: pre-wrap; }
+.reminder-acts { display: flex; gap: 8px; }
+.reminder-btn { padding: 6px 12px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--surface-2); color: var(--text); font: 500 13px var(--font-ui); }
+.reminder-btn.danger { color: #b3402a; }
+.mentor-recent { display: flex; flex-direction: column; gap: 8px; max-height: 240px; overflow-y: auto; }
+.mentor-log { padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border);
+  background: var(--surface-solid); }
+.mentor-log.bad { border-color: var(--accent); }
+.mentor-log-head { font: 500 12px var(--font-ui); color: var(--muted); margin-bottom: 4px; }
+.mentor-log-text { font: 400 13px var(--font-mono); white-space: pre-wrap; color: var(--text); }
 .chat-row { display: flex; align-items: center; gap: 8px; background: var(--surface-solid);
   border: 1px solid var(--border); border-radius: 12px; }
 .chat-row .list-item { border: none; background: none; }

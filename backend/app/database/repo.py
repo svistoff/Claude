@@ -8,7 +8,8 @@ from typing import Any
 from sqlalchemy import select
 
 from . import get_session
-from .models import AppSetting, Conversation, Folder, Message, Project, ToolCallLog
+from .models import (AppSetting, Conversation, Folder, Message, Project,
+                     Reminder, ReminderLog, ToolCallLog)
 
 
 # --- Папки чатов ------------------------------------------------------------
@@ -231,6 +232,84 @@ def remove_project(name: str) -> bool:
         db.delete(p)
         db.commit()
         return True
+
+
+# --- Напоминания наставника -------------------------------------------------
+
+def _reminder_dict(r: Reminder) -> dict[str, Any]:
+    return {"id": r.id, "project": r.project, "goal": r.goal,
+            "time_local": r.time_local, "weekdays_only": r.weekdays_only,
+            "enabled": r.enabled, "last_sent_date": r.last_sent_date}
+
+
+def create_reminder(project: str | None, goal: str, time_local: str,
+                    weekdays_only: bool = False) -> dict:
+    with get_session() as db:
+        r = Reminder(project=project, goal=goal, time_local=time_local,
+                     weekdays_only=weekdays_only, enabled=True)
+        db.add(r)
+        db.commit()
+        return _reminder_dict(r)
+
+
+def list_reminders() -> list[dict]:
+    with get_session() as db:
+        rows = db.execute(select(Reminder).order_by(Reminder.created_at)).scalars().all()
+        return [_reminder_dict(r) for r in rows]
+
+
+def get_reminder(reminder_id: str) -> dict | None:
+    with get_session() as db:
+        r = db.get(Reminder, reminder_id)
+        return _reminder_dict(r) if r else None
+
+
+def update_reminder(reminder_id: str, **fields: Any) -> dict | None:
+    allowed = {"project", "goal", "time_local", "weekdays_only", "enabled", "last_sent_date"}
+    with get_session() as db:
+        r = db.get(Reminder, reminder_id)
+        if r is None:
+            return None
+        for k, v in fields.items():
+            if k in allowed and v is not None:
+                setattr(r, k, v)
+        db.commit()
+        return _reminder_dict(r)
+
+
+def delete_reminder(reminder_id: str) -> bool:
+    with get_session() as db:
+        r = db.get(Reminder, reminder_id)
+        if r is None:
+            return False
+        db.delete(r)
+        db.commit()
+        return True
+
+
+def mark_reminder_sent(reminder_id: str, date_str: str) -> None:
+    with get_session() as db:
+        r = db.get(Reminder, reminder_id)
+        if r is not None:
+            r.last_sent_date = date_str
+            db.commit()
+
+
+def add_reminder_log(reminder_id: str | None, project: str | None,
+                     text: str, ok: bool) -> None:
+    with get_session() as db:
+        db.add(ReminderLog(reminder_id=reminder_id, project=project,
+                           text=text[:8000], ok=ok))
+        db.commit()
+
+
+def recent_reminder_logs(limit: int = 20) -> list[dict]:
+    with get_session() as db:
+        rows = db.execute(
+            select(ReminderLog).order_by(ReminderLog.created_at.desc()).limit(limit)
+        ).scalars().all()
+        return [{"project": l.project, "text": l.text, "ok": l.ok,
+                 "created_at": l.created_at.isoformat()} for l in rows]
 
 
 def _msg_dict(m: Message) -> dict[str, Any]:
