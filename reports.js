@@ -156,13 +156,16 @@ function callsTable(calls) {
     ${rows || '<tr><td colspan="7">Нет звонков за период</td></tr>'}</table>`;
 }
 
-function answeredCallsQuery(where, params) {
+// все звонки периода независимо от статуса обработки — для честного "Звонков"
+// в KPI и для списка в отчёте (видно и звонки, которые ещё не обработаны/упали
+// с ошибкой — не прячем проблему, а не только то, что ИИ успел разобрать)
+function allCallsQuery(where, params) {
   return db.prepare(`
     SELECT c.*, s.name AS salon_name, a.name AS matched_admin_name,
       EXISTS(SELECT 1 FROM ad_phone_numbers an WHERE an.phone = c.dialed_number) AS is_ad_call
     FROM calls c JOIN salons s ON s.id = c.salon_id
     LEFT JOIN admins a ON a.id = c.matched_admin_id
-    WHERE c.status = 'done' AND ${where}
+    WHERE ${where}
     ORDER BY c.started_at DESC
   `).all(...params);
 }
@@ -173,16 +176,17 @@ async function renderAdminReport(adminId, period) {
   const admin = db.prepare('SELECT * FROM admins WHERE id = ?').get(adminId);
   if (!admin) throw new Error('Администратор не найден');
 
-  const calls = answeredCallsQuery('c.matched_admin_id = ? AND c.started_at >= ?', [adminId, periodStart(period)]);
+  const calls = allCallsQuery('c.matched_admin_id = ? AND c.started_at >= ?', [adminId, periodStart(period)]);
+  const doneCalls = calls.filter(c => c.status === 'done');
   // звонки на анкетный/рекламный номер оцениваются по отдельному чек-листу
   // "Анкета" (см. ai-processing.js) — не должны портить/улучшать общий Quality Score
-  const scoredCalls = calls.filter(c => !c.is_ad_call);
+  const scoredCalls = doneCalls.filter(c => !c.is_ad_call);
   const avgPct = scoredCalls.length ? Math.round(scoredCalls.reduce((s, c) => s + (c.checklist_score / (c.checklist_total || 1)), 0) / scoredCalls.length * 100) : 0;
   const noIntro = scoredCalls.filter(c => c.checklist_results && JSON.parse(c.checklist_results).some(i => /представ/i.test(i.text) && i.state === 'no')).length;
   const bookings = calls.filter(c => c.outcome === 'booking').length;
   const funnel = checklistFunnel(scoredCalls);
   const salonsTouched = [...new Set(calls.map(c => c.salon_name))].join(', ') || 'нет звонков за период';
-  const narrative = await generateNarrative({ calls, contextLabel: `администратора ${admin.name} (${salonsTouched})` });
+  const narrative = await generateNarrative({ calls: doneCalls, contextLabel: `администратора ${admin.name} (${salonsTouched})` });
 
   const body = `
     <h2>KPI</h2>${kpiBlock([
@@ -203,7 +207,8 @@ async function renderSalonReport(salonId, period) {
   if (!salon) throw new Error('Объект не найден');
   const since = periodStart(period);
 
-  const calls = answeredCallsQuery('c.salon_id = ? AND c.started_at >= ?', [salonId, since]);
+  const calls = allCallsQuery('c.salon_id = ? AND c.started_at >= ?', [salonId, since]);
+  const doneCalls = calls.filter(c => c.status === 'done');
   const missed = db.prepare(`SELECT COUNT(*) AS c FROM calls WHERE salon_id=? AND direction='in' AND is_answered=0 AND started_at >= ?`).get(salonId, since).c;
   const onTime = db.prepare(`SELECT COUNT(*) AS c FROM calls WHERE salon_id=? AND direction='in' AND is_answered=0 AND callback_status='on_time' AND started_at >= ?`).get(salonId, since).c;
   const late = db.prepare(`SELECT COUNT(*) AS c FROM calls WHERE salon_id=? AND direction='in' AND is_answered=0 AND callback_status='late' AND started_at >= ?`).get(salonId, since).c;
@@ -222,8 +227,8 @@ async function renderSalonReport(salonId, period) {
     GROUP BY a.id ORDER BY calls_count DESC
   `).all(salonId, since);
 
-  const funnel = checklistFunnel(calls.filter(c => !c.is_ad_call));
-  const narrative = await generateNarrative({ calls, contextLabel: `по объекту «${salon.name}»` });
+  const funnel = checklistFunnel(doneCalls.filter(c => !c.is_ad_call));
+  const narrative = await generateNarrative({ calls: doneCalls, contextLabel: `по объекту «${salon.name}»` });
 
   const adminRows = byAdmin.map(a => `<tr><td>${esc(a.name)}</td><td>${a.calls_count}</td><td>${a.avg_pct ? Math.round(a.avg_pct * 100) + '%' : '—'}</td></tr>`).join('');
 
@@ -245,7 +250,8 @@ async function renderSalonReport(salonId, period) {
 async function renderNetworkReport(period) {
   const since = periodStart(period);
   const salons = db.prepare('SELECT * FROM salons WHERE active = 1').all();
-  const calls = answeredCallsQuery('c.started_at >= ?', [since]);
+  const calls = allCallsQuery('c.started_at >= ?', [since]);
+  const doneCalls = calls.filter(c => c.status === 'done');
   const missed = db.prepare(`SELECT COUNT(*) AS c FROM calls WHERE direction='in' AND is_answered=0 AND started_at >= ?`).get(since).c;
   const none = db.prepare(`SELECT COUNT(*) AS c FROM calls WHERE direction='in' AND is_answered=0 AND callback_status='none' AND started_at >= ?`).get(since).c;
   const bookings = calls.filter(c => c.outcome === 'booking').length;
@@ -257,7 +263,7 @@ async function renderNetworkReport(period) {
     return { name: s.name, calls: sc.length, missed: sMissed, bookings: sBookings, conv: sc.length ? Math.round(sBookings / sc.length * 100) : 0 };
   });
 
-  const narrative = await generateNarrative({ calls, contextLabel: 'по всей сети (5 объектов)' });
+  const narrative = await generateNarrative({ calls: doneCalls, contextLabel: 'по всей сети (5 объектов)' });
   const rows = perSalon.map(s => `<tr><td>${esc(s.name)}</td><td>${s.calls}</td><td>${s.missed}</td><td>${s.bookings}</td><td>${s.conv}%</td></tr>`).join('');
 
   const body = `
