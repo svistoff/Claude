@@ -21,6 +21,7 @@
   function esc(s){s=(s==null?'':''+s);return s.replace(/[&<>"']/g,function(m){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m];});}
   function safeUrl(u){return (typeof u==='string'&&/^https?:\/\//i.test(u))?u:'';}
   function proxify(u){u=safeUrl(u);return u?u.replace('https://hbmdpqnseywphwgxsnlg.supabase.co',SB):'';}
+  function eventUrl(ev){return ev.slug?AFISHA+'/afisha/'+encodeURIComponent(ev.slug):AFISHA+'/';}
   function dayStr(d){if(!d)return '';var p=(''+d).split('-');return parseInt(p[2],10)+' '+MONTHS[parseInt(p[1],10)];}
   function hourWord(time){
     if(!time)return '';
@@ -85,13 +86,23 @@
       '.ekbg-ticket:hover{background:#B00E30;}',
       '.ekbg-more{color:#6B6A73;font-weight:600;font-size:14px;text-decoration:none;}',
       '.ekbg-more:hover{color:#E5133C;}',
+      '.ekbg-share{border:1px solid #16151A;background:transparent;color:#16151A;border-radius:999px;padding:11px 20px;font:inherit;font-size:15px;font-weight:700;cursor:pointer;margin:0;}',
+      '.ekbg-share:hover{background:#16151A;color:#fff;}',
       '@media(max-width:600px){.ekbg-ov{align-items:flex-end;padding:0;}.ekbg-mod{width:100%;border-radius:18px 18px 0 0;}.ekbg-mb{padding:16px 16px 22px;}}'
     ].join('');
     document.head.appendChild(s);
   }
 
   // ---------- всплывающее окно ----------
-  var ov=null, pushed=false, savedOverflow=null;
+  var ov=null, pushed=false, savedOverflow=null, current=null;
+  function shareEvent(btn){
+    if(!current)return;
+    var url=eventUrl(current);
+    if(navigator.share){ navigator.share({title:current.title,url:url}).catch(function(){}); return; }
+    var done=function(){ btn.textContent='Ссылка скопирована ✓'; };
+    if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(done,function(){ window.prompt('Скопируйте ссылку на событие:',url); });
+    else window.prompt('Скопируйте ссылку на событие:',url);
+  }
   function modalHtml(ev){
     var v=ev.venues||{};
     var cover=proxify(ev.cover_image_url);   // в окне — только настоящая афиша, логотип заведения сюда не подставляем
@@ -114,19 +125,24 @@
       (text?'<div class="ekbg-desc">'+esc(text)+'</div>':'')+
       '<div class="ekbg-acts">'+
         (ticket?'<a class="ekbg-ticket" href="'+esc(ticket)+'" target="_blank" rel="noopener">Билеты и подробности →</a>':'')+
-        '<a class="ekbg-more" href="'+AFISHA+'/">Вся афиша Екатеринбурга →</a>'+
+        (ev.slug?'<button type="button" class="ekbg-share" data-ekbg-share>Поделиться</button>':'')+
+        '<a class="ekbg-more" href="'+esc(eventUrl(ev))+'">Страница события на афише →</a>'+
       '</div>'+
     '</div></div>';
   }
   function openModal(ev){
     if(!ov){
       ov=document.createElement('div');ov.className='ekbg-ov';
-      ov.addEventListener('click',function(e){ if(e.target===ov||(e.target.closest&&e.target.closest('[data-ekbg-close]'))) requestClose(); });
+      ov.addEventListener('click',function(e){
+        var sh=e.target.closest&&e.target.closest('[data-ekbg-share]');
+        if(sh){ shareEvent(sh); return; }
+        if(e.target===ov||(e.target.closest&&e.target.closest('[data-ekbg-close]'))) requestClose();
+      });
       document.body.appendChild(ov);
       savedOverflow=document.documentElement.style.overflow;
       document.documentElement.style.overflow='hidden';
     }
-    ov.innerHTML=modalHtml(ev);
+    ov.innerHTML=modalHtml(ev); current=ev;
     var m=ov.querySelector('.ekbg-mod'); if(m) m.scrollTop=0;
     // Запись в истории без смены адреса: кнопка «Назад» на телефоне закрывает окно, а не уводит со страницы.
     if(!pushed){ try{history.pushState({ekbgModal:1},'');pushed=true;}catch(_){} }
@@ -150,7 +166,7 @@
       // Приоритет превью: реальная афиша, иначе логотип заведения (для видео-анонсов без постера).
       var img=proxify(ev.cover_image_url)||proxify(ev.venues&&ev.venues.logo_url);
       var cn=CATS[ev.category_id]||'';
-      return '<a class="ekbg-card" href="'+AFISHA+'/" data-ekbg-i="'+i+'">'+
+      return '<a class="ekbg-card" href="'+esc(eventUrl(ev))+'" data-ekbg-i="'+i+'">'+
         '<div class="ekbg-img">'+(img?'<img src="'+esc(img)+'" loading="lazy" alt="'+esc(ev.title)+'" onerror="this.style.display=\'none\'">':'')+'</div>'+
         '<div class="ekbg-b">'+(cn?'<div class="ekbg-cat">'+esc(cn)+'</div>':'')+
         '<div class="ekbg-when">'+esc(fmt(ev))+'</div>'+

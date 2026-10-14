@@ -47,7 +47,7 @@ $venueAddr = $venue ? trim(($venue['address'] ?: '') . (!empty($venue['city']) ?
 
 // title / description
 $titleTag = $ev['title'] . ($venueName ? ' — ' . $venueName : '') . ' | Афиша Екатеринбурга';
-$descRaw = $ev['meta_description'] ?: ($ev['short_description'] ?: ($ev['title'] . ($venueName ? ', ' . $venueName : '') . '. ' . $dateStr . '. Афиша Екатеринбурга — ЕКБ ГИД.'));
+$descRaw = ($ev['meta_description'] ?? null) ?: ($ev['short_description'] ?: ($ev['title'] . ($venueName ? ', ' . $venueName : '') . '. ' . $dateStr . '. Афиша Екатеринбурга — ЕКБ ГИД.'));
 $desc = mb_substr(trim(preg_replace('/\s+/u', ' ', $descRaw)), 0, 200, 'UTF-8');
 
 // JSON-LD Event

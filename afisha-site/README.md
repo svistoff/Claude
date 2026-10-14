@@ -15,9 +15,25 @@ VPS (тот же сервер, что и боты), nginx отдаёт файл�
 скопирована на сервер в `/root/claude-repo/afisha-site/` один раз и живёт там
 как неотслеживаемый файл.
 
-**PHP на VPS не установлен**, поэтому `event.php` (страницы `/afisha/<slug>`)
-сейчас не работают — для них нужен php-fpm и `location ~ \.php$` + rewrite в
-nginx.
+**SEO-страницы событий.** У каждого события своя страница
+`https://afisha.ekb-guide.ru/afisha/<slug>` (`event.php`: title, description,
+canonical, Open Graph, Schema.org `Event` с исполнителем), список всех событий
+`/afisha/` и карта сайта `/sitemap.xml` (`sitemap.php`, указана в
+`robots.txt`). Работают через php-fpm на VPS; маршруты — в конфиге nginx
+`afisha-bot/deploy/nginx/afisha.ekb-guide.ru.conf` (`.htaccess` nginx не
+читает). На главной карточки — настоящие ссылки на эти страницы (для
+поисковиков), обычный клик открывает окно и меняет адрес в строке браузера на
+`/afisha/<slug>`, «Назад» закрывает окно, в окне есть «Поделиться». В виджете
+на Tilda карточки тоже ведут на страницы событий.
+
+Установка конфига nginx (сокет php-fpm подставляется автоматически):
+
+```bash
+cd /root/claude-repo
+SOCK=$(ls /run/php/php*-fpm.sock | head -1)
+sed "s#__PHP_FPM_SOCK__#$SOCK#" afisha-bot/deploy/nginx/afisha.ekb-guide.ru.conf > /etc/nginx/sites-enabled/afisha.ekb-guide.ru
+nginx -t && systemctl reload nginx
+```
 
 ## Что изменено в этой версии
 

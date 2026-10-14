@@ -105,7 +105,8 @@
   .card p{margin:2px 0 0;color:#413F39;font-size:14px;line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
   .card-foot{margin-top:auto;padding-top:10px;display:flex;justify-content:space-between;align-items:center;gap:10px;}
   .price{font-weight:700;font-size:15px;}
-  .more{border:1px solid var(--ink);background:transparent;color:var(--ink);border-radius:999px;padding:8px 14px;font-weight:600;cursor:pointer;transition:.15s;}
+  .more{display:inline-block;border:1px solid var(--ink);background:transparent;color:var(--ink);border-radius:999px;padding:8px 14px;font-weight:600;cursor:pointer;transition:.15s;text-decoration:none;}
+  .card-link{color:inherit;text-decoration:none;}
   .more:hover{background:var(--ink);color:#fff;}
 
   .empty,.loading,.error{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:24px;color:var(--muted);text-align:center;}
@@ -127,6 +128,10 @@
   .desc{line-height:1.65;color:#2C2A26;white-space:pre-line;margin-top:14px;}
   .ticket{display:inline-block;margin-top:18px;background:var(--accent);color:#fff;border-radius:999px;padding:12px 22px;font-weight:700;}
   .ticket:hover{background:var(--accent-ink);}
+  .m-acts{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-top:18px;}
+  .m-acts .ticket{margin-top:0;}
+  .share{border:1px solid var(--ink);background:transparent;color:var(--ink);border-radius:999px;padding:11px 20px;font:inherit;font-weight:700;cursor:pointer;}
+  .share:hover{background:var(--ink);color:#fff;}
 
   @media (max-width:980px){ .grid{grid-template-columns:repeat(2,1fr);} }
   @media (max-width:640px){
@@ -187,6 +192,9 @@
       return `${h} ${word}`;
     };
     const fmtDay=s=>{const d=parseD(s);return `${d.getDate()} ${MONTHS[d.getMonth()]}`;};
+    const eventPath=ev=>ev.slug?'/afisha/'+encodeURIComponent(ev.slug):'/';
+    const BASE_TITLE=document.title;
+    let modalPushed=false;
 
     function formatSchedule(ev){
       const t=hourWord(ev.start_time);
@@ -304,6 +312,8 @@
       const cat=ev.categories?.name;
       // Приоритет превью: реальная афиша, иначе логотип заведения (для видео-анонсов без постера), иначе пусто.
       const img=mediaUrl(ev.cover_image_url)||mediaUrl(ev.venues?.logo_url);
+      // Настоящая ссылка на SEO-страницу события — по ней ходят поисковики; обычный клик открывает окно.
+      const href=eventPath(ev);
       return `<article class="card" data-open="${esc(ev.id)}" tabindex="0" role="button">
         <div class="cover">
           ${img?`<img src="${esc(img)}" alt="${esc(ev.title)}" loading="lazy" onerror="this.remove()">`:''}
@@ -313,13 +323,13 @@
         </div>
         <div class="card-body">
           <div class="when">${esc(whenText||formatSchedule(ev))}</div>
-          <h3>${esc(ev.title)}</h3>
+          <h3><a class="card-link" href="${esc(href)}">${esc(ev.title)}</a></h3>
           ${ev.performer?`<div class="perf">${esc(ev.performer)}</div>`:''}
           ${ev.venues?.name?`<div class="place">${esc(ev.venues.name)}</div>`:''}
           ${ev.short_description?`<p>${esc(ev.short_description)}</p>`:''}
           <div class="card-foot">
             <span class="price">${ev.price?esc(ev.price):'—'}</span>
-            <button class="more" data-open="${esc(ev.id)}">Подробнее</button>
+            <a class="more" href="${esc(href)}" data-open="${esc(ev.id)}">Подробнее</a>
           </div>
         </div>
       </article>`;
@@ -424,14 +434,43 @@
             ${ev.price?`<span><b>${esc(ev.price)}</b></span>`:''}
           </div>
           ${ev.full_description||ev.short_description?`<div class="desc">${esc(ev.full_description||ev.short_description)}</div>`:''}
-          ${ticket?`<a class="ticket" href="${esc(ticket)}" target="_blank" rel="noopener">Билеты и подробности →</a>`:''}
-          ${ev.slug?`<div style="margin-top:14px"><a href="/afisha/${esc(ev.slug)}" style="color:var(--muted);font-weight:600;font-size:14px">Открыть отдельной страницей →</a></div>`:''}
+          <div class="m-acts">
+            ${ticket?`<a class="ticket" href="${esc(ticket)}" target="_blank" rel="noopener">Билеты и подробности →</a>`:''}
+            ${ev.slug?`<button type="button" class="share" data-share>Поделиться</button>`:''}
+          </div>
+          ${ev.slug?`<div style="margin-top:14px"><a href="${esc(eventPath(ev))}" style="color:var(--muted);font-weight:600;font-size:14px">Открыть отдельной страницей →</a></div>`:''}
         </div>
       </div>`;
       modal.classList.add('open');
+      S.modalEvent=ev;
+      document.title=`${ev.title} — Афиша Екатеринбурга`;
+      // Адрес в строке браузера = страница события: её можно скопировать, ей можно поделиться,
+      // а «Назад» закрывает окно вместо ухода со страницы.
+      if(ev.slug){
+        try{
+          if(modalPushed) history.replaceState({ekbModal:1},'',eventPath(ev));
+          else { history.pushState({ekbModal:1},'',eventPath(ev)); modalPushed=true; }
+        }catch(_){}
+      }
     }
-    function closeModal(){ modal.classList.remove('open'); modal.innerHTML=''; }
-    modal.addEventListener('click',e=>{ if(e.target===modal||e.target.closest('[data-close]')) closeModal(); });
+    function closeUI(){ modal.classList.remove('open'); modal.innerHTML=''; S.modalEvent=null; document.title=BASE_TITLE; }
+    function closeModal(){
+      if(!modal.classList.contains('open')) return;
+      if(modalPushed){ modalPushed=false; history.back(); }   // popstate ниже закроет окно
+      else closeUI();
+    }
+    window.addEventListener('popstate',()=>{ modalPushed=false; if(modal.classList.contains('open')) closeUI(); });
+    async function shareEvent(btn){
+      const ev=S.modalEvent; if(!ev) return;
+      const url=location.origin+eventPath(ev);
+      if(navigator.share){ try{ await navigator.share({title:ev.title,url}); }catch(_){} return; }
+      try{ await navigator.clipboard.writeText(url); btn.textContent='Ссылка скопирована ✓'; }
+      catch(_){ window.prompt('Скопируйте ссылку на событие:',url); }
+    }
+    modal.addEventListener('click',e=>{
+      const sh=e.target.closest('[data-share]'); if(sh){ shareEvent(sh); return; }
+      if(e.target===modal||e.target.closest('[data-close]')) closeModal();
+    });
     document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeModal(); });
 
     // ---------- события интерфейса ----------
@@ -441,7 +480,12 @@
       document.querySelectorAll('[data-date]').forEach(b=>b.onclick=()=>{S.selectedDate=(S.selectedDate===b.dataset.date)?null:b.dataset.date;renderMain();});
       const cl=document.querySelector('[data-clear]'); if(cl) cl.onclick=()=>{S.selectedDate=null;renderMain();};
       document.querySelectorAll('[data-scroll]').forEach(b=>b.onclick=()=>{const i=document.getElementById('tickerInner');if(i)i.scrollBy({left:+b.dataset.scroll*240,behavior:'smooth'});});
-      document.querySelectorAll('[data-open]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();openModal(b.dataset.open);}));
+      document.querySelectorAll('[data-open]').forEach(b=>b.addEventListener('click',e=>{
+        e.stopPropagation();
+        if(e.ctrlKey||e.metaKey||e.shiftKey) return;   // Ctrl/Cmd/Shift — пусть ссылка откроется в новой вкладке
+        e.preventDefault();
+        openModal(b.dataset.open);
+      }));
       document.querySelectorAll('.card[role="button"]').forEach(c=>c.addEventListener('keydown',e=>{if(e.key==='Enter')openModal(c.dataset.open);}));
     }
 
