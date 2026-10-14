@@ -38,3 +38,12 @@
   клона репозитория (`root /root/claude-repo/afisha-site`), обновление —
   `cd /root/claude-repo && git pull`. Файловый архив Timeweb для сайта не
   используется. Подробности — в `afisha-site/README.md`.
+- `news-bot/` — news-bot (@EG_newsbot): Telegram-бот на aiogram 3, принимает
+  пересланные новости из «На выкладку», делит на заголовок (жирный) /
+  описание (курсив) / текст (AI — запасной путь), копирует фото/видео в тот же
+  канал-хранилище, что и афиша, и сразу публикует в Supabase (`news`,
+  `news_media`). Медиа браузеру отдаёт прокси `video.ekb-guide.ru/m/<token>`
+  (порт 8093). Сайт `news.ekb-guide.ru` и виджет для Tilda (`news-embed.js`)
+  лежат в `news-bot/site/`; nginx отдаёт их из **отдельного клона**
+  `/root/afisha-news-bot` (ветка `claude/news-bot`), не из `/root/claude-repo`.
+  Подробности — в `news-bot/README.md`.
