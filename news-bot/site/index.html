@@ -14,90 +14,108 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="preconnect" href="https://sb.ekb-guide.ru">
-<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Onest:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
 <style>
+  /* Дизайн-код ЕКБ ГИД (как ekb-guide.ru/price): кремовая бумага, чёрная типографика,
+     жёлтый маркер, заголовки — Montserrat 700, текст — Inter, подписи — JetBrains Mono. */
   :root{
-    --paper:#FBFAF7; --surface:#FFFFFF; --surface-2:#F3F0E9;
-    --ink:#16151A; --ink-2:#2C2A26; --muted:#6B6A73; --line:#E7E3DA;
-    --accent:#E5133C; --accent-ink:#B00E30;
-    --shadow-lg:0 18px 50px rgba(22,21,26,.22);
-    --display:'Montserrat',system-ui,sans-serif;
-    --body:'Onest',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+    --paper:#F4F1E9; --card:#FFFDF7; --ink:#191512; --muted:#6F6A60; --line:#E4DFCF;
+    --hl:#F5E24B; --hl-soft:#FCF4B4;
+    --pink:#F2C9D4; --green:#CBE4C2; --blue:#C7DAEE; --lilac:#DACFEC;
+    --shadow:0 10px 26px rgba(25,21,18,.09);
+    --shadow-lg:0 18px 50px rgba(25,21,18,.22);
+    --disp:'Montserrat',-apple-system,'Segoe UI',sans-serif;
+    --sans:'Inter',-apple-system,'Segoe UI',Roboto,sans-serif;
+    --mono:'JetBrains Mono',ui-monospace,monospace;
   }
   *{box-sizing:border-box;}
   html,body{margin:0;}
-  body{font-family:var(--body);background:var(--paper);color:var(--ink);-webkit-font-smoothing:antialiased;}
+  body{font-family:var(--sans);font-size:16px;line-height:1.55;background:var(--paper);color:var(--ink);-webkit-font-smoothing:antialiased;}
   a{color:inherit;}
   button{font:inherit;}
-  .wrap{max-width:760px;margin:0 auto;padding:22px 16px 56px;}
+  .wrap{max-width:760px;margin:0 auto;padding:22px 16px 72px;}
 
   /* шапка */
-  .top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;font-size:14px;color:var(--muted);}
-  .top a{text-decoration:none;color:var(--muted);font-weight:600;}
-  .top a:hover{color:var(--accent);}
-  .top nav{display:flex;gap:16px;}
-  .head{margin:22px 0 8px;}
-  .head h1{font-family:var(--display);font-weight:800;font-size:clamp(28px,6.4vw,46px);line-height:1;letter-spacing:-.015em;margin:0;}
-  .head h1 span{color:var(--accent);}
-  .head p{margin:10px 0 0;color:var(--muted);font-size:15px;}
+  .top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;}
+  .top a{font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;text-decoration:none;color:var(--muted);}
+  .top a:hover{color:var(--ink);}
+  .top nav{display:flex;gap:18px;}
+  .head{position:relative;margin:34px 0 8px;}
+  .eyebrow{display:inline-block;font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:6px 13px;margin-bottom:22px;background:var(--card);}
+  .head h1{font-family:var(--disp);font-weight:700;text-transform:uppercase;font-size:clamp(32px,7vw,58px);line-height:1.03;letter-spacing:-.005em;margin:0;}
+  .hl{background-image:linear-gradient(var(--hl),var(--hl));background-repeat:no-repeat;background-position:0 82%;background-size:100% 64%;padding:.02em .16em;-webkit-box-decoration-break:clone;box-decoration-break:clone;}
+  .head h1 .hl{background-size:0% 64%;animation:mark .65s cubic-bezier(.2,.7,.3,1) .25s forwards;}
+  @keyframes mark{to{background-size:100% 64%;}}
+  .head p{margin:16px 0 0;color:var(--muted);font-size:clamp(16px,1.7vw,19px);max-width:560px;}
+  .confetti{position:absolute;top:-6px;right:0;width:96px;height:72px;animation:sway 6s ease-in-out infinite;pointer-events:none;}
+  @keyframes sway{50%{transform:translateY(5px) rotate(4deg);}}
+  @media(max-width:600px){.confetti{width:64px;height:48px;top:-20px;}}
 
   /* лента */
-  .feed{list-style:none;margin:18px 0 0;padding:0;}
+  .feed{list-style:none;margin:30px 0 0;padding:0;}
   .item{border-top:1px solid var(--line);}
   .item:last-child{border-bottom:1px solid var(--line);}
-  .item a{display:block;padding:16px 4px 16px;text-decoration:none;border-radius:12px;transition:background .15s;}
-  .item a:hover{background:var(--surface);}
-  .item a:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
-  .t{font-family:var(--display);font-weight:700;font-size:clamp(17px,3.6vw,19px);line-height:1.25;margin:0;letter-spacing:-.005em;}
-  .s{margin:5px 0 0;color:var(--ink-2);font-size:15px;line-height:1.45;}
-  .d{margin-top:7px;color:var(--muted);font-size:12.5px;display:flex;align-items:center;gap:8px;}
-  .d .m{display:inline-flex;align-items:center;gap:3px;}
+  .item a{display:block;padding:18px 12px;margin:0 -12px;text-decoration:none;border-radius:16px;transition:background .16s ease;}
+  .item a:hover{background:var(--card);}
+  .item a:focus-visible{outline:2px solid var(--ink);outline-offset:2px;}
+  .t{font-family:var(--disp);font-weight:700;font-size:clamp(17px,3.6vw,19px);line-height:1.2;margin:0;letter-spacing:-.005em;}
+  .s{margin:6px 0 0;color:var(--ink);opacity:.86;font-size:15.5px;line-height:1.5;}
+  .d{margin-top:9px;font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;}
+  .tag{font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;background:var(--hl-soft);color:var(--ink);border-radius:6px;padding:2px 8px;}
 
-  .more{display:block;margin:22px auto 0;border:1.5px solid var(--ink);background:transparent;color:var(--ink);border-radius:999px;padding:12px 26px;font-weight:700;cursor:pointer;}
-  .more:hover{background:var(--ink);color:#fff;}
-  .more[disabled]{opacity:.5;cursor:default;}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;font-family:var(--disp);font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:.02em;padding:13px 24px;border-radius:999px;cursor:pointer;border:1.5px solid var(--ink);color:var(--ink);background:transparent;text-decoration:none;transition:transform .16s ease,box-shadow .16s ease,background .16s ease,color .16s ease;}
+  .btn:hover{transform:translateY(-2px);background:var(--ink);color:var(--paper);}
+  .btn-primary{background:var(--hl);border-color:var(--hl);}
+  .btn-primary:hover{background:var(--hl);color:var(--ink);box-shadow:0 8px 18px rgba(245,226,75,.55);}
+  .btn:focus-visible{outline:2px solid var(--ink);outline-offset:3px;}
+  .more{display:flex;margin:28px auto 0;}
+  .more[disabled]{opacity:.5;cursor:default;transform:none;}
   .more[hidden]{display:none;}
-  .state{padding:40px 8px;text-align:center;color:var(--muted);}
-  .state b{display:block;color:var(--ink);font-size:17px;margin-bottom:6px;}
-  .skel{height:74px;border-top:1px solid var(--line);background:linear-gradient(90deg,transparent,rgba(0,0,0,.035),transparent) 0 0/200% 100%;animation:sh 1.2s infinite;}
+  .state{padding:44px 8px;text-align:center;color:var(--muted);}
+  .state b{display:block;font-family:var(--disp);font-weight:700;color:var(--ink);font-size:18px;margin-bottom:6px;}
+  .skel{height:84px;border-top:1px solid var(--line);background:linear-gradient(90deg,transparent,rgba(25,21,18,.04),transparent) 0 0/200% 100%;animation:sh 1.2s infinite;}
   @keyframes sh{to{background-position:-200% 0;}}
-  .foot{margin-top:40px;color:var(--muted);font-size:13px;text-align:center;}
-  .foot a{color:var(--accent);text-decoration:none;font-weight:600;}
+  .foot{margin-top:48px;padding-top:20px;border-top:1px solid var(--line);font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);text-align:center;}
+  .foot a{color:var(--ink);text-decoration:none;}
+  .foot a:hover{text-decoration:underline;}
 
   /* модальное окно */
-  .ov{position:fixed;inset:0;z-index:1000;background:rgba(16,15,20,.6);display:flex;align-items:center;justify-content:center;padding:18px;animation:fade .15s;}
+  .ov{position:fixed;inset:0;z-index:1000;background:rgba(25,21,18,.55);display:flex;align-items:center;justify-content:center;padding:18px;animation:fade .16s ease;}
   @keyframes fade{from{opacity:0;}}
-  .mod{width:min(760px,100%);max-height:92vh;overflow:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;background:var(--surface);border-radius:22px;box-shadow:var(--shadow-lg);}
-  .mb{padding:20px 22px 26px;}
+  .mod{width:min(760px,100%);max-height:92vh;overflow:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;background:var(--card);border-radius:24px;box-shadow:var(--shadow-lg);}
+  .mb{padding:24px 26px 28px;}
   .mt{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;}
-  .mt h2{font-family:var(--display);font-weight:800;font-size:clamp(21px,4.4vw,30px);line-height:1.1;margin:0;letter-spacing:-.01em;}
-  .x{flex:0 0 auto;width:42px;height:42px;border-radius:50%;border:1px solid var(--line);background:#fff;color:var(--ink);cursor:pointer;font-size:18px;line-height:1;padding:0;}
+  .mt h2{font-family:var(--disp);font-weight:700;font-size:clamp(22px,4.2vw,30px);line-height:1.12;margin:0;letter-spacing:-.005em;}
+  .x{flex:0 0 auto;width:44px;height:44px;border-radius:50%;border:1.5px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer;font-size:17px;line-height:1;padding:0;transition:border-color .16s ease;}
   .x:hover{border-color:var(--ink);}
-  .md{color:var(--muted);font-size:13.5px;margin-top:8px;}
-  .msum{font-size:16.5px;line-height:1.45;color:var(--ink-2);margin:12px 0 0;font-weight:500;}
-  .gal{margin:16px -22px 0;display:flex;gap:8px;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;padding:0 22px;}
+  .md{margin-top:10px;font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);}
+  .msum{font-size:17px;line-height:1.5;color:var(--ink);margin:14px 0 0;font-weight:500;}
+  .gal{margin:18px -26px 0;display:flex;gap:8px;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;padding:0 26px;}
   .gal::-webkit-scrollbar{display:none;}
-  .gal>*{flex:0 0 auto;scroll-snap-align:center;max-width:100%;max-height:62vh;border-radius:14px;background:var(--surface-2);display:block;}
+  .gal>*{flex:0 0 auto;scroll-snap-align:center;max-width:100%;max-height:62vh;border-radius:16px;background:var(--line);display:block;}
   .gal.one>*{margin:0 auto;}
   .gal img{width:auto;height:auto;object-fit:contain;}
-  .gal video{width:100%;background:#000;}
+  .gal video{width:100%;background:var(--ink);}
   .gal.many>*{max-width:88%;}
   .gal.many img{height:min(56vh,420px);width:auto;object-fit:cover;}
   .gal.many video{height:min(56vh,420px);width:auto;}
-  .cnt{text-align:center;font-size:12.5px;color:var(--muted);margin-top:8px;}
-  .body{margin-top:16px;font-size:16px;line-height:1.65;color:var(--ink-2);}
+  .cnt{text-align:center;font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-top:10px;}
+  .body{margin-top:18px;font-size:16px;line-height:1.65;color:var(--ink);max-width:640px;}
   .body p{margin:0 0 12px;white-space:pre-line;overflow-wrap:anywhere;}
-  .body a{color:var(--accent);}
-  .acts{display:flex;flex-wrap:wrap;gap:12px 18px;align-items:center;margin-top:18px;padding-top:16px;border-top:1px solid var(--line);}
-  .share{border:1px solid var(--ink);background:transparent;color:var(--ink);border-radius:999px;padding:11px 20px;font-weight:700;cursor:pointer;}
-  .share:hover{background:var(--ink);color:#fff;}
-  .acts a{color:var(--muted);font-weight:600;font-size:14px;text-decoration:none;}
-  .acts a:hover{color:var(--accent);}
+  .body a{color:var(--ink);text-decoration-color:var(--hl);text-decoration-thickness:3px;text-underline-offset:2px;}
+  .acts{display:flex;flex-wrap:wrap;gap:12px 18px;align-items:center;margin-top:20px;padding-top:18px;border-top:1px solid var(--line);}
+  .acts a.lnk{font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);text-decoration:none;}
+  .acts a.lnk:hover{color:var(--ink);}
   @media(max-width:600px){
     .ov{align-items:flex-end;padding:0;}
-    .mod{width:100%;max-height:94vh;border-radius:18px 18px 0 0;}
-    .mb{padding:16px 16px calc(22px + env(safe-area-inset-bottom));}
-    .gal{margin:14px -16px 0;padding:0 16px;}
+    .mod{width:100%;max-height:94vh;border-radius:20px 20px 0 0;}
+    .mb{padding:18px 16px calc(24px + env(safe-area-inset-bottom));}
+    .gal{margin:16px -16px 0;padding:0 16px;}
+    .acts .btn{width:100%;}
+  }
+  @media(prefers-reduced-motion:reduce){
+    *{transition:none !important;animation:none !important;}
+    .head h1 .hl{background-size:100% 64%;}
   }
 </style>
 </head>
@@ -108,14 +126,16 @@
     <nav><a href="https://afisha.ekb-guide.ru/">Афиша</a></nav>
   </div>
   <header class="head">
-    <h1>Новости <span>одной строкой</span></h1>
-    <p>Главное в Екатеринбурге коротко. Нажмите на новость — откроется полный текст.</p>
+    <svg class="confetti" viewBox="0 0 96 72" aria-hidden="true"><circle cx="10" cy="38" r="5" fill="#F2C9D4"/><rect x="40" y="6" width="9" height="9" rx="1" transform="rotate(45 44.5 10.5)" fill="#F5E24B"/><rect x="76" y="20" width="10" height="10" rx="2" fill="#CBE4C2"/><circle cx="88" cy="52" r="4" fill="#C7DAEE"/><rect x="22" y="58" width="8" height="8" rx="1" transform="rotate(45 26 62)" fill="#DACFEC"/><circle cx="58" cy="62" r="6" fill="#F5E24B"/></svg>
+    <span class="eyebrow">ЕКБ ГИД · Новости</span>
+    <h1>Новости <span class="hl">одной строкой</span></h1>
+    <p>Главное в Екатеринбурге коротко. Нажмите на новость — откроется полный текст, фото и видео.</p>
   </header>
 
   <ul class="feed" id="feed" aria-live="polite">
     <li class="skel"></li><li class="skel"></li><li class="skel"></li><li class="skel"></li>
   </ul>
-  <button class="more" id="more" type="button" hidden>Показать ещё</button>
+  <button class="btn more" id="more" type="button" hidden>Показать ещё</button>
 
   <div class="foot">© ЕКБ ГИД · <a href="https://ekb-guide.ru/">ekb-guide.ru</a> · <a href="https://afisha.ekb-guide.ru/">Афиша Екатеринбурга</a></div>
 </div>
@@ -156,7 +176,7 @@
   function media(n){return (n.news_media||[]).slice().sort(function(a,b){return a.position-b.position;});}
   function mediaBadge(n){
     var m=media(n), ph=0, vi=0; m.forEach(function(x){x.kind==='video'?vi++:ph++;});
-    var out=[]; if(ph) out.push('<span class="m" title="Фото">📷'+(ph>1?' '+ph:'')+'</span>'); if(vi) out.push('<span class="m" title="Видео">▶'+(vi>1?' '+vi:'')+'</span>');
+    var out=[]; if(ph) out.push('<span class="tag">'+(ph>1?ph+' фото':'фото')+'</span>'); if(vi) out.push('<span class="tag">'+(vi>1?vi+' видео':'видео')+'</span>');
     return out.join('');
   }
   function newsUrl(n){return SITE+'/n/'+encodeURIComponent(n.slug);}
@@ -216,8 +236,8 @@
       (n.summary?'<p class="msum">'+esc(n.summary)+'</p>':'')+
       galleryHtml(n)+
       (n.body?'<div class="body">'+paragraphs(n.body)+'</div>':'')+
-      '<div class="acts"><button type="button" class="share" data-share>Поделиться</button>'+
-      '<a href="'+esc(newsUrl(n))+'">Ссылка на новость</a></div>'+
+      '<div class="acts"><button type="button" class="btn btn-primary" data-share>Поделиться <span aria-hidden="true">→</span></button>'+
+      '<a class="lnk" href="'+esc(newsUrl(n))+'">Ссылка на новость</a></div>'+
     '</div></div>';
   }
   function share(btn){
