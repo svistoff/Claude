@@ -240,7 +240,8 @@
     }
     ov.innerHTML=modalHtml(n);
     var x=ov.querySelector('.x'); if(x) x.focus({preventScroll:true});
-    if(!fromHistory){ try{history.pushState({news:n.slug},'','#'+n.slug);pushed=true;}catch(_){} }
+    // адрес новости в строке браузера (как у афиши): ссылку можно скопировать, «Назад» закрывает окно
+    if(!fromHistory){ try{history.pushState({news:n.slug},'','/n/'+encodeURIComponent(n.slug));pushed=true;}catch(_){} }
   }
   function closeUI(){
     if(!ov) return;
@@ -250,11 +251,11 @@
   }
   function requestClose(){
     if(pushed){ pushed=false; history.back(); }
-    else { closeUI(); try{history.replaceState(null,'',location.pathname+location.search);}catch(_){} }
+    else { closeUI(); try{history.replaceState(null,'','/');}catch(_){} }
   }
   window.addEventListener('popstate',function(){
     pushed=false;
-    var slug=decodeURIComponent(location.hash.slice(1));
+    var slug=slugFromUrl();
     if(slug&&ITEMS[slug]) openModal(ITEMS[slug],true); else closeUI();
   });
   document.addEventListener('keydown',function(e){ if(e.key==='Escape'&&ov) requestClose(); });
@@ -265,9 +266,13 @@
     e.preventDefault(); openModal(n);
   });
 
+  function slugFromUrl(){
+    var m=location.pathname.match(/^\/n\/([A-Za-z0-9_-]+)\/?$/);
+    return m?m[1]:decodeURIComponent(location.hash.slice(1));
+  }
   // глубокая ссылка news.ekb-guide.ru/#<slug>
   function openFromHash(){
-    var slug=decodeURIComponent(location.hash.slice(1)); if(!slug) return;
+    var slug=slugFromUrl(); if(!slug) return;
     if(ITEMS[slug]){ openModal(ITEMS[slug],true); return; }
     api('select='+SELECT+'&slug=eq.'+encodeURIComponent(slug)+'&news_media.order=position.asc&limit=1').then(function(rows){
       if(rows&&rows[0]){ ITEMS[slug]=rows[0]; openModal(rows[0],true); }
