@@ -3,6 +3,7 @@
      <div id="ekb-afisha-widget"></div>
      <script src="https://afisha.ekb-guide.ru/embed.js" defer></script>
    Можно задать свой контейнер: <script ... data-target="мой_id"></script>
+   и другой адрес страницы добавления анонса: <script ... data-submit-url="https://..."></script>
 */
 (function(){
   var SB='https://sb.ekb-guide.ru';
@@ -11,6 +12,7 @@
   var LIMIT=10;
   var cs=document.currentScript;
   var mountId=(cs&&cs.getAttribute('data-target'))||'ekb-afisha-widget';
+  var SUBMIT=(cs&&cs.getAttribute('data-submit-url'))||AFISHA+'/submit.html';
 
   var MONTHS=['','января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
   var WD=['','пн','вт','ср','чт','пт','сб','вс'];
@@ -39,7 +41,10 @@
     s.textContent=[
       '.ekbg-afisha{font-family:Onest,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#16151A;max-width:100%;box-sizing:border-box;}',
       '.ekbg-afisha *{box-sizing:border-box;}',
-      '.ekbg-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin:0 0 14px;}',
+      '.ekbg-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:6px 12px;margin:0 0 14px;}',
+      '.ekbg-links{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;}',
+      '.ekbg-add{color:#6B6A73;font-size:12px;text-decoration:underline;text-underline-offset:2px;white-space:nowrap;}',
+      '.ekbg-add:hover{color:#E5133C;}',
       '.ekbg-head h3{font-family:Montserrat,sans-serif;font-weight:800;font-size:clamp(20px,4vw,26px);margin:0;letter-spacing:-.01em;}',
       '.ekbg-all{color:#E5133C;font-weight:700;text-decoration:none;font-size:15px;white-space:nowrap;}',
       '.ekbg-all:hover{color:#B00E30;}',
@@ -74,7 +79,9 @@
         (ev.price?'<div class="ekbg-p">'+esc(ev.price)+'</div>':'')+'</div></a>';
     }).join('');
     el.innerHTML='<div class="ekbg-afisha"><div class="ekbg-head"><h3>Афиша Екатеринбурга</h3>'+
-      '<a class="ekbg-all" href="'+AFISHA+'/">Смотреть все →</a></div><div class="ekbg-row">'+cards+'</div></div>';
+      '<div class="ekbg-links"><a class="ekbg-all" href="'+AFISHA+'/">Смотреть все</a>'+
+      '<a class="ekbg-add" href="'+esc(SUBMIT)+'">Добавить свой анонс</a></div></div>'+
+      '<div class="ekbg-row">'+cards+'</div></div>';
   }
 
   function load(){
