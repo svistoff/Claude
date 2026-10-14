@@ -4,7 +4,7 @@
      <script src="https://news.ekb-guide.ru/news-embed.js?v=1" defer></script>
    Параметры (атрибуты <script>):
      data-target="мой_id"  — свой контейнер (по умолчанию ekb-news-widget)
-     data-limit="8"        — сколько новостей показать (по умолчанию 6)
+     data-limit="8"        — сколько новостей показать (по умолчанию 5)
    Виджет и всплывающее окно рендерятся в Shadow DOM — стили Tilda их не ломают и наоборот.
    При ошибке или пустой ленте виджет молча не показывается.
 */
@@ -15,7 +15,7 @@
   var SITE='https://news.ekb-guide.ru';
   var cs=document.currentScript;
   var mountId=(cs&&cs.getAttribute('data-target'))||'ekb-news-widget';
-  var LIMIT=Math.min(Math.max(parseInt((cs&&cs.getAttribute('data-limit'))||'6',10)||6,1),30);
+  var LIMIT=Math.min(Math.max(parseInt((cs&&cs.getAttribute('data-limit'))||'5',10)||5,1),30);
   var MONTHS=['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
   var ITEMS=[];
 
@@ -58,7 +58,11 @@
     '@media(prefers-reduced-motion:reduce){*{transition:none !important;animation:none !important;}}';
 
   var LIST_CSS=BASE+
-    '.head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:10px 16px;margin:0 0 6px;}'+
+    // поля как в дизайн-коде: контент 1080px по центру, по бокам 22px (на телефоне 16px) —
+    // блок T123 в Tilda растянут на всю ширину окна и своих отступов не даёт
+    '.w{max-width:1080px;margin:0 auto;padding:0 22px;}'+
+    '@media(max-width:640px){.w{padding:0 16px;}}'+
+    '.head{margin:0 0 6px;}'+
     'h2{font-family:var(--disp);font-weight:700;text-transform:uppercase;font-size:clamp(24px,3.5vw,38px);line-height:1.03;letter-spacing:-.005em;margin:0;}'+
     '.hl{background-image:linear-gradient(var(--hl),var(--hl));background-repeat:no-repeat;background-position:0 82%;background-size:100% 64%;padding:.02em .16em;-webkit-box-decoration-break:clone;box-decoration-break:clone;}'+
     '.all{font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--ink);text-decoration:none;white-space:nowrap;border-bottom:2px solid var(--hl);padding-bottom:2px;}'+
@@ -70,8 +74,8 @@
     '.t{font-family:var(--disp);font-weight:700;font-size:17px;line-height:1.2;margin:0;letter-spacing:-.005em;}'+
     '.s{margin:5px 0 0;font-size:15px;line-height:1.5;opacity:.86;}'+
     '.d{margin-top:8px;}'+
-    '.foot{margin-top:20px;}'+
-    '@media(max-width:600px){.foot .btn{width:100%;}}';
+    '.foot{margin-top:18px;}'+
+    '.all:hover{background:var(--hl);}';
 
   var MODAL_CSS=BASE+
     '.ov{position:fixed;inset:0;background:rgba(25,21,18,.55);display:flex;align-items:center;justify-content:center;padding:18px;}'+
@@ -174,9 +178,9 @@
         '<div class="d mono">'+esc(dayLabel(n.published_at))+'</div></a></li>';
     }).join('');
     shadow.innerHTML='<style>'+LIST_CSS+'</style><div class="w">'+
-      '<div class="head"><h2>Новости <span class="hl">одной строкой</span></h2><a class="all" href="'+SITE+'/">Все новости →</a></div>'+
+      '<div class="head"><h2>Новости <span class="hl">одной строкой</span></h2></div>'+
       '<ul>'+items+'</ul>'+
-      '<div class="foot"><a class="btn" href="'+SITE+'/">Все новости</a></div></div>';
+      '<div class="foot"><a class="all" href="'+SITE+'/">Все новости →</a></div></div>';
     shadow.addEventListener('click',function(e){
       var a=e.target.closest&&e.target.closest('[data-i]'); if(!a)return;
       if(e.ctrlKey||e.metaKey||e.shiftKey||e.button===1)return;   // открыть в новой вкладке, как обычную ссылку
