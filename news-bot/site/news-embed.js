@@ -121,7 +121,7 @@
   function modalHtml(n){
     return '<div class="ov"><div class="mod" role="dialog" aria-modal="true" aria-label="'+esc(n.title)+'"><div class="mb">'+
       '<div class="mt"><h2>'+esc(n.title)+'</h2><button type="button" class="x" data-close aria-label="Закрыть">✕</button></div>'+
-      '<div class="md mono">'+esc(dayLabel(n.published_at))+'</div>'+
+      '<div class="md mono">'+esc('опубликовано '+dayLabel(n.published_at))+'</div>'+
       (n.summary?'<p class="msum">'+esc(n.summary)+'</p>':'')+
       galleryHtml(n)+
       (n.body?'<div class="body">'+paragraphs(n.body)+'</div>':'')+
@@ -197,7 +197,7 @@
       return '<li><a href="'+esc(newsUrl(n))+'" data-i="'+i+'">'+
         '<p class="t">'+esc(n.title)+'</p>'+
         (n.summary?'<p class="s">'+esc(n.summary)+'</p>':'')+
-        '<div class="d mono">'+esc(dayLabel(n.published_at))+'</div></a></li>';
+        '<div class="d mono">'+esc('опубликовано '+dayLabel(n.published_at))+'</div></a></li>';
     }).join('');
     shadow.innerHTML='<style>'+LIST_CSS+'</style><div class="w">'+
       '<div class="head"><h2>Новости <span class="hl">одной строкой</span></h2></div>'+
