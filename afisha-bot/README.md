@@ -100,7 +100,7 @@ sudo ln -s /etc/nginx/sites-available/video.ekb-guide.ru.conf /etc/nginx/sites-e
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
-Перед этим — вручную: DNS `A video.ekb-guide.ru → 77.110.125.73`, сертификат
+Перед этим — вручную: DNS `A video.ekb-guide.ru → 45.146.90.128`, сертификат
 `certbot --nginx -d video.ekb-guide.ru`.
 
 ### Крон-очистка видео
