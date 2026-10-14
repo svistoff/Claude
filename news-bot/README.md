@@ -63,6 +63,9 @@
 
 ## Обновление
 
+Обычно руками ничего не нужно: `autodeploy` на VPS сам подтягивает `claude/news-bot`
+раз в минуту (см. `CLAUDE.md` → «Автодеплой»). Вручную — так:
+
 ```bash
 # сайт (index.html, news.php, news-embed.js …)
 cd /root/afisha-news-bot && git pull --ff-only
