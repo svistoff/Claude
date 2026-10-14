@@ -51,11 +51,13 @@
 
 ```html
 <div id="ekb-news-widget"></div>
-<script src="https://news.ekb-guide.ru/news-embed.js?v=3" defer></script>
+<script src="https://news.ekb-guide.ru/news-embed.js?v=4" defer></script>
 ```
 
 Атрибуты `<script>`: `data-target` (id контейнера), `data-limit` (по умолчанию 5).
 Рендер в Shadow DOM, окно — `position:fixed; z-index:2147483000` прямо в `<body>`.
+Открытая новость отражается в адресе страницы как `?news=<slug>` (адрес другого домена
+браузер поставить не даёт); по такой ссылке страница Tilda открывается сразу с новостью.
 При изменении `news-embed.js` поднимать `?v=` в коде на Tilda. В редакторе Tilda
 скрипты не выполняются — проверять на опубликованной странице.
 

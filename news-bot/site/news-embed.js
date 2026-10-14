@@ -136,7 +136,24 @@
     if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(done,function(){window.prompt('Скопируйте ссылку:',url);});
     else window.prompt('Скопируйте ссылку:',url);
   }
-  function openModal(n){
+  // Адрес страницы с открытой новостью: ?news=<slug> на той же странице Tilda.
+  // Показать в строке адрес news.ekb-guide.ru браузер не даст (другой домен) —
+  // а такой ссылкой можно поделиться: страница откроется сразу с этой новостью.
+  var PARAM='news';
+  function slugFromUrl(){
+    var m=location.search.match(new RegExp('[?&]'+PARAM+'=([A-Za-z0-9_-]+)'));
+    return m?m[1]:'';
+  }
+  function urlWith(slug){
+    var u=new URL(location.href);
+    if(slug) u.searchParams.set(PARAM,slug); else u.searchParams.delete(PARAM);
+    return u.pathname+u.search+u.hash;
+  }
+  function bySlug(slug){
+    for(var i=0;i<ITEMS.length;i++) if(ITEMS[i].slug===slug) return ITEMS[i];
+    return null;
+  }
+  function openModal(n,fromHistory){
     current=n;
     if(!host){
       host=document.createElement('div');
@@ -153,8 +170,9 @@
     }
     root.innerHTML='<style>'+MODAL_CSS+'</style>'+modalHtml(n);
     var x=root.querySelector('.x'); if(x) x.focus({preventScroll:true});
-    // Запись в истории без смены адреса: «Назад» на телефоне закрывает окно, а не уводит со страницы.
-    if(!pushed){try{history.pushState({ekbnModal:1},'');pushed=true;}catch(_){}}
+    // «Назад» на телефоне закрывает окно, а не уводит со страницы. state=null: лента Tilda
+    // (tilda-feed) в своём onpopstate падает на чужом объекте state.
+    if(!fromHistory&&!pushed){try{history.pushState(null,'',urlWith(n.slug));pushed=true;}catch(_){}}
   }
   function closeUI(){
     if(!host)return;
@@ -163,9 +181,13 @@
   }
   function requestClose(){
     if(pushed){pushed=false;history.back();}   // popstate ниже закроет окно
-    else closeUI();
+    else { closeUI(); try{history.replaceState(history.state,'',urlWith(''));}catch(_){} }
   }
-  window.addEventListener('popstate',function(){pushed=false;closeUI();});
+  window.addEventListener('popstate',function(){
+    pushed=false;
+    var n=bySlug(slugFromUrl());
+    if(n) openModal(n,true); else closeUI();
+  });
   document.addEventListener('keydown',function(e){if(e.key==='Escape'&&host)requestClose();});
 
   // ---------- виджет ----------
@@ -200,7 +222,19 @@
       .then(function(rows){
         if(!Array.isArray(rows)||!rows.length)return;   // пусто — молча не показываем
         ITEMS=rows; render(el,rows);
+        openFromUrl();
       }).catch(function(){});
+  }
+
+  // ссылка вида ekb-guide.ru/?news=<slug> — открыть новость сразу (её может не быть в первых N)
+  function openFromUrl(){
+    var slug=slugFromUrl(); if(!slug)return;
+    var n=bySlug(slug); if(n){openModal(n,true);return;}
+    fetch(SB+'/rest/v1/news?select=slug,title,summary,body,published_at,news_media(position,kind,token,width,height)'+
+      '&slug=eq.'+encodeURIComponent(slug)+'&news_media.order=position.asc&limit=1',{headers:{apikey:KEY,Authorization:'Bearer '+KEY}})
+      .then(function(r){if(!r.ok)throw 0;return r.json();})
+      .then(function(rows){ if(rows&&rows[0]){ ITEMS.push(rows[0]); openModal(rows[0],true); } })
+      .catch(function(){});
   }
 
   if(document.readyState!=='loading')load();
