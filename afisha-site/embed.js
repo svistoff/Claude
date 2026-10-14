@@ -46,9 +46,9 @@
       '.ekbg-afisha{font-family:Onest,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#16151A;max-width:100%;box-sizing:border-box;}',
       '.ekbg-afisha *{box-sizing:border-box;}',
       '.ekbg-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:6px 12px;margin:0 0 14px;}',
-      '.ekbg-head h3{font-family:Montserrat,sans-serif;font-weight:800;font-size:clamp(20px,4vw,26px);margin:0;letter-spacing:-.01em;}',
-      '.ekbg-all{color:#E5133C;font-weight:700;text-decoration:none;font-size:15px;white-space:nowrap;}',
-      '.ekbg-all:hover{color:#B00E30;}',
+      '.ekbg-head h3{font-family:Montserrat,sans-serif;font-weight:700;font-size:clamp(20px,4vw,26px);margin:0;letter-spacing:-.01em;}',
+      '.ekbg-hlink{color:#E5133C;font-weight:700;text-decoration:none;font-size:15px;white-space:nowrap;}',
+      '.ekbg-hlink:hover{color:#B00E30;}',
       '.ekbg-row{display:flex;gap:14px;overflow-x:auto;padding:2px 2px 10px;scrollbar-width:none;-webkit-overflow-scrolling:touch;}',
       '.ekbg-row::-webkit-scrollbar{display:none;}',
       '.ekbg-card{flex:0 0 auto;width:200px;text-decoration:none;color:inherit;background:#fff;border:1px solid #E7E3DA;border-radius:14px;overflow:hidden;transition:transform .15s,box-shadow .15s;display:block;cursor:pointer;}',
@@ -61,9 +61,11 @@
       '.ekbg-t{font-family:Montserrat,sans-serif;font-weight:700;font-size:14px;line-height:1.2;margin:4px 0 0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}',
       '.ekbg-p{margin-top:6px;font-weight:700;font-size:13px;}',
       '.ekbg-foot{margin-top:6px;}',
-      '.ekbg-suggest{display:inline-block;border:1.5px solid #E5133C;color:#E5133C;background:transparent;border-radius:999px;padding:10px 20px;font-weight:700;font-size:14px;text-decoration:none;transition:background .15s,color .15s;}',
-      '.ekbg-suggest:hover{background:#E5133C;color:#fff;}',
-      '@media(max-width:600px){.ekbg-card{width:158px;}.ekbg-suggest{display:block;text-align:center;}}',
+      '.ekbg-btn{display:inline-block;border:1.5px solid #E5133C;color:#E5133C;background:transparent;border-radius:999px;padding:10px 20px;font-weight:700;font-size:14px;text-decoration:none;transition:background .15s,color .15s;}',
+      '.ekbg-btn:hover{background:#E5133C;color:#fff;}',
+      /* на телефоне блок Tilda идёт от края до края — даём поля 16px; карточки при этом листаются во всю ширину */
+      '@media(max-width:600px){.ekbg-card{width:158px;}.ekbg-btn{display:block;text-align:center;}'+
+        '.ekbg-head,.ekbg-foot{padding:0 16px;}.ekbg-row{padding:2px 16px 10px;scroll-padding-left:16px;}}',
 
       /* Всплывающее окно. Живёт прямо в <body>, а не внутри блока Tilda: у блоков Tilda бывают
          transform/overflow, которые ломают position:fixed. Стили заданы явно, чтобы не зависеть от CSS Tilda. */
@@ -174,9 +176,9 @@
         (ev.price?'<div class="ekbg-p">'+esc(ev.price)+'</div>':'')+'</div></a>';
     }).join('');
     el.innerHTML='<div class="ekbg-afisha"><div class="ekbg-head"><h3>Афиша Екатеринбурга</h3>'+
-      '<a class="ekbg-all" href="'+AFISHA+'/">Смотреть все</a></div>'+
+      '<a class="ekbg-hlink" href="'+esc(SUBMIT)+'">Предложить анонс</a></div>'+
       '<div class="ekbg-row">'+cards+'</div>'+
-      '<div class="ekbg-foot"><a class="ekbg-suggest" href="'+esc(SUBMIT)+'">Предложить анонс</a></div></div>';
+      '<div class="ekbg-foot"><a class="ekbg-btn" href="'+AFISHA+'/">Смотреть все</a></div></div>';
     el.addEventListener('click',function(e){
       var a=e.target.closest&&e.target.closest('[data-ekbg-i]');
       if(!a)return;
