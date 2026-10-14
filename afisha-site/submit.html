@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Предложить событие · Афиша ЕКБ ГИД</title>
+<meta name="description" content="Предложите своё событие в афишу Екатеринбурга — ЕКБ ГИД. Заполните форму, и после модерации анонс появится на сайте." />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Onest:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#FBFAF7;--surface:#fff;--surface-2:#F3F0E9;--ink:#16151A;--muted:#6B6A73;
+    --line:#E7E3DA;--accent:#E5133C;--accent-ink:#B00E30;--ok:#1a7f4b;
+    --shadow:0 6px 24px rgba(22,21,26,.07);--display:'Montserrat',sans-serif;--body:'Onest',system-ui,sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:var(--body);background:var(--paper);color:var(--ink);-webkit-font-smoothing:antialiased;}
+  a{color:var(--accent);}
+  .wrap{max-width:640px;margin:0 auto;padding:24px 18px 60px;}
+  .brand h1{font-family:var(--display);font-weight:800;font-size:clamp(24px,5vw,34px);margin:0 0 6px;line-height:1.05;}
+  .brand p{color:var(--muted);margin:0 0 22px;}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow);padding:22px;}
+  label{display:block;font-weight:600;font-size:13px;margin:0 0 5px;}
+  .req>label::after{content:' *';color:var(--accent);}
+  input,select,textarea{width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);font:inherit;}
+  textarea{resize:vertical;min-height:80px;}
+  .field{margin-bottom:15px;}
+  .hint{color:var(--muted);font-size:12px;margin-top:5px;font-weight:400;}
+  .row2{display:flex;gap:12px;}.row2>div{flex:1;}
+  .seg{display:flex;gap:6px;background:var(--surface-2);border-radius:10px;padding:4px;margin-bottom:8px;}
+  .seg button{flex:1;border:0;background:transparent;padding:9px;border-radius:7px;font-weight:600;color:var(--muted);cursor:pointer;}
+  .seg button.on{background:var(--surface);color:var(--ink);box-shadow:var(--shadow);}
+  .wd{display:flex;gap:6px;flex-wrap:wrap;}
+  .wd label{display:flex;align-items:center;gap:5px;font-weight:500;border:1px solid var(--line);border-radius:8px;padding:7px 11px;margin:0;cursor:pointer;}
+  .wd input{width:auto;}
+  .btn{background:var(--accent);color:#fff;border:0;border-radius:999px;padding:14px 22px;font-weight:700;font-size:15px;cursor:pointer;width:100%;}
+  .btn:hover{background:var(--accent-ink);}
+  .btn:disabled{opacity:.5;}
+  .msg{margin-top:14px;font-size:14px;}.msg.err{color:var(--accent-ink);}
+  .hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden;}
+  .done{text-align:center;padding:20px 6px;}
+  .done .ok{width:66px;height:66px;border-radius:50%;background:#e2f5ea;color:var(--ok);display:flex;align-items:center;justify-content:center;font-size:34px;margin:0 auto 14px;}
+  .done h2{font-family:var(--display);font-weight:700;margin:0 0 8px;}
+  .done p{color:var(--muted);margin:0 0 18px;}
+  .lnk{display:inline-block;border:1px solid var(--ink);border-radius:999px;padding:11px 20px;font-weight:600;color:var(--ink);}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="brand">
+      <h1>Предложить событие</h1>
+      <p>Заполните форму — после проверки модератором ваш анонс появится в афише ЕКБ ГИД.</p>
+    </div>
+    <div class="card" id="card">
+      <div class="field req"><label>Название события</label><input id="title" maxlength="120"></div>
+      <div class="field"><label>Исполнитель / артист</label><input id="perf" placeholder="если применимо"></div>
+      <div class="row2">
+        <div class="field req"><label>Категория</label><select id="cat"><option value="">— выбрать —</option></select></div>
+        <div class="field"><label>Цена</label><input id="price" placeholder="500 ₽ / бесплатно"></div>
+      </div>
+      <div class="field"><label>Где проходит (площадка, адрес)</label><input id="venue" placeholder="напр. МТС Live Холл, ул. ..."></div>
+
+      <div class="field"><label>Когда</label>
+        <div class="seg" id="seg">
+          <button type="button" data-st="single" class="on">Один день</button>
+          <button type="button" data-st="range">Несколько дней</button>
+          <button type="button" data-st="weekly">Повтор по дням</button>
+        </div>
+        <div id="s_single" class="row2">
+          <div class="field req" style="margin:0"><label>Дата</label><input type="date" id="d_date"></div>
+          <div class="field" style="margin:0"><label>Время</label><input type="time" id="d_time"></div>
+        </div>
+        <div id="s_range" style="display:none">
+          <div class="row2"><div class="field req" style="margin:0"><label>С</label><input type="date" id="d_from"></div>
+          <div class="field req" style="margin:0"><label>По</label><input type="date" id="d_to"></div></div>
+          <div class="field" style="margin-top:12px;margin-bottom:0"><label>Время</label><input type="time" id="d_rtime"></div>
+        </div>
+        <div id="s_weekly" style="display:none">
+          <div class="field" style="margin-bottom:10px"><label>Дни недели</label><div class="wd" id="wd"></div></div>
+          <div class="row2"><div class="field req" style="margin:0"><label>С</label><input type="date" id="d_wfrom"></div>
+          <div class="field req" style="margin:0"><label>По</label><input type="date" id="d_wto"></div></div>
+          <div class="field" style="margin-top:12px;margin-bottom:0"><label>Время</label><input type="time" id="d_wtime"></div>
+        </div>
+      </div>
+
+      <div class="field req"><label>Ссылка на афишу (картинку)</label><input id="img" placeholder="https://... .jpg">
+        <div class="hint">Без картинки анонс не принимается. Афишу удобно загрузить на <a href="https://wikiweb.uz/tpost/image-convert" target="_blank" rel="noopener">wikiweb.uz</a> или <a href="https://postimages.org" target="_blank" rel="noopener">postimages.org</a> (без регистрации), затем вставьте сюда <b>прямую ссылку</b> на картинку — она заканчивается на .jpg или .png.</div>
+      </div>
+      <div class="field"><label>Ссылка на видео (необязательно)</label><input id="video" placeholder="прямая ссылка на .mp4"></div>
+
+      <div class="field"><label>Краткое описание</label><textarea id="short" maxlength="200" style="min-height:56px"></textarea></div>
+      <div class="field"><label>Подробное описание</label><textarea id="full"></textarea></div>
+      <div class="field"><label>Ссылка на билеты / подробности</label><input id="ext" placeholder="https://..."></div>
+
+      <div class="row2">
+        <div class="field"><label>Ваше имя</label><input id="sname"></div>
+        <div class="field req"><label>Контакт для связи</label><input id="scontact" placeholder="телефон, телеграм или почта"></div>
+      </div>
+
+      <div class="hp"><label>Не заполняйте это поле<input id="website" tabindex="-1" autocomplete="off"></label></div>
+
+      <button class="btn" id="send">Отправить на модерацию</button>
+      <div class="msg" id="msg"></div>
+    </div>
+  </div>
+
+  <script src="./supabase.js"></script>
+  <script>
+  (function(){
+    const CFG={url:'https://sb.ekb-guide.ru',key:'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhibWRwcW5zZXl3cGh3Z3hzbmxnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3MjE1NzYsImV4cCI6MjA5NTI5NzU3Nn0.wLuTKZ-uhCQ69iEm6gyJrsgaP0NgVL-PBad3kJD7uHU'};
+    const $=id=>document.getElementById(id);
+    const WD=['','пн','вт','ср','чт','пт','сб','вс'];
+    let client, st='single';
+
+    async function init(){
+      client=window.supabase.createClient(CFG.url,CFG.key);
+      $('wd').innerHTML=[1,2,3,4,5,6,7].map(w=>`<label><input type="checkbox" class="wd-cb" value="${w}">${WD[w]}</label>`).join('');
+      try{
+        const {data}=await client.from('categories').select('id,name').order('sort_order');
+        (data||[]).forEach(c=>{const o=document.createElement('option');o.value=c.id;o.textContent=c.name;$('cat').appendChild(o);});
+      }catch(_){}
+      document.querySelectorAll('#seg button').forEach(b=>b.onclick=()=>{
+        st=b.dataset.st;document.querySelectorAll('#seg button').forEach(x=>x.classList.toggle('on',x===b));
+        $('s_single').style.display=st==='single'?'flex':'none';
+        $('s_range').style.display=st==='range'?'block':'none';
+        $('s_weekly').style.display=st==='weekly'?'block':'none';
+      });
+      $('send').onclick=submit;
+    }
+
+    async function submit(){
+      const msg=$('msg');msg.className='msg';msg.textContent='';
+      if($('website').value){ done(); return; } // honeypot: тихо «принимаем»
+      const title=$('title').value.trim();
+      if(!title){return err('Укажите название события.');}
+      if(!$('cat').value){return err('Выберите категорию.');}
+      const img=$('img').value.trim();
+      if(!/^https?:\/\/.+/i.test(img)){return err('Добавьте ссылку на афишу (картинку) — это обязательно.');}
+      const contact=$('scontact').value.trim();
+      if(!contact){return err('Оставьте контакт для связи.');}
+
+      let starts_on,ends_on,start_time,weekdays=null;
+      if(st==='single'){starts_on=$('d_date').value;ends_on=starts_on;start_time=$('d_time').value||null;}
+      else if(st==='range'){starts_on=$('d_from').value;ends_on=$('d_to').value;start_time=$('d_rtime').value||null;}
+      else{starts_on=$('d_wfrom').value;ends_on=$('d_wto').value;start_time=$('d_wtime').value||null;weekdays=[...document.querySelectorAll('.wd-cb:checked')].map(c=>+c.value);}
+      if(!starts_on||!ends_on){return err('Укажите дату(ы) события.');}
+      if(st==='weekly'&&!weekdays.length){return err('Отметьте хотя бы один день недели.');}
+
+      const btn=$('send');btn.disabled=true;btn.textContent='Отправляем…';
+      const payload={title,performer:$('perf').value.trim()||null,category_id:$('cat').value,venue_name:$('venue').value.trim()||null,
+        short_description:$('short').value.trim()||null,full_description:$('full').value.trim()||null,price:$('price').value.trim()||null,
+        external_url:$('ext').value.trim()||null,cover_image_url:img,video_url:$('video').value.trim()||null,
+        schedule_type:st,starts_on,ends_on,start_time,weekdays,
+        submitter_name:$('sname').value.trim()||null,submitter_contact:contact,status:'pending'};
+      try{
+        const {error}=await client.from('event_submissions').insert(payload);
+        if(error) throw error;
+        done();
+      }catch(e){ btn.disabled=false;btn.textContent='Отправить на модерацию'; err('Не удалось отправить: '+(e.message||e)); }
+    }
+    function err(t){$('msg').className='msg err';$('msg').textContent=t;}
+    function done(){ $('card').innerHTML=`<div class="done"><div class="ok">✓</div><h2>Заявка отправлена!</h2><p>Спасибо! После проверки модератором ваше событие появится в афише.</p><a class="lnk" href="/">← На главную</a></div>`; }
+
+    init();
+  })();
+  </script>
+</body>
+</html>

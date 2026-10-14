@@ -33,7 +33,8 @@
   Telegram-канале с HTTP-прокси `video.ekb-guide.ru`), кладёт заявку в
   `event_submissions` афиши. Подробности — в `afisha-bot/README.md`.
 - `afisha-site/` — не бот, а статические файлы фронтенда афиши
-  (`afisha.ekb-guide.ru`, хостится на Timeweb, вне VPS): `admin.html`,
-  `index.html`, `embed.js`, `event.php`, `sb-config.php`. Правки заливаются на
-  Timeweb вручную, Supervisor их не касается. Подробности — в
-  `afisha-site/README.md`.
+  (`afisha.ekb-guide.ru`): `admin.html`, `index.html`, `embed.js`,
+  `submit.html`, `event.php`, `sb-config.php`. Отдаёт их nginx на VPS прямо из
+  клона репозитория (`root /root/claude-repo/afisha-site`), обновление —
+  `cd /root/claude-repo && git pull`. Файловый архив Timeweb для сайта не
+  используется. Подробности — в `afisha-site/README.md`.

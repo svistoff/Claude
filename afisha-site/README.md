@@ -1,10 +1,23 @@
 # afisha-site — фронтенд афиши (afisha.ekb-guide.ru)
 
-Не бот, не разворачивается на VPS через Supervisor. Это статические файлы
-сайта афиши на Timeweb: vanilla JS + supabase-js v2 (`index.html`,
-`admin.html`, `embed.js`) + PHP 7.4 для SEO-страниц событий (`event.php`,
-`sb-config.php`). Обновлённые файлы заливаются на Timeweb вручную, поверх
-существующих.
+Не бот и не Supervisor-программа, а статические файлы сайта афиши: vanilla JS
++ supabase-js v2 (`index.html`, `admin.html`, `embed.js`, `submit.html`) и PHP
+для SEO-страниц событий (`event.php`, `sb-config.php`).
+
+**Где живёт сайт (с октября 2026):** DNS `afisha.ekb-guide.ru` указывает на
+VPS (тот же сервер, что и боты), nginx отдаёт файлы прямо из клона этого
+репозитория — `root /root/claude-repo/afisha-site;` в
+`/etc/nginx/sites-enabled/afisha.ekb-guide.ru`. Файловый архив Timeweb для
+сайта больше **не используется** (в Timeweb остались только DNS-записи) —
+заливать туда файлы бессмысленно.
+
+`supabase.js` (библиотека supabase-js, ~218 КБ) в git не лежит — она
+скопирована на сервер в `/root/claude-repo/afisha-site/` один раз и живёт там
+как неотслеживаемый файл.
+
+**PHP на VPS не установлен**, поэтому `event.php` (страницы `/afisha/<slug>`)
+сейчас не работают — для них нужен php-fpm и `location ~ \.php$` + rewrite в
+nginx.
 
 ## Что изменено в этой версии
 
@@ -38,9 +51,19 @@
 
 ## Деплой
 
-1. Выполнить `../afisha-bot/sql/venues_logo.sql` в Supabase (если ещё не
-   выполнялся).
-2. Залить обновлённые `admin.html`, `index.html`, `embed.js`, `event.php`,
-   `sb-config.php` на Timeweb поверх текущих файлов сайта.
-3. Проверить: в списке/модалке время показывается часами; у площадки с
-   логотипом видео-анонс без своей афиши показывает логотип на карточке.
+Изменения в `afisha-site/` попадают на сайт одной командой на сервере:
+
+```bash
+cd /root/claude-repo && git pull
+```
+
+Перезапуск nginx не нужен. После изменения `embed.js` поднять версию в коде
+вставки на Tilda (`embed.js?v=N`) и опубликовать страницу — иначе браузеры
+покажут старый виджет из кэша.
+
+Код вставки виджета на Tilda (блок «T123 HTML-код»):
+
+```html
+<div id="ekb-afisha-widget"></div>
+<script src="https://afisha.ekb-guide.ru/embed.js?v=4" charset="utf-8" defer></script>
+```

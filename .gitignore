@@ -9,3 +9,4 @@ afisha-bot/bot/.env
 *.db-wal
 *.db-shm
 .DS_Store
+afisha-site/supabase.js
