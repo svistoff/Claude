@@ -4,6 +4,7 @@ repost-bot (bot/services/albums.py), адаптированный под пря�
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from dataclasses import dataclass, field
 from typing import Any
@@ -78,7 +79,41 @@ class AlbumBuffer:
         async with _processing_semaphore:
             try:
                 reply = await pipeline.process_submission(bot, user_id, parts)
-            except Exception:
+            except Exception as exc:
                 logger.exception("Ошибка обработки анонса от пользователя %s", user_id)
-                reply = "⚠️ Не получилось обработать анонс, попробуйте ещё раз."
+                reply = "⚠️ Не получилось обработать анонс.\n" + _failure_reason(exc)
         await bot.send_message(chat_id, reply)
+
+
+def _failure_reason(exc: Exception) -> str:
+    """Причина сбоя человеческими словами + короткая техническая деталь — чтобы
+    админ сразу видел, что пошло не так, а не лез в логи. Бот отвечает только
+    админам из whitelist, так что текст ошибки показывать можно (ключей в нём нет)."""
+    text = str(exc)
+    detail = text
+    if text.startswith("Supabase "):
+        # формат _check(): "Supabase <METHOD> <url> -> <code>: <тело ответа>"
+        head, _, body = text.partition(": ")
+        try:
+            data = json.loads(body)
+            detail = data.get("message") or data.get("error") or body
+        except ValueError:
+            detail = body or head
+        if "/storage/" in head:
+            where = "Хранилище картинок не приняло обложку"
+        elif "event_submissions" in head:
+            where = "База афиши не приняла заявку"
+        elif "event_videos" in head:
+            where = "База не приняла запись о видео"
+        else:
+            where = "Ошибка базы афиши (Supabase)"
+    elif type(exc).__module__.startswith("openai"):
+        where = "AI (OpenAI) не ответил — возможно, кончился баланс или сбой сервиса"
+    elif type(exc).__module__.startswith("aiogram"):
+        where = "Telegram не дал скачать или переслать медиа"
+    elif type(exc).__module__.startswith(("httpx", "httpcore")):
+        where = "Сеть: не удалось достучаться до сервиса"
+    else:
+        where = "Внутренняя ошибка бота"
+    detail = " ".join(detail.split())[:300]
+    return f"Причина: {where}.\nДетали: {type(exc).__name__}: {detail}\nПопробуйте ещё раз; если повторяется — перешлите это сообщение разработчику."

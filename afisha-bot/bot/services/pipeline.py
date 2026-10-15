@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from datetime import timedelta
 from typing import Any
 
 from aiogram import Bot
@@ -71,8 +72,28 @@ async def process_submission(bot: Bot, user_id: int, parts: list[dict[str, Any]]
         warnings.append("AI не смог распознать структуру — проверь вручную")
     if not fields.get("title"):
         fields["title"] = (text.splitlines()[0][:80] if text else "Без названия")
-    if not fields.get("starts_on") or fields.get("date_confidence") == "low":
-        warnings.append("дату не распознал / распознал неуверенно — проверь в афише")
+    # дата из анонса, как есть (может быть None) — по ней чистится видео-хранилище;
+    # подставленная ниже «сегодня» для этого не годится
+    real_event_date = fields.get("ends_on") or fields.get("starts_on")
+    if not fields.get("starts_on"):
+        # в event_submissions расписание обязательно (NOT NULL), а в анонсе даты
+        # может не быть — ставим сегодняшнюю, модератор поправит в админке
+        today = ai._now_in_ekb().date()
+        if fields.get("schedule_type") == "weekly" and fields.get("weekdays"):
+            fields["starts_on"] = today.isoformat()
+            fields["ends_on"] = fields.get("ends_on") or (today + timedelta(days=90)).isoformat()
+            warnings.append("у повтора по дням нет дат — поставил с сегодня на 3 месяца, проверь в афише")
+        else:
+            fields["schedule_type"] = "single"
+            fields["starts_on"] = fields["ends_on"] = today.isoformat()
+            fields["weekdays"] = None
+            warnings.append("даты в анонсе нет — поставил сегодняшнюю, исправь в афише перед публикацией")
+    elif fields.get("date_confidence") == "low":
+        warnings.append("дату распознал неуверенно — проверь в афише")
+    if not fields.get("ends_on"):
+        fields["ends_on"] = fields["starts_on"]
+    if not fields.get("schedule_type"):
+        fields["schedule_type"] = "single" if fields["ends_on"] == fields["starts_on"] else "range"
 
     cover_url = None
     if photo:
@@ -92,8 +113,7 @@ async def process_submission(bot: Bot, user_id: int, parts: list[dict[str, Any]]
         if media.is_video_too_large(video["file_size"]):
             warnings.append("видео >20 МБ — не добавлено, залей вручную")
         else:
-            event_date = fields.get("ends_on") or fields.get("starts_on")
-            video_url = await video_storage.store_video(bot, video["file_id"], event_date, user_id)
+            video_url = await video_storage.store_video(bot, video["file_id"], real_event_date, user_id)
             media_parts.append("видео ✓")
 
     payload = {
