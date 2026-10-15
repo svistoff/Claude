@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from typing import Any
 
 from aiogram import Bot
@@ -77,7 +78,9 @@ async def process_submission(bot: Bot, user_id: int, parts: list[dict[str, Any]]
     if photo:
         buf = await bot.download(photo["file_id"])
         cover_url, _ = await supabase_client.upload_file(
-            "event-posters", f"submissions/{photo['file_id']}.jpg", buf.read(), "image/jpeg",
+            # уникальное имя: тот же пост можно переслать повторно (file_id тот же),
+            # а Storage на совпадающий путь отвечает 409 Duplicate
+            "event-posters", f"submissions/{uuid.uuid4().hex}.jpg", buf.read(), "image/jpeg",
         )
 
     media_parts = []
