@@ -70,12 +70,21 @@ if (!empty($ev['ends_on'])) $ld['endDate'] = iso_dt($ev['ends_on'], ($ev['end_ti
 if ($previewImage) $ld['image'] = array($previewImage);
 if ($desc) $ld['description'] = $desc;
 $ld['location'] = array('@type' => 'Place', 'name' => $venueName ?: 'Екатеринбург', 'address' => $venueAddr ?: 'Екатеринбург');
+// performer: исполнитель, иначе площадка как организация (Google рекомендует поле всегда)
 if (!empty($ev['performer'])) $ld['performer'] = array('@type' => 'PerformingGroup', 'name' => $ev['performer']);
-if (!empty($ev['price'])) {
-    preg_match('/\d[\d\s]*/u', $ev['price'], $m);
-    $num = isset($m[0]) ? preg_replace('/\s+/', '', $m[0]) : '';
-    $ld['offers'] = array('@type' => 'Offer', 'priceCurrency' => 'RUB', 'price' => ($num !== '' ? $num : '0'), 'availability' => 'https://schema.org/InStock', 'url' => ($ev['external_url'] ?: $canonical));
+elseif ($venueName) $ld['performer'] = array('@type' => 'Organization', 'name' => $venueName);
+// offers: всегда — ссылка на билеты/страницу, цена если распознана, validFrom = когда событие появилось в афише
+$offer = array('@type' => 'Offer', 'url' => ($ev['external_url'] ?: $canonical), 'availability' => 'https://schema.org/InStock');
+$priceText = (string)($ev['price'] ?? '');
+if ($priceText !== '' && mb_stripos($priceText, 'бесплат', 0, 'UTF-8') !== false) {
+    $offer['price'] = '0'; $offer['priceCurrency'] = 'RUB';
+} elseif (preg_match('/\d[\d\s]*/u', $priceText, $m)) {
+    $offer['price'] = preg_replace('/\s+/u', '', $m[0]); $offer['priceCurrency'] = 'RUB';
 }
+$validFromRaw = ($ev['published_at'] ?? null) ?: (($ev['created_at'] ?? null) ?: null);
+$validFromTs = $validFromRaw ? strtotime($validFromRaw) : false;
+$offer['validFrom'] = $validFromTs ? date('c', $validFromTs) : iso_dt($ev['starts_on'], null);
+$ld['offers'] = $offer;
 $ldJson = json_encode($ld, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
 header('Content-Type: text/html; charset=utf-8');
