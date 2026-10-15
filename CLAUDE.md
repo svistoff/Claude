@@ -18,6 +18,24 @@
   для systemd можно оставить в репозитории как fallback-документацию, но не
   как рекомендуемый путь.
 
+## Автодеплой (GitHub → VPS)
+
+На VPS под Supervisor крутится `autodeploy` (`deploy/autodeploy/autodeploy.sh`,
+конфиг `deploy/supervisor/autodeploy.conf`): раз в минуту делает fast-forward
+`git pull` в `/root/afisha-news-bot` (ветка `claude/news-bot`) и
+`/root/claude-repo`; если в news-bot менялся код бота (не `site/`) — rsync в
+`/root/news-bot`, `pip install`, `supervisorctl restart news-bot news-media-proxy`.
+Лог — `/var/log/autodeploy.out.log`. Изменения попадают на сайт/бот в течение
+минуты после того, как оказались в `claude/news-bot`. Для виджета Tilda
+(`news-embed.js`) по-прежнему нужно поднять `?v=` в коде на Tilda.
+
+Установка на VPS (один раз):
+```bash
+cd /root/afisha-news-bot && git pull --ff-only
+mkdir -p /root/autodeploy && cp deploy/autodeploy/autodeploy.sh /root/autodeploy/ && chmod +x /root/autodeploy/autodeploy.sh
+cp deploy/supervisor/autodeploy.conf /etc/supervisor/conf.d/ && supervisorctl reread && supervisorctl update
+```
+
 ## Боты и проекты в этом репозитории
 
 Монорепо: каждый бот/проект — отдельная папка в корне со своим `requirements.txt`
