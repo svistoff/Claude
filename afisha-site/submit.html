@@ -7,49 +7,77 @@
 <meta name="description" content="Предложите своё событие в афишу Екатеринбурга — ЕКБ ГИД. Заполните форму, и после модерации анонс появится на сайте." />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Onest:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
 <style>
+  /* Дизайн-код ЕКБ ГИД (как ekb-guide.ru/price) — те же токены, что в index.html. */
   :root{
-    --paper:#FBFAF7;--surface:#fff;--surface-2:#F3F0E9;--ink:#16151A;--muted:#6B6A73;
-    --line:#E7E3DA;--accent:#E5133C;--accent-ink:#B00E30;--ok:#1a7f4b;
-    --shadow:0 6px 24px rgba(22,21,26,.07);--display:'Montserrat',sans-serif;--body:'Onest',system-ui,sans-serif;
+    --paper:#F4F1E9; --card:#FFFDF7; --ink:#191512; --muted:#6F6A60; --line:#E4DFCF;
+    --hl:#F5E24B; --hl-soft:#FCF4B4; --green:#CBE4C2;
+    --ok:#2f7d43; --err:#b23b3b;
+    --shadow:0 10px 26px rgba(25,21,18,.09);
+    --disp:'Montserrat',-apple-system,'Segoe UI',sans-serif;
+    --sans:'Inter',-apple-system,'Segoe UI',Roboto,sans-serif;
+    --mono:'JetBrains Mono',ui-monospace,monospace;
   }
   *{box-sizing:border-box;}
-  body{margin:0;font-family:var(--body);background:var(--paper);color:var(--ink);-webkit-font-smoothing:antialiased;}
-  a{color:var(--accent);}
-  .wrap{max-width:640px;margin:0 auto;padding:24px 18px 60px;}
-  .brand h1{font-family:var(--display);font-weight:800;font-size:clamp(24px,5vw,34px);margin:0 0 6px;line-height:1.05;}
-  .brand p{color:var(--muted);margin:0 0 22px;}
-  .card{background:var(--surface);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow);padding:22px;}
-  label{display:block;font-weight:600;font-size:13px;margin:0 0 5px;}
-  .req>label::after{content:' *';color:var(--accent);}
-  input,select,textarea{width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);font:inherit;}
-  textarea{resize:vertical;min-height:80px;}
-  .field{margin-bottom:15px;}
-  .hint{color:var(--muted);font-size:12px;margin-top:5px;font-weight:400;}
-  .row2{display:flex;gap:12px;}.row2>div{flex:1;}
-  .seg{display:flex;gap:6px;background:var(--surface-2);border-radius:10px;padding:4px;margin-bottom:8px;}
-  .seg button{flex:1;border:0;background:transparent;padding:9px;border-radius:7px;font-weight:600;color:var(--muted);cursor:pointer;}
-  .seg button.on{background:var(--surface);color:var(--ink);box-shadow:var(--shadow);}
-  .wd{display:flex;gap:6px;flex-wrap:wrap;}
-  .wd label{display:flex;align-items:center;gap:5px;font-weight:500;border:1px solid var(--line);border-radius:8px;padding:7px 11px;margin:0;cursor:pointer;}
-  .wd input{width:auto;}
-  .btn{background:var(--accent);color:#fff;border:0;border-radius:999px;padding:14px 22px;font-weight:700;font-size:15px;cursor:pointer;width:100%;}
-  .btn:hover{background:var(--accent-ink);}
-  .btn:disabled{opacity:.5;}
-  .msg{margin-top:14px;font-size:14px;}.msg.err{color:var(--accent-ink);}
+  html,body{margin:0;}
+  body{font-family:var(--sans);font-size:16px;line-height:1.55;background:var(--paper);color:var(--ink);-webkit-font-smoothing:antialiased;}
+  a{color:var(--ink);text-decoration:underline;text-decoration-color:var(--hl);text-decoration-thickness:3px;text-underline-offset:3px;}
+  a:hover{background:var(--hl-soft);}
+  button,select,input,textarea{font:inherit;}
+  .wrap{max-width:680px;margin:0 auto;padding:44px 22px 96px;}
+  .back{display:inline-block;font-family:var(--mono);font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);text-decoration:none;margin-bottom:22px;}
+  .back:hover{color:var(--ink);background:none;}
+  .eyebrow{display:inline-block;font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:6px 13px;margin-bottom:20px;background:var(--card);}
+  .brand h1{font-family:var(--disp);font-weight:700;text-transform:uppercase;font-size:clamp(30px,5.4vw,50px);line-height:1.03;letter-spacing:-.005em;margin:0;}
+  .brand p{margin:14px 0 28px;color:var(--muted);font-size:clamp(16px,1.7vw,19px);}
+  .hl{background-image:linear-gradient(var(--hl),var(--hl));background-repeat:no-repeat;background-position:0 82%;background-size:100% 64%;padding:.02em .16em;-webkit-box-decoration-break:clone;box-decoration-break:clone;}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:24px;box-shadow:var(--shadow);padding:30px;}
+  label{display:block;font-family:var(--mono);font-weight:600;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0 0 7px;}
+  .req>label::after{content:' *';color:var(--ink);}
+  input,select,textarea{width:100%;padding:12px 14px;border:1.5px solid var(--line);border-radius:12px;background:var(--paper);color:var(--ink);font-size:15px;transition:border-color .16s ease,background .16s ease;}
+  input::placeholder,textarea::placeholder{color:#a39d90;}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--ink);background:var(--card);}
+  textarea{resize:vertical;min-height:90px;}
+  .field{margin-bottom:18px;}
+  .hint{color:var(--muted);font-size:13px;line-height:1.5;margin-top:7px;}
+  .row2{display:flex;gap:14px;}.row2>div{flex:1;min-width:0;}
+  .seg{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;}
+  .seg button{flex:1;border:1.5px solid var(--line);background:var(--card);color:var(--ink);border-radius:999px;padding:9px 14px;cursor:pointer;font-family:var(--disp);font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.02em;white-space:nowrap;transition:border-color .16s ease,background .16s ease,color .16s ease;}
+  .seg button:hover{border-color:var(--ink);}
+  .seg button.on{background:var(--ink);border-color:var(--ink);color:var(--paper);}
+  .wd{display:flex;gap:8px;flex-wrap:wrap;}
+  .wd label{display:flex;align-items:center;gap:6px;font-family:var(--disp);font-weight:700;font-size:12px;letter-spacing:.02em;color:var(--ink);border:1.5px solid var(--line);background:var(--card);border-radius:999px;padding:7px 13px;margin:0;cursor:pointer;}
+  .wd label:has(input:checked){background:var(--hl);border-color:var(--ink);}
+  .wd input{width:auto;accent-color:var(--ink);}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:10px;width:100%;background:var(--hl);color:var(--ink);border:1.5px solid var(--hl);border-radius:999px;padding:16px 26px;font-family:var(--disp);font-weight:700;font-size:14px;text-transform:uppercase;letter-spacing:.03em;cursor:pointer;margin-top:6px;transition:transform .16s ease,box-shadow .16s ease,border-color .16s ease;}
+  .btn:hover{border-color:var(--ink);transform:translateY(-2px);box-shadow:var(--shadow);}
+  .btn:disabled{opacity:.55;transform:none;box-shadow:none;cursor:default;}
+  .msg{margin-top:14px;font-size:14px;}.msg.err{color:var(--err);}
   .hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden;}
-  .done{text-align:center;padding:20px 6px;}
-  .done .ok{width:66px;height:66px;border-radius:50%;background:#e2f5ea;color:var(--ok);display:flex;align-items:center;justify-content:center;font-size:34px;margin:0 auto 14px;}
-  .done h2{font-family:var(--display);font-weight:700;margin:0 0 8px;}
-  .done p{color:var(--muted);margin:0 0 18px;}
-  .lnk{display:inline-block;border:1px solid var(--ink);border-radius:999px;padding:11px 20px;font-weight:600;color:var(--ink);}
+  .done{text-align:center;padding:22px 6px;}
+  .done .ok{width:68px;height:68px;border-radius:50%;background:var(--green);color:var(--ok);display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:700;margin:0 auto 18px;}
+  .done h2{font-family:var(--disp);font-weight:700;text-transform:uppercase;font-size:clamp(22px,4vw,30px);line-height:1.1;margin:0 0 10px;}
+  .done p{color:var(--muted);margin:0 0 22px;}
+  .lnk{display:inline-flex;align-items:center;gap:8px;border:1.5px solid var(--ink);border-radius:999px;padding:13px 22px;font-family:var(--disp);font-weight:700;font-size:13px;text-transform:uppercase;letter-spacing:.03em;color:var(--ink);text-decoration:none;}
+  .lnk:hover{background:var(--ink);color:var(--paper);}
+  @media(max-width:560px){
+    .wrap{padding:28px 16px 64px;}
+    .card{padding:20px 16px;border-radius:20px;}
+    .row2{flex-direction:column;gap:0;}
+    .row2>.field:not(:last-child){margin-bottom:16px!important;}
+    .btn{font-size:13px;padding:15px 16px;letter-spacing:.02em;}
+    .seg button{flex:1 1 100%;}
+  }
+  @media(prefers-reduced-motion:reduce){*{transition:none!important;}}
 </style>
 </head>
 <body>
   <div class="wrap">
+    <a class="back" href="/">← Афиша</a>
     <div class="brand">
-      <h1>Предложить событие</h1>
+      <span class="eyebrow">ЕКБ ГИД · Афиша</span>
+      <h1>Предложить <span class="hl">событие</span></h1>
       <p>Заполните форму — после проверки модератором ваш анонс появится в афише ЕКБ ГИД.</p>
     </div>
     <div class="card" id="card">
@@ -100,7 +128,7 @@
 
       <div class="hp"><label>Не заполняйте это поле<input id="website" tabindex="-1" autocomplete="off"></label></div>
 
-      <button class="btn" id="send">Отправить на модерацию</button>
+      <button class="btn" id="send">Отправить на модерацию <span aria-hidden="true">→</span></button>
       <div class="msg" id="msg"></div>
     </div>
   </div>
@@ -157,10 +185,10 @@
         const {error}=await client.from('event_submissions').insert(payload);
         if(error) throw error;
         done();
-      }catch(e){ btn.disabled=false;btn.textContent='Отправить на модерацию'; err('Не удалось отправить: '+(e.message||e)); }
+      }catch(e){ btn.disabled=false;btn.innerHTML='Отправить на модерацию <span aria-hidden="true">→</span>'; err('Не удалось отправить: '+(e.message||e)); }
     }
     function err(t){$('msg').className='msg err';$('msg').textContent=t;}
-    function done(){ $('card').innerHTML=`<div class="done"><div class="ok">✓</div><h2>Заявка отправлена!</h2><p>Спасибо! После проверки модератором ваше событие появится в афише.</p><a class="lnk" href="/">← На главную</a></div>`; }
+    function done(){ $('card').innerHTML=`<div class="done"><div class="ok">✓</div><h2>Заявка отправлена!</h2><p>Спасибо! После проверки модератором ваше событие появится в афише.</p><a class="lnk" href="/">← Вся афиша</a></div>`; }
 
     init();
   })();

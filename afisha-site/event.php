@@ -9,13 +9,16 @@ if ($slug === '') {
     header('Content-Type: text/html; charset=utf-8');
     echo '<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">';
     echo '<title>Все события — Афиша Екатеринбурга | ЕКБ ГИД</title>';
+    echo '<meta name="description" content="Все события афиши Екатеринбурга: концерты, вечеринки, выставки, рестораны и городские события — ЕКБ ГИД.">';
     echo '<link rel="canonical" href="' . h($SITE) . '/afisha/">';
-    echo '<style>body{font-family:system-ui,Segoe UI,Roboto,sans-serif;max-width:760px;margin:0 auto;padding:24px;color:#16151A}a{color:#E5133C;text-decoration:none}h1{font-size:26px}li{margin:8px 0}</style></head><body>';
-    echo '<h1>Афиша Екатеринбурга — все события</h1><ul>';
+    echo page_assets() . '</head><body><div class="wrap">';
+    echo '<a class="back" href="' . h($SITE) . '/">← Афиша Екатеринбурга</a><br>';
+    echo '<span class="eyebrow">ЕКБ ГИД · Афиша</span>';
+    echo '<h1>Все <span class="hl">события</span></h1><ul class="list">';
     foreach ($events as $e) {
-        echo '<li><a href="' . h($SITE) . '/afisha/' . h($e['slug']) . '">' . h($e['title']) . '</a> — ' . h(sched_text($e, $MONTHS, $WD)) . '</li>';
+        echo '<li><a href="' . h($SITE) . '/afisha/' . h($e['slug']) . '"><span class="t">' . h($e['title']) . '</span><span class="d">' . h(sched_text($e, $MONTHS, $WD)) . '</span></a></li>';
     }
-    echo '</ul><p><a href="' . h($SITE) . '/">← На главную афишу</a></p></body></html>';
+    echo '</ul><div class="foot">Афиша Екатеринбурга · <a href="' . h($SITE) . '/">ЕКБ ГИД</a></div></div></body></html>';
     exit;
 }
 
@@ -24,9 +27,11 @@ $rows = sb_get('events?slug=eq.' . rawurlencode($slug) . '&status=eq.published&s
 if (empty($rows)) {
     http_response_code(404);
     header('Content-Type: text/html; charset=utf-8');
-    echo '<!doctype html><meta charset="utf-8"><title>Событие не найдено — Афиша ЕКБ ГИД</title>';
-    echo '<div style="font-family:system-ui;max-width:600px;margin:60px auto;text-align:center;color:#16151A">';
-    echo '<h1>Событие не найдено</h1><p>Возможно, оно уже прошло.</p><p><a href="' . h($SITE) . '/" style="color:#E5133C">← На главную афишу</a></p></div>';
+    echo '<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">';
+    echo '<title>Событие не найдено — Афиша ЕКБ ГИД</title><meta name="robots" content="noindex">' . page_assets() . '</head><body>';
+    echo '<div class="wrap nf"><span class="eyebrow">Афиша Екатеринбурга</span><h1>Событие <span class="hl">не найдено</span></h1>';
+    echo '<p class="lead">Возможно, оно уже прошло — загляните в афишу, там много другого.</p>';
+    echo '<div class="btns"><a class="btn btn-primary" href="' . h($SITE) . '/">Смотреть афишу <span aria-hidden="true">→</span></a></div></div></body></html>';
     exit;
 }
 $ev = $rows[0];
@@ -61,7 +66,7 @@ $ld = array(
     'url' => $canonical,
     'organizer' => array('@type' => 'Organization', 'name' => 'ЕКБ ГИД', 'url' => $SITE),
 );
-if (!empty($ev['ends_on'])) $ld['endDate'] = iso_dt($ev['ends_on'], $ev['end_time'] ?: $ev['start_time']);
+if (!empty($ev['ends_on'])) $ld['endDate'] = iso_dt($ev['ends_on'], ($ev['end_time'] ?? null) ?: $ev['start_time']);
 if ($previewImage) $ld['image'] = array($previewImage);
 if ($desc) $ld['description'] = $desc;
 $ld['location'] = array('@type' => 'Place', 'name' => $venueName ?: 'Екатеринбург', 'address' => $venueAddr ?: 'Екатеринбург');
@@ -92,44 +97,29 @@ header('Content-Type: text/html; charset=utf-8');
 <meta name="twitter:title" content="<?php echo h($ev['title']); ?>">
 <meta name="twitter:description" content="<?php echo h($desc); ?>">
 <?php if ($previewImage): ?><meta name="twitter:image" content="<?php echo h($previewImage); ?>"><?php endif; ?>
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Onest:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script type="application/ld+json"><?php echo $ldJson; ?></script>
-<style>
-  :root{--ink:#16151A;--muted:#6B6A73;--line:#E7E3DA;--accent:#E5133C;--accent-ink:#B00E30;--paper:#FBFAF7;}
-  *{box-sizing:border-box;} body{margin:0;font-family:'Onest',system-ui,sans-serif;background:var(--paper);color:var(--ink);-webkit-font-smoothing:antialiased;}
-  .wrap{max-width:760px;margin:0 auto;padding:20px 18px 60px;}
-  a{color:var(--accent);text-decoration:none;}
-  .back{display:inline-block;color:var(--muted);font-weight:600;margin-bottom:16px;}
-  h1{font-family:'Montserrat',sans-serif;font-weight:800;font-size:clamp(24px,5vw,36px);line-height:1.05;margin:0 0 6px;}
-  .perf{color:var(--muted);font-size:17px;margin-bottom:14px;}
-  .poster{display:block;max-width:100%;max-height:70vh;width:auto;height:auto;margin:16px 0;border-radius:16px;}
-  video{display:block;margin:16px auto;width:auto;max-width:100%;max-height:75vh;background:#000;border-radius:16px;}
-  .meta{display:flex;flex-wrap:wrap;gap:8px 18px;font-size:15px;color:var(--muted);margin:6px 0 14px;}
-  .meta b{color:var(--ink);}
-  .desc{line-height:1.65;color:#2C2A26;white-space:pre-line;font-size:16px;}
-  .ticket{display:inline-block;margin:22px 0 8px;background:var(--accent);color:#fff;border-radius:999px;padding:13px 24px;font-weight:700;}
-  .ticket:hover{background:var(--accent-ink);}
-  .foot{margin-top:26px;padding-top:16px;border-top:1px solid var(--line);color:var(--muted);font-size:14px;}
-</style>
+<?php echo page_assets(); ?>
 </head>
 <body>
   <div class="wrap">
-    <a class="back" href="<?php echo h($SITE); ?>/">← Афиша Екатеринбурга</a>
+    <a class="back" href="<?php echo h($SITE); ?>/">← Афиша Екатеринбурга</a><br>
+    <span class="eyebrow"><?php echo h($cat ? $cat['name'] : 'Афиша Екатеринбурга'); ?></span>
     <h1><?php echo h($ev['title']); ?></h1>
-    <?php if (!empty($ev['performer'])): ?><div class="perf"><?php echo h($ev['performer']); ?></div><?php endif; ?>
+    <?php if (!empty($ev['performer'])): ?><p class="lead"><?php echo h($ev['performer']); ?></p><?php endif; ?>
     <?php if ($cover): ?><img class="poster" src="<?php echo h($cover); ?>" alt="<?php echo h($ev['title']); ?>"><?php endif; ?>
     <?php if ($video): ?><video src="<?php echo h($video); ?>" controls playsinline></video><?php endif; ?>
     <div class="meta">
       <span><b><?php echo h($dateStr); ?></b></span>
-      <?php if ($cat): ?><span><?php echo h($cat['name']); ?></span><?php endif; ?>
       <?php if ($venueName): ?><span><?php echo h($venueName); ?><?php echo $venueAddr ? ', ' . h($venueAddr) : ''; ?></span><?php endif; ?>
       <?php if (!empty($ev['price'])): ?><span><b><?php echo h($ev['price']); ?></b></span><?php endif; ?>
     </div>
     <?php if (!empty($ev['full_description']) || !empty($ev['short_description'])): ?>
       <div class="desc"><?php echo h($ev['full_description'] ?: $ev['short_description']); ?></div>
     <?php endif; ?>
-    <?php if (!empty($ev['external_url'])): ?><a class="ticket" href="<?php echo h($ev['external_url']); ?>" target="_blank" rel="noopener">Билеты и подробности →</a><?php endif; ?>
+    <div class="btns">
+      <?php if (!empty($ev['external_url'])): ?><a class="btn btn-primary" href="<?php echo h($ev['external_url']); ?>" target="_blank" rel="noopener">Билеты и подробности <span aria-hidden="true">→</span></a><?php endif; ?>
+      <a class="btn" href="<?php echo h($SITE); ?>/">Вся афиша</a>
+    </div>
     <div class="foot">Событие в афише Екатеринбурга · <a href="<?php echo h($SITE); ?>/">ЕКБ ГИД</a></div>
   </div>
 </body>

@@ -81,5 +81,5 @@ cd /root/claude-repo && git pull
 
 ```html
 <div id="ekb-afisha-widget"></div>
-<script src="https://afisha.ekb-guide.ru/embed.js?v=4" charset="utf-8" defer></script>
+<script src="https://afisha.ekb-guide.ru/embed.js?v=7" charset="utf-8" defer></script>
 ```

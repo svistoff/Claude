@@ -39,58 +39,65 @@
   function injectOnce(){
     if(document.getElementById('ekbg-embed-css'))return;
     var l=document.createElement('link');l.rel='stylesheet';
-    l.href='https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800&family=Onest:wght@400;600;700&display=swap';
+    l.href='https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;600&display=swap';
     document.head.appendChild(l);
     var s=document.createElement('style');s.id='ekbg-embed-css';
+    // Дизайн-код ЕКБ ГИД (как ekb-guide.ru/price). Цвета заданы прямо в правилах, а не CSS-переменными,
+    // чтобы стили Tilda не могли их перебить.
+    var INK='#191512',MUTED='#6F6A60',LINE='#E4DFCF',CARD='#FFFDF7',PAPER='#F4F1E9',HL='#F5E24B',HLS='#FCF4B4';
+    var DISP="Montserrat,-apple-system,'Segoe UI',sans-serif",SANS="Inter,-apple-system,'Segoe UI',Roboto,sans-serif",MONO="'JetBrains Mono',ui-monospace,monospace";
     s.textContent=[
-      '.ekbg-afisha{font-family:Onest,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#16151A;max-width:100%;box-sizing:border-box;}',
+      '.ekbg-afisha{font-family:'+SANS+';color:'+INK+';max-width:100%;box-sizing:border-box;line-height:1.5;}',
       '.ekbg-afisha *{box-sizing:border-box;}',
-      '.ekbg-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:6px 12px;margin:0 0 14px;}',
-      '.ekbg-head h3{font-family:Montserrat,sans-serif;font-weight:700;font-size:clamp(20px,4vw,26px);margin:0;letter-spacing:-.01em;}',
-      '.ekbg-hlink{color:#E5133C;font-weight:700;text-decoration:none;font-size:15px;white-space:nowrap;}',
-      '.ekbg-hlink:hover{color:#B00E30;}',
-      '.ekbg-row{display:flex;gap:14px;overflow-x:auto;padding:2px 2px 10px;scrollbar-width:none;-webkit-overflow-scrolling:touch;}',
+      '.ekbg-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:8px 16px;margin:0 0 18px;}',
+      '.ekbg-head h3{font-family:'+DISP+';font-weight:700;text-transform:uppercase;font-size:clamp(24px,3.5vw,38px);line-height:1.03;letter-spacing:-.005em;margin:0;color:'+INK+';}',
+      '.ekbg-hl{background-image:linear-gradient('+HL+','+HL+');background-repeat:no-repeat;background-position:0 82%;background-size:100% 64%;padding:.02em .16em;-webkit-box-decoration-break:clone;box-decoration-break:clone;}',
+      '.ekbg-hlink{color:'+INK+';font-weight:600;font-size:15px;white-space:nowrap;text-decoration:underline;text-decoration-color:'+HL+';text-decoration-thickness:3px;text-underline-offset:3px;}',
+      '.ekbg-hlink:hover{background:'+HLS+';}',
+      '.ekbg-row{display:flex;gap:16px;overflow-x:auto;padding:2px 2px 12px;scrollbar-width:none;-webkit-overflow-scrolling:touch;}',
       '.ekbg-row::-webkit-scrollbar{display:none;}',
-      '.ekbg-card{flex:0 0 auto;width:200px;text-decoration:none;color:inherit;background:#fff;border:1px solid #E7E3DA;border-radius:14px;overflow:hidden;transition:transform .15s,box-shadow .15s;display:block;cursor:pointer;}',
-      '.ekbg-card:hover{transform:translateY(-3px);box-shadow:0 12px 30px rgba(0,0,0,.12);}',
-      '.ekbg-img{aspect-ratio:3/4;background:linear-gradient(135deg,#efe9dc,#e3dccf);}',
+      '.ekbg-card{flex:0 0 auto;width:210px;text-decoration:none;color:inherit;background:'+CARD+';border:1px solid '+LINE+';border-radius:20px;overflow:hidden;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease;display:block;cursor:pointer;}',
+      '.ekbg-card:hover{transform:translateY(-3px);border-color:'+INK+';box-shadow:0 10px 26px rgba(25,21,18,.09);}',
+      '.ekbg-img{aspect-ratio:3/4;background:repeating-linear-gradient(135deg,rgba(25,21,18,.05) 0 8px,transparent 8px 16px),'+PAPER+';border-bottom:1px solid '+LINE+';}',
       '.ekbg-img img{width:100%;height:100%;object-fit:cover;display:block;}',
-      '.ekbg-b{padding:10px 12px 12px;}',
-      '.ekbg-when{color:#E5133C;font-weight:700;font-size:12px;}',
-      '.ekbg-cat{color:#6B6A73;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.03em;}',
-      '.ekbg-t{font-family:Montserrat,sans-serif;font-weight:700;font-size:14px;line-height:1.2;margin:4px 0 0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}',
-      '.ekbg-p{margin-top:6px;font-weight:700;font-size:13px;}',
-      '.ekbg-foot{margin-top:6px;}',
-      '.ekbg-btn{display:inline-block;border:1.5px solid #E5133C;color:#E5133C;background:transparent;border-radius:999px;padding:10px 20px;font-weight:700;font-size:14px;text-decoration:none;transition:background .15s,color .15s;}',
-      '.ekbg-btn:hover{background:#E5133C;color:#fff;}',
+      '.ekbg-b{padding:12px 14px 14px;}',
+      '.ekbg-cat{display:inline-block;font-family:'+MONO+';font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;background:'+HLS+';color:'+INK+';border-radius:6px;padding:3px 8px;margin-bottom:8px;}',
+      '.ekbg-when{font-family:'+MONO+';font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:'+INK+';}',
+      '.ekbg-t{font-family:'+DISP+';font-weight:700;font-size:15px;line-height:1.2;margin:6px 0 0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}',
+      '.ekbg-p{margin-top:8px;font-family:'+DISP+';font-weight:700;font-size:14px;}',
+      '.ekbg-foot{margin-top:10px;}',
+      '.ekbg-btn{display:inline-flex;align-items:center;gap:8px;font-family:'+DISP+';font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:.02em;padding:13px 24px;border-radius:999px;border:1.5px solid '+HL+';background:'+HL+';color:'+INK+' !important;text-decoration:none;transition:transform .16s ease,box-shadow .16s ease;}',
+      '.ekbg-btn:hover{transform:translateY(-2px);box-shadow:0 8px 18px rgba(245,226,75,.55);}',
       /* на телефоне блок Tilda идёт от края до края — даём поля 16px; карточки при этом листаются во всю ширину */
-      '@media(max-width:600px){.ekbg-card{width:158px;}.ekbg-btn{display:block;text-align:center;}'+
-        '.ekbg-head,.ekbg-foot{padding:0 16px;}.ekbg-row{padding:2px 16px 10px;scroll-padding-left:16px;}}',
+      '@media(max-width:600px){.ekbg-card{width:164px;}.ekbg-b{padding:12px 12px 14px;}.ekbg-when{font-size:10px;letter-spacing:.02em;}.ekbg-btn{display:flex;justify-content:center;}'+
+        '.ekbg-head,.ekbg-foot{padding:0 16px;}.ekbg-row{padding:2px 16px 12px;scroll-padding-left:16px;}}',
 
       /* Всплывающее окно. Живёт прямо в <body>, а не внутри блока Tilda: у блоков Tilda бывают
          transform/overflow, которые ломают position:fixed. Стили заданы явно, чтобы не зависеть от CSS Tilda. */
-      '.ekbg-ov{position:fixed;inset:0;z-index:2147483000;background:rgba(16,15,20,.6);display:flex;align-items:center;justify-content:center;padding:18px;}',
+      '.ekbg-ov{position:fixed;inset:0;z-index:2147483000;background:rgba(25,21,18,.55);display:flex;align-items:center;justify-content:center;padding:18px;}',
       '.ekbg-ov,.ekbg-ov *{box-sizing:border-box;}',
-      '.ekbg-mod{width:min(760px,100%);max-height:92vh;overflow:auto;-webkit-overflow-scrolling:touch;background:#fff;border-radius:22px;box-shadow:0 18px 50px rgba(22,21,26,.25);font-family:Onest,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#16151A;text-align:left;line-height:1.4;font-size:16px;}',
-      '.ekbg-mb{padding:20px 22px 24px;}',
+      '.ekbg-mod{width:min(760px,100%);max-height:92vh;overflow:auto;-webkit-overflow-scrolling:touch;background:'+CARD+';border-radius:24px;box-shadow:0 10px 26px rgba(25,21,18,.09);font-family:'+SANS+';color:'+INK+';text-align:left;line-height:1.55;font-size:16px;}',
+      '.ekbg-mb{padding:26px 28px 28px;}',
       '.ekbg-mt{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;}',
-      '.ekbg-mt h2{font-family:Montserrat,sans-serif;font-weight:700;font-size:clamp(21px,3.4vw,30px);line-height:1.08;margin:0;padding:0;color:#16151A;letter-spacing:-.01em;}',
-      '.ekbg-x{flex:0 0 auto;width:42px;height:42px;border-radius:50%;border:1px solid #E7E3DA;background:#fff;color:#16151A;cursor:pointer;font-size:18px;line-height:1;padding:0;margin:0;}',
-      '.ekbg-x:hover{border-color:#16151A;}',
-      '.ekbg-perf{color:#6B6A73;font-size:15px;margin-top:6px;}',
-      '.ekbg-poster{display:block;max-width:100%;max-height:60vh;width:auto;height:auto;margin:14px auto;border-radius:14px;}',
-      '.ekbg-mod video{display:block;margin:14px auto;width:auto;max-width:100%;max-height:70vh;background:#000;border-radius:14px;}',
-      '.ekbg-meta{display:flex;flex-wrap:wrap;gap:8px 16px;color:#6B6A73;margin:12px 0 4px;font-size:14px;}',
-      '.ekbg-meta b{color:#16151A;}',
-      '.ekbg-desc{line-height:1.6;color:#2C2A26;white-space:pre-line;margin-top:14px;font-size:15px;}',
-      '.ekbg-acts{display:flex;flex-wrap:wrap;align-items:center;gap:12px 18px;margin-top:18px;}',
-      '.ekbg-ticket{display:inline-block;background:#E5133C;color:#fff !important;border-radius:999px;padding:12px 22px;font-weight:700;text-decoration:none;}',
-      '.ekbg-ticket:hover{background:#B00E30;}',
-      '.ekbg-more{color:#6B6A73;font-weight:600;font-size:14px;text-decoration:none;}',
-      '.ekbg-more:hover{color:#E5133C;}',
-      '.ekbg-share{border:1px solid #16151A;background:transparent;color:#16151A;border-radius:999px;padding:11px 20px;font:inherit;font-size:15px;font-weight:700;cursor:pointer;margin:0;}',
-      '.ekbg-share:hover{background:#16151A;color:#fff;}',
-      '@media(max-width:600px){.ekbg-ov{align-items:flex-end;padding:0;}.ekbg-mod{width:100%;border-radius:18px 18px 0 0;}.ekbg-mb{padding:16px 16px 22px;}}'
+      '.ekbg-mt h2{font-family:'+DISP+';font-weight:700;font-size:clamp(21px,3.2vw,30px);line-height:1.1;margin:0;padding:0;color:'+INK+';letter-spacing:-.005em;text-transform:none;}',
+      '.ekbg-x{flex:0 0 auto;width:42px;height:42px;border-radius:50%;border:1.5px solid '+LINE+';background:'+CARD+';color:'+INK+';cursor:pointer;font-size:16px;line-height:1;padding:0;margin:0;}',
+      '.ekbg-x:hover{border-color:'+INK+';}',
+      '.ekbg-perf{color:'+MUTED+';font-size:15px;margin-top:6px;}',
+      '.ekbg-poster{display:block;max-width:100%;max-height:60vh;width:auto;height:auto;margin:16px auto;border-radius:16px;}',
+      '.ekbg-mod video{display:block;margin:16px auto;width:auto;max-width:100%;max-height:70vh;background:'+INK+';border-radius:16px;}',
+      '.ekbg-meta{display:flex;flex-wrap:wrap;gap:8px 16px;color:'+MUTED+';margin:14px 0 4px;font-family:'+MONO+';font-size:12px;letter-spacing:.04em;text-transform:uppercase;}',
+      '.ekbg-meta b{color:'+INK+';font-weight:600;}',
+      '.ekbg-desc{line-height:1.6;color:'+INK+';white-space:pre-line;margin-top:16px;font-size:16px;}',
+      '.ekbg-acts{display:flex;flex-wrap:wrap;align-items:center;gap:12px 18px;margin-top:22px;}',
+      '.ekbg-ticket{display:inline-flex;align-items:center;gap:8px;background:'+HL+';border:1.5px solid '+HL+';color:'+INK+' !important;border-radius:999px;padding:13px 24px;font-family:'+DISP+';font-weight:700;font-size:14px;text-transform:uppercase;letter-spacing:.02em;text-decoration:none;transition:transform .16s ease,box-shadow .16s ease;}',
+      '.ekbg-ticket:hover{transform:translateY(-2px);box-shadow:0 8px 18px rgba(245,226,75,.55);}',
+      '.ekbg-share{border:1.5px solid '+INK+';background:transparent;color:'+INK+';border-radius:999px;padding:13px 24px;font-family:'+DISP+';font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:.02em;cursor:pointer;margin:0;transition:transform .16s ease,background .16s ease,color .16s ease;}',
+      '.ekbg-share:hover{background:'+INK+';color:'+PAPER+';transform:translateY(-2px);}',
+      '.ekbg-more{color:'+MUTED+';font-weight:600;font-size:14px;text-decoration:underline;text-underline-offset:3px;}',
+      '.ekbg-more:hover{color:'+INK+';}',
+      '@media(max-width:600px){.ekbg-ov{align-items:flex-end;padding:0;}.ekbg-mod{width:100%;border-radius:20px 20px 0 0;}.ekbg-mb{padding:20px 18px 26px;}'+
+        '.ekbg-ticket,.ekbg-share{width:100%;justify-content:center;}}',
+      '@media (prefers-reduced-motion:reduce){.ekbg-afisha *,.ekbg-ov *{transition:none!important;}}'
     ].join('');
     document.head.appendChild(s);
   }
@@ -175,10 +182,10 @@
         '<div class="ekbg-t">'+esc(ev.title)+'</div>'+
         (ev.price?'<div class="ekbg-p">'+esc(ev.price)+'</div>':'')+'</div></a>';
     }).join('');
-    el.innerHTML='<div class="ekbg-afisha"><div class="ekbg-head"><h3>Афиша Екатеринбурга</h3>'+
+    el.innerHTML='<div class="ekbg-afisha"><div class="ekbg-head"><h3>Афиша <span class="ekbg-hl">Екатеринбурга</span></h3>'+
       '<a class="ekbg-hlink" href="'+esc(SUBMIT)+'">Предложить анонс</a></div>'+
       '<div class="ekbg-row">'+cards+'</div>'+
-      '<div class="ekbg-foot"><a class="ekbg-btn" href="'+AFISHA+'/">Смотреть все</a></div></div>';
+      '<div class="ekbg-foot"><a class="ekbg-btn" href="'+AFISHA+'/">Смотреть все <span aria-hidden="true">→</span></a></div></div>';
     el.addEventListener('click',function(e){
       var a=e.target.closest&&e.target.closest('[data-ekbg-i]');
       if(!a)return;
