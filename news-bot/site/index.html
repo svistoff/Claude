@@ -167,8 +167,8 @@
   }
   function dayLabel(iso){
     var d=new Date(iso), key=ekbDay(d), now=new Date();
-    if(key===ekbDay(now)) return 'сегодня';
-    if(key===ekbDay(new Date(now.getTime()-864e5))) return 'вчера';
+    if(key===ekbDay(now)) return 'опубликовано сегодня';
+    if(key===ekbDay(new Date(now.getTime()-864e5))) return 'опубликовано вчера';
     var p=key.split('-'); var s=parseInt(p[2],10)+' '+MONTHS[parseInt(p[1],10)-1];
     if(p[0]!==ekbDay(now).slice(0,4)) s+=' '+p[0];
     return s;

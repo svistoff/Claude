@@ -51,7 +51,7 @@
 
 ```html
 <div id="ekb-news-widget"></div>
-<script src="https://news.ekb-guide.ru/news-embed.js?v=4" defer></script>
+<script src="https://news.ekb-guide.ru/news-embed.js?v=5" defer></script>
 ```
 
 Атрибуты `<script>`: `data-target` (id контейнера), `data-limit` (по умолчанию 5).

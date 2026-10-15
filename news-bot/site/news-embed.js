@@ -25,8 +25,8 @@
   function ekbDay(d){return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Yekaterinburg',year:'numeric',month:'2-digit',day:'2-digit'}).format(d);}
   function dayLabel(iso){
     var key=ekbDay(new Date(iso)), now=new Date();
-    if(key===ekbDay(now)) return 'сегодня';
-    if(key===ekbDay(new Date(now.getTime()-864e5))) return 'вчера';
+    if(key===ekbDay(now)) return 'опубликовано сегодня';
+    if(key===ekbDay(new Date(now.getTime()-864e5))) return 'опубликовано вчера';
     var p=key.split('-'), s=parseInt(p[2],10)+' '+MONTHS[parseInt(p[1],10)-1];
     return p[0]!==ekbDay(now).slice(0,4)?s+' '+p[0]:s;
   }
