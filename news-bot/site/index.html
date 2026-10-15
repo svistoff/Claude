@@ -185,7 +185,7 @@
     return '<li class="item"><a href="/n/'+esc(encodeURIComponent(n.slug))+'" data-slug="'+esc(n.slug)+'">'+
       '<h2 class="t">'+esc(n.title)+'</h2>'+
       (n.summary?'<p class="s">'+esc(n.summary)+'</p>':'')+
-      '<div class="d"><span>'+esc('опубликовано '+dayLabel(n.published_at))+'</span>'+mediaBadge(n)+'</div></a></li>';
+      '<div class="d"><span>'+esc(dayLabel(n.published_at))+'</span>'+mediaBadge(n)+'</div></a></li>';
   }
 
   function api(q){
@@ -232,7 +232,7 @@
   function modalHtml(n){
     return '<div class="mod" role="dialog" aria-modal="true" aria-labelledby="mt"><div class="mb">'+
       '<div class="mt"><h2 id="mt">'+esc(n.title)+'</h2><button type="button" class="x" data-close aria-label="Закрыть">✕</button></div>'+
-      '<div class="md">'+esc('опубликовано '+dayLabel(n.published_at))+'</div>'+
+      '<div class="md">'+esc(dayLabel(n.published_at))+'</div>'+
       (n.summary?'<p class="msum">'+esc(n.summary)+'</p>':'')+
       galleryHtml(n)+
       (n.body?'<div class="body">'+paragraphs(n.body)+'</div>':'')+
