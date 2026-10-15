@@ -54,22 +54,25 @@
       '.ekbg-hl{background-image:linear-gradient('+HL+','+HL+');background-repeat:no-repeat;background-position:0 82%;background-size:100% 64%;padding:.02em .16em;-webkit-box-decoration-break:clone;box-decoration-break:clone;}',
       '.ekbg-hlink{color:'+INK+';font-weight:600;font-size:15px;white-space:nowrap;text-decoration:underline;text-decoration-color:'+HL+';text-decoration-thickness:3px;text-underline-offset:3px;}',
       '.ekbg-hlink:hover{background:'+HLS+';}',
-      '.ekbg-row{display:flex;gap:16px;overflow-x:auto;padding:2px 2px 12px;scrollbar-width:none;-webkit-overflow-scrolling:touch;}',
+      '.ekbg-head,.ekbg-foot{padding:0 max(20px,calc((100% - 1160px) / 2));}',
+      '.ekbg-row{display:flex;gap:16px;overflow-x:auto;padding:2px max(20px,calc((100% - 1160px) / 2)) 12px;scroll-padding-left:max(20px,calc((100% - 1160px) / 2));scrollbar-width:none;-webkit-overflow-scrolling:touch;}',
       '.ekbg-row::-webkit-scrollbar{display:none;}',
       '.ekbg-card{flex:0 0 auto;width:210px;text-decoration:none;color:inherit;background:'+CARD+';border:1px solid '+LINE+';border-radius:20px;overflow:hidden;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease;display:block;cursor:pointer;}',
       '.ekbg-card:hover{transform:translateY(-3px);border-color:'+INK+';box-shadow:0 10px 26px rgba(25,21,18,.09);}',
       '.ekbg-img{aspect-ratio:3/4;background:repeating-linear-gradient(135deg,rgba(25,21,18,.05) 0 8px,transparent 8px 16px),'+PAPER+';border-bottom:1px solid '+LINE+';}',
       '.ekbg-img img{width:100%;height:100%;object-fit:cover;display:block;}',
       '.ekbg-b{padding:12px 14px 14px;}',
-      '.ekbg-cat{display:inline-block;font-family:'+MONO+';font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;background:'+HLS+';color:'+INK+';border-radius:6px;padding:3px 8px;margin-bottom:8px;}',
+      '.ekbg-tags{display:flex;align-items:center;gap:6px;min-width:0;margin-bottom:8px;}',
+      '.ekbg-cat{flex:0 0 auto;font-family:'+MONO+';font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;background:'+HLS+';color:'+INK+';border-radius:6px;padding:3px 8px;}',
+      '.ekbg-ven{min-width:0;font-family:'+MONO+';font-size:10px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:'+MUTED+';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}',
       '.ekbg-when{font-family:'+MONO+';font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:'+INK+';}',
-      '.ekbg-t{font-family:'+DISP+';font-weight:700;font-size:15px;line-height:1.2;margin:6px 0 0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}',
+      '.ekbg-t{font-family:'+DISP+';font-weight:700;font-size:13px;line-height:1.25;margin:6px 0 0;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;}',
       '.ekbg-p{margin-top:8px;font-family:'+DISP+';font-weight:700;font-size:14px;}',
       '.ekbg-foot{margin-top:10px;}',
       '.ekbg-btn{display:inline-flex;align-items:center;gap:8px;font-family:'+DISP+';font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:.02em;padding:13px 24px;border-radius:999px;border:1.5px solid '+HL+';background:'+HL+';color:'+INK+' !important;text-decoration:none;transition:transform .16s ease,box-shadow .16s ease;}',
       '.ekbg-btn:hover{transform:translateY(-2px);box-shadow:0 8px 18px rgba(245,226,75,.55);}',
       /* на телефоне блок Tilda идёт от края до края — даём поля 16px; карточки при этом листаются во всю ширину */
-      '@media(max-width:600px){.ekbg-card{width:164px;}.ekbg-b{padding:12px 12px 14px;}.ekbg-when{font-size:10px;letter-spacing:.02em;}.ekbg-btn{display:flex;justify-content:center;}'+
+      '@media(max-width:600px){.ekbg-card{width:164px;}.ekbg-b{padding:12px 12px 14px;}.ekbg-when{font-size:10px;letter-spacing:.02em;}.ekbg-t{font-size:12.5px;}.ekbg-cat,.ekbg-ven{font-size:9px;}.ekbg-cat{padding:3px 6px;}.ekbg-btn{display:flex;justify-content:center;}'+
         '.ekbg-head,.ekbg-foot{padding:0 16px;}.ekbg-row{padding:2px 16px 12px;scroll-padding-left:16px;}}',
 
       /* Всплывающее окно. Живёт прямо в <body>, а не внутри блока Tilda: у блоков Tilda бывают
@@ -175,9 +178,10 @@
       // Приоритет превью: реальная афиша, иначе логотип заведения (для видео-анонсов без постера).
       var img=proxify(ev.cover_image_url)||proxify(ev.venues&&ev.venues.logo_url);
       var cn=CATS[ev.category_id]||'';
+      var vn=(ev.venues&&ev.venues.name)||'';
       return '<a class="ekbg-card" href="'+esc(eventUrl(ev))+'" data-ekbg-i="'+i+'">'+
         '<div class="ekbg-img">'+(img?'<img src="'+esc(img)+'" loading="lazy" alt="'+esc(ev.title)+'" onerror="this.style.display=\'none\'">':'')+'</div>'+
-        '<div class="ekbg-b">'+(cn?'<div class="ekbg-cat">'+esc(cn)+'</div>':'')+
+        '<div class="ekbg-b">'+(cn||vn?'<div class="ekbg-tags">'+(cn?'<span class="ekbg-cat">'+esc(cn)+'</span>':'')+(vn?'<span class="ekbg-ven">'+esc(vn)+'</span>':'')+'</div>':'')+
         '<div class="ekbg-when">'+esc(fmt(ev))+'</div>'+
         '<div class="ekbg-t">'+esc(ev.title)+'</div>'+
         (ev.price?'<div class="ekbg-p">'+esc(ev.price)+'</div>':'')+'</div></a>';
