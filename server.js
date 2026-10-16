@@ -508,11 +508,14 @@ app.get('/api/calls', (req, res) => {
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const rows = db.prepare(`
     SELECT c.*, s.name AS salon_name, a.name AS matched_admin_name, cl.name AS client_name,
-      EXISTS(SELECT 1 FROM ad_phone_numbers an WHERE an.phone = c.dialed_number) AS is_ad_call
+      EXISTS(SELECT 1 FROM ad_phone_numbers an WHERE an.phone = c.dialed_number) AS is_ad_call,
+      cb.salon_id AS callback_salon_id, cbs.name AS callback_salon_name
     FROM calls c
     JOIN salons s ON s.id = c.salon_id
     LEFT JOIN admins a ON a.id = c.matched_admin_id
     LEFT JOIN clients cl ON cl.id = c.client_id
+    LEFT JOIN calls cb ON cb.id = c.callback_call_id
+    LEFT JOIN salons cbs ON cbs.id = cb.salon_id
     ${where}
     ORDER BY c.started_at DESC
     LIMIT 500

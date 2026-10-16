@@ -275,6 +275,7 @@ async function pollOnce() {
     console.error('[telephony] Ошибка получения звонков:', err.message);
   }
 
+  relinkCallbacks(uisLocalStringFor(Date.now() - LOOKBACK_MS_FOR_CALLBACK_MATCH - 24 * 3600000, offset));
   sweepExpiredCallbackWindows(settings.callback_window_min, offset);
 }
 
@@ -285,7 +286,9 @@ async function pollOnce() {
 async function backfill(sinceStr, tillStr) {
   const settings = getTelephonySettings();
   if (!settings.uis_api_key) throw new Error('Не задан ключ UIS API');
-  return ingestCalls(sinceStr, tillStr);
+  const result = await ingestCalls(sinceStr, tillStr);
+  relinkCallbacks(sinceStr);
+  return result;
 }
 
 function saveCall(salon, c) {
@@ -314,42 +317,57 @@ function saveCall(salon, c) {
   );
   const callId = info.lastInsertRowid;
 
-  if (direction === 'out') {
-    linkCallbackIfMatches(salon, callId, callerPhone, c.start_time);
-  }
-
   if (status === 'new') {
     const { processCall } = require('./ai-processing');
     processCall(callId).catch(err => console.error(`[telephony] Ошибка ИИ-обработки звонка #${callId}:`, err.message));
   }
 }
 
-// Ищем недавний неотвеченный входящий на этот объект с этого же номера клиента,
-// ещё не связанный с перезвоном, и связываем его с этим исходящим звонком.
-function linkCallbackIfMatches(salon, outCallId, callerPhone, outStartTime) {
-  const norm = normalizePhone(callerPhone);
-  if (!norm) return;
-
-  const since = toUisDateString(new Date(new Date(outStartTime).getTime() - LOOKBACK_MS_FOR_CALLBACK_MATCH));
+// Связывает пропущенные входящие с исходящими перезвонами тому же клиенту.
+// Перезвон ищется по ВСЕЙ сети, а не только с того же объекта: днём Рай и в
+// будни НУАР переадресованы на салон на 8 Марта, пропущенный числится за
+// Раем/НУАР (по набранному номеру), а перезванивает администратор 8 Марта.
+// Один перезвон закрывает все пропущенные этого клиента до него в окне
+// поиска — клиент, звонивший три раза подряд, получил ответ одним звонком.
+// Идёт отдельным проходом после загрузки пачки звонков, а не в момент
+// сохранения исходящего, — так порядок звонков в ответе UIS не важен.
+function relinkCallbacks(sinceStr, { dryRun = false } = {}) {
   const missed = db.prepare(`
-    SELECT c.* FROM calls c
-    WHERE c.salon_id = ? AND c.direction = 'in' AND c.is_answered = 0
-      AND c.callback_call_id IS NULL AND c.started_at >= ? AND c.started_at <= ?
-    ORDER BY c.started_at DESC LIMIT 1
-  `).all(salon.id, since, outStartTime).find(m => normalizePhone(m.caller_phone) === norm);
+    SELECT id, salon_id, caller_phone, started_at FROM calls
+    WHERE direction = 'in' AND is_answered = 0 AND callback_call_id IS NULL AND started_at >= ?
+  `).all(sinceStr);
+  if (!missed.length) return [];
 
-  if (!missed) return;
+  const outsByPhone = new Map();
+  for (const o of db.prepare(`
+    SELECT id, salon_id, caller_phone, started_at FROM calls
+    WHERE direction = 'out' AND started_at >= ? ORDER BY started_at
+  `).all(sinceStr)) {
+    const norm = normalizePhone(o.caller_phone);
+    if (!norm) continue;
+    if (!outsByPhone.has(norm)) outsByPhone.set(norm, []);
+    outsByPhone.get(norm).push(o);
+  }
 
-  const minutes = Math.max(0, Math.round((new Date(outStartTime) - new Date(missed.started_at)) / 60000));
-  const settings = getTelephonySettings();
-  const callbackStatus = minutes <= settings.callback_window_min ? 'on_time' : 'late';
-
-  db.prepare('UPDATE calls SET callback_call_id = ?, callback_status = ?, callback_minutes = ? WHERE id = ?')
-    .run(outCallId, callbackStatus, minutes, missed.id);
+  const windowMin = getTelephonySettings().callback_window_min;
+  const update = db.prepare('UPDATE calls SET callback_call_id = ?, callback_status = ?, callback_minutes = ? WHERE id = ?');
+  const links = [];
+  for (const m of missed) {
+    const outs = outsByPhone.get(normalizePhone(m.caller_phone));
+    if (!outs) continue;
+    const missedMs = new Date(m.started_at).getTime();
+    const out = outs.find(o => o.started_at > m.started_at && new Date(o.started_at).getTime() - missedMs <= LOOKBACK_MS_FOR_CALLBACK_MATCH);
+    if (!out) continue;
+    const minutes = Math.max(0, Math.round((new Date(out.started_at).getTime() - missedMs) / 60000));
+    const status = minutes <= windowMin ? 'on_time' : 'late';
+    links.push({ missedId: m.id, outId: out.id, minutes, status, missedSalonId: m.salon_id, outSalonId: out.salon_id });
+    if (!dryRun) update.run(out.id, status, minutes, m.id);
+  }
+  return links;
 }
 
 // Пропущенные, чьё окно перезвона истекло без исходящего звонка, помечаем
-// «не перезвонили»; если перезвон всё же случится позже, linkCallbackIfMatches
+// «не перезвонили»; если перезвон всё же случится позже, relinkCallbacks
 // найдёт их по callback_call_id IS NULL и перекроет статус на 'late'.
 function sweepExpiredCallbackWindows(windowMin, offsetHours) {
   const threshold = uisLocalStringFor(Date.now() - windowMin * 60000, offsetHours);
@@ -375,4 +393,4 @@ function startPolling() {
   tick();
 }
 
-module.exports = { startPolling, pollOnce, backfill };
+module.exports = { startPolling, pollOnce, backfill, relinkCallbacks };

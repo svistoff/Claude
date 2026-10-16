@@ -587,7 +587,8 @@ async function loadMissedCalls() {
   const urgent = calls.filter(c => c.callback_status === 'none');
   const urgentRows = urgent.map(c => `<tr><td>${esc(c.salon_name)}</td><td>${esc(c.started_at)}</td><td>${esc(c.caller_phone||'—')}</td></tr>`);
   const allRows = calls.map(c => `<tr><td>${esc(c.started_at)}</td><td>${esc(c.salon_name)}</td><td>${esc(c.caller_phone||'—')}</td>
-        <td>${esc(c.client_name||'—')}</td><td>${badge[c.callback_status] || '⏳ ожидание'}</td>
+        <td>${esc(c.client_name||'—')}</td><td>${badge[c.callback_status] || '⏳ ожидание'}${c.callback_salon_id && c.callback_salon_id !== c.salon_id
+          ? `<div class="muted" style="font-size:11px">с объекта «${esc(c.callback_salon_name)}»</div>` : ''}</td>
         <td>${c.callback_minutes!=null ? c.callback_minutes+' мин' : '—'}</td></tr>`);
   document.getElementById('calls-table').innerHTML = `
     <h3 style="margin-top:0">🔴 Пропущенные без перезвона (${urgent.length})</h3>
