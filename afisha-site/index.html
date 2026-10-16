@@ -182,21 +182,15 @@
     const parseD=s=>{const[y,m,d]=String(s).split('-').map(Number);return new Date(y,m-1,d);};
     const isoDow=d=>{const g=d.getDay();return g===0?7:g;};
     const fmtTime=t=>t?String(t).slice(0,5):'';
-    // Отображение времени — только часы, без минут, с русским склонением (19 часов, 22 часа, 21 час).
-    // Используется только для показа; для сортировки по времени остаётся fmtTime (HH:MM).
-    const hourWord=t=>{
-      if(!t)return '';
-      const h=parseInt(String(t).slice(0,2),10), m100=h%100, m10=h%10;
-      const word=(m100>=11&&m100<=14)?'часов':m10===1?'час':(m10>=2&&m10<=4)?'часа':'часов';
-      return `${h} ${word}`;
-    };
+    // Время показываем как ЧЧ:ММ (18:00); fmtTime же используется и для сортировки событий дня.
+    const timeStr=fmtTime;
     const fmtDay=s=>{const d=parseD(s);return `${d.getDate()} ${MONTHS[d.getMonth()]}`;};
     const eventPath=ev=>ev.slug?'/afisha/'+encodeURIComponent(ev.slug):'/';
     const BASE_TITLE=document.title;
     let modalPushed=false;
 
     function formatSchedule(ev){
-      const t=hourWord(ev.start_time);
+      const t=timeStr(ev.start_time);
       if(ev.schedule_type==='range' && ev.ends_on){
         const a=parseD(ev.starts_on), b=parseD(ev.ends_on);
         const left=a.getMonth()===b.getMonth()?`${a.getDate()}`:`${a.getDate()} ${MONTHS[a.getMonth()]}`;
@@ -372,7 +366,7 @@
           const d=parseD(S.selectedDate);
           const dayItems=(byDate.get(S.selectedDate)||[]).sort((a,b)=>fmtTime(a.start_time).localeCompare(fmtTime(b.start_time)));
           eventsHtml=`<div class="day-head">${WD[isoDow(d)]}, ${d.getDate()} ${MONTHS[d.getMonth()]} <button class="clear-date" data-clear>× показать все</button></div>`+
-            (dayItems.length?`<div class="grid">${dayItems.map(ev=>card(ev, hourWord(ev.start_time)||formatSchedule(ev))).join('')}</div>`
+            (dayItems.length?`<div class="grid">${dayItems.map(ev=>card(ev, timeStr(ev.start_time)||formatSchedule(ev))).join('')}</div>`
               :`<div class="empty">На этот день событий нет.</div>`);
         } else {
           const items=filtered().map(ev=>({ev,d:nextDate(ev,today)})).filter(x=>x.d)

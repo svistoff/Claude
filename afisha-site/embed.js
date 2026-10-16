@@ -23,14 +23,9 @@
   function proxify(u){u=safeUrl(u);return u?u.replace('https://hbmdpqnseywphwgxsnlg.supabase.co',SB):'';}
   function eventUrl(ev){return ev.slug?AFISHA+'/afisha/'+encodeURIComponent(ev.slug):AFISHA+'/';}
   function dayStr(d){if(!d)return '';var p=(''+d).split('-');return parseInt(p[2],10)+' '+MONTHS[parseInt(p[1],10)];}
-  function hourWord(time){
-    if(!time)return '';
-    var h=parseInt((''+time).slice(0,2),10),m100=h%100,m10=h%10,word;
-    if(m100>=11&&m100<=14)word='часов';else if(m10===1)word='час';else if(m10>=2&&m10<=4)word='часа';else word='часов';
-    return h+' '+word;
-  }
+  function timeStr(time){return time?(''+time).slice(0,5):'';} // время как ЧЧ:ММ (18:00)
   function fmt(ev){
-    var t=ev.start_time?hourWord(ev.start_time):'';
+    var t=ev.start_time?timeStr(ev.start_time):'';
     if(ev.schedule_type==='range'&&ev.ends_on) return dayStr(ev.starts_on)+' – '+dayStr(ev.ends_on)+(t?', '+t:'');
     if(ev.schedule_type==='weekly'){var a=(ev.weekdays||[]).map(function(w){return WD[w];}).filter(Boolean).join(', ');return 'по '+a+(t?', '+t:'')+(ev.ends_on?' · до '+dayStr(ev.ends_on):'');}
     return dayStr(ev.starts_on)+(t?', '+t:'');

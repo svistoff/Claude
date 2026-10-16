@@ -31,21 +31,12 @@ function day_str($d, $MONTHS) {
     if (count($p) < 3) return $d;
     return intval($p[2]) . ' ' . $MONTHS[intval($p[1])];
 }
-// В выдаче время показываем часами без минут, с русским склонением (19 часов, 22 часа, 21 час).
-// В базе start_time/end_time не меняем — округление только на отображении.
-function hour_word($time) {
-    if (!$time) return '';
-    $h = intval(substr($time, 0, 2));
-    $mod100 = $h % 100;
-    $mod10 = $h % 10;
-    if ($mod100 >= 11 && $mod100 <= 14) $word = 'часов';
-    elseif ($mod10 === 1) $word = 'час';
-    elseif ($mod10 >= 2 && $mod10 <= 4) $word = 'часа';
-    else $word = 'часов';
-    return $h . ' ' . $word;
+// Время в выдаче — ЧЧ:ММ (18:00), из start_time вида 18:00:00.
+function time_str($time) {
+    return $time ? substr($time, 0, 5) : '';
 }
 function sched_text($ev, $MONTHS, $WD) {
-    $t = !empty($ev['start_time']) ? hour_word($ev['start_time']) : '';
+    $t = !empty($ev['start_time']) ? time_str($ev['start_time']) : '';
     if (($ev['schedule_type'] ?? 'single') === 'range' && !empty($ev['ends_on'])) {
         return day_str($ev['starts_on'], $MONTHS) . ' – ' . day_str($ev['ends_on'], $MONTHS) . ($t ? ', ' . $t : '');
     }

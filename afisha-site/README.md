@@ -37,17 +37,10 @@ nginx -t && systemctl reload nginx
 
 ## Что изменено в этой версии
 
-1. **Время в выдаче — только часы, без минут** («19 часов», «23 часа», с
-   правильным русским склонением). Правка на отображении:
-   - `sb-config.php`: `hour_word()` + `sched_text()` — используется в
-     `event.php` (список событий и человекочитаемая дата на странице события).
-   - `embed.js`: `hourWord()` + `fmt()`.
-   - `index.html`: `hourWord()` (для показа) — `fmtTime()` (сырой `HH:MM`)
-     оставлен как есть и используется только для сортировки событий дня по
-     времени, чтобы не сломать порядок.
-   - В базе `start_time`/`end_time` ничего не меняется. В `event.php`
-     Schema.org `startDate`/`endDate` (через `iso_dt()`) остаются в полном
-     ISO — не тронуты, это отдельная функция.
+1. **Время в выдаче — `ЧЧ:ММ` (18:00)** везде: `sb-config.php` (`time_str()` в
+   `sched_text()` → `event.php`), `embed.js` (`timeStr()`), `index.html` и
+   `admin.html` (`timeStr()`). В базе `start_time`/`end_time` не меняются.
+   В `event.php` Schema.org `startDate`/`endDate` (`iso_dt()`) — полный ISO.
 
 2. **Логотип/фото заведения + подстановка в превью для видео-анонсов.**
    - `sql/venues_logo.sql` (в `../afisha-bot/sql/`) — добавляет
@@ -81,5 +74,5 @@ cd /root/claude-repo && git pull
 
 ```html
 <div id="ekb-afisha-widget"></div>
-<script src="https://afisha.ekb-guide.ru/embed.js?v=8" charset="utf-8" defer></script>
+<script src="https://afisha.ekb-guide.ru/embed.js?v=9" charset="utf-8" defer></script>
 ```
