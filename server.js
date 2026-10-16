@@ -6,7 +6,7 @@ const XLSX = require('xlsx');
 const multer = require('multer');
 const db = require('./db');
 const auth = require('./auth');
-const { getEffectiveChecklist, adminForUser, canAccessSalon, findOrCreateClient, normalizePhone } = require('./lib');
+const { getEffectiveChecklist, adminForUser, canAccessSalon, findOrCreateClient, normalizePhone, reapplyForwarding } = require('./lib');
 
 const app = express();
 const PORT = process.env.PORT || 3002;
@@ -129,6 +129,42 @@ app.post('/api/salons/:id/labels', auth.requireAdmin, (req, res) => {
 app.delete('/api/salons/:salonId/labels/:labelId', auth.requireAdmin, (req, res) => {
   db.prepare('DELETE FROM salon_uis_labels WHERE id = ? AND salon_id = ?').run(req.params.labelId, req.params.salonId);
   res.json({ ok: true });
+});
+
+// переадресация объекта на другой по расписанию (см. salon_forwarding в db.js)
+app.get('/api/salons/:id/forwarding', auth.requireAdmin, (req, res) => {
+  res.json(db.prepare(`
+    SELECT f.*, s.name AS target_name FROM salon_forwarding f JOIN salons s ON s.id = f.target_salon_id
+    WHERE f.salon_id = ? ORDER BY f.id
+  `).all(req.params.id));
+});
+
+app.post('/api/salons/:id/forwarding', auth.requireAdmin, (req, res) => {
+  const salonId = Number(req.params.id);
+  const { target_salon_id, weekdays, time_from, time_till } = req.body || {};
+  const targetId = Number(target_salon_id);
+  const days = Array.isArray(weekdays) ? [...new Set(weekdays.map(Number).filter(d => d >= 1 && d <= 7))].sort() : [];
+  const timeRe = /^([01]\d|2[0-3]):[0-5]\d$/;
+  if (!targetId || targetId === salonId || !db.prepare('SELECT 1 FROM salons WHERE id = ?').get(targetId)) {
+    return res.status(400).json({ error: 'Выберите другой объект, куда идёт переадресация' });
+  }
+  if (!days.length) return res.status(400).json({ error: 'Отметьте хотя бы один день недели' });
+  if (!timeRe.test(time_from || '') || !timeRe.test(time_till || '')) return res.status(400).json({ error: 'Укажите время в формате ЧЧ:ММ' });
+  const info = db.prepare('INSERT INTO salon_forwarding (salon_id, target_salon_id, weekdays, time_from, time_till) VALUES (?, ?, ?, ?, ?)')
+    .run(salonId, targetId, days.join(','), time_from, time_till);
+  res.json(db.prepare('SELECT * FROM salon_forwarding WHERE id = ?').get(info.lastInsertRowid));
+});
+
+app.delete('/api/salons/:salonId/forwarding/:ruleId', auth.requireAdmin, (req, res) => {
+  db.prepare('DELETE FROM salon_forwarding WHERE id = ? AND salon_id = ?').run(req.params.ruleId, req.params.salonId);
+  res.json({ ok: true });
+});
+
+// пересчитать уже накопленные звонки по текущим правилам переадресации
+app.post('/api/forwarding/reapply', auth.requireAdmin, (req, res) => {
+  const days = Math.min(365, Math.max(1, Number(req.body?.days) || 30));
+  const since = new Date(Date.now() + getTzOffset() * 3600000 - days * 24 * 3600000).toISOString().slice(0, 19).replace('T', ' ');
+  res.json({ days, ...reapplyForwarding(since) });
 });
 
 // номера с общим голосовым меню на несколько объектов (см. telephony.js resolveSalonByLegs)
@@ -509,13 +545,14 @@ app.get('/api/calls', (req, res) => {
   const rows = db.prepare(`
     SELECT c.*, s.name AS salon_name, a.name AS matched_admin_name, cl.name AS client_name,
       EXISTS(SELECT 1 FROM ad_phone_numbers an WHERE an.phone = c.dialed_number) AS is_ad_call,
-      cb.salon_id AS callback_salon_id, cbs.name AS callback_salon_name
+      cb.salon_id AS callback_salon_id, cbs.name AS callback_salon_name, fs.name AS forwarded_from_name
     FROM calls c
     JOIN salons s ON s.id = c.salon_id
     LEFT JOIN admins a ON a.id = c.matched_admin_id
     LEFT JOIN clients cl ON cl.id = c.client_id
     LEFT JOIN calls cb ON cb.id = c.callback_call_id
     LEFT JOIN salons cbs ON cbs.id = cb.salon_id
+    LEFT JOIN salons fs ON fs.id = c.forwarded_from_salon_id
     ${where}
     ORDER BY c.started_at DESC
     LIMIT 500
@@ -527,8 +564,10 @@ app.get('/api/calls', (req, res) => {
 app.get('/api/calls/:id', (req, res) => {
   const call = db.prepare(`
     SELECT c.*, s.name AS salon_name, s.type AS salon_type, a.name AS matched_admin_name, cl.name AS client_name, cl.phone AS client_phone_norm,
-      EXISTS(SELECT 1 FROM ad_phone_numbers an WHERE an.phone = c.dialed_number) AS is_ad_call
+      EXISTS(SELECT 1 FROM ad_phone_numbers an WHERE an.phone = c.dialed_number) AS is_ad_call,
+      fs.name AS forwarded_from_name
     FROM calls c JOIN salons s ON s.id = c.salon_id
+    LEFT JOIN salons fs ON fs.id = c.forwarded_from_salon_id
     LEFT JOIN admins a ON a.id = c.matched_admin_id
     LEFT JOIN clients cl ON cl.id = c.client_id
     WHERE c.id = ?
@@ -561,7 +600,8 @@ app.put('/api/calls/:id/admin', (req, res) => {
 // ================= ДАШБОРД =================
 app.get('/api/dashboard', auth.requireAdmin, (req, res) => {
   const missedNoCallback = db.prepare(`
-    SELECT c.*, s.name AS salon_name FROM calls c JOIN salons s ON s.id = c.salon_id
+    SELECT c.*, s.name AS salon_name, fs.name AS forwarded_from_name FROM calls c JOIN salons s ON s.id = c.salon_id
+    LEFT JOIN salons fs ON fs.id = c.forwarded_from_salon_id
     WHERE c.direction = 'in' AND c.is_answered = 0 AND c.callback_status = 'none'
     ORDER BY c.started_at DESC LIMIT 50
   `).all();

@@ -374,6 +374,28 @@ CREATE TABLE IF NOT EXISTS ad_trend_insights (
 );
 `);
 
+// Переадресация объекта на другой по расписанию (днём Рай -> 8 Марта, в
+// будни НУАР -> 8 Марта): звонки на номер объекта в эти часы физически
+// принимает другой салон, поэтому записываются за ним, а исходный объект
+// сохраняется в calls.forwarded_from_salon_id.
+// weekdays — '1,2,3,4,5' (1 = пн … 7 = вс); time_till <= time_from — окно
+// через полночь; time_from = time_till — весь день.
+db.exec(`
+CREATE TABLE IF NOT EXISTS salon_forwarding (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  salon_id INTEGER NOT NULL REFERENCES salons(id) ON DELETE CASCADE,
+  target_salon_id INTEGER NOT NULL REFERENCES salons(id) ON DELETE CASCADE,
+  weekdays TEXT NOT NULL,
+  time_from TEXT NOT NULL,
+  time_till TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+`);
+const callColumns3 = db.prepare("PRAGMA table_info(calls)").all().map(c => c.name);
+if (!callColumns3.includes('forwarded_from_salon_id')) {
+  db.exec(`ALTER TABLE calls ADD COLUMN forwarded_from_salon_id INTEGER REFERENCES salons(id) ON DELETE SET NULL;`);
+}
+
 // первичный владелец, если пользователей ещё нет
 const usersCount = db.prepare('SELECT COUNT(*) AS c FROM users').get().c;
 if (usersCount === 0) {

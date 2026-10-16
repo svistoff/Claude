@@ -19,7 +19,8 @@
 const db = require('./db');
 const {
   normalizePhone, findOrCreateClient, getSalonPhoneMap,
-  getExcludedNumberSet, getExcludedCallerNumberSet, getActionNameSalonMap
+  getExcludedNumberSet, getExcludedCallerNumberSet, getActionNameSalonMap,
+  getForwardingRules, forwardTargetFor
 } = require('./lib');
 
 function parseCsv(text) {
@@ -101,10 +102,11 @@ function importUisCsv(text, { dryRun = false } = {}) {
   const excludedNumbers = getExcludedNumberSet();
   const excludedCallerNumbers = getExcludedCallerNumberSet();
   const actionNameMap = getActionNameSalonMap();
+  const forwardingRules = getForwardingRules();
 
   const insertStmt = db.prepare(`
-    INSERT INTO calls (salon_id, client_id, uis_call_id, direction, caller_phone, dialed_number, started_at, duration_sec, is_answered, recording_url, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO calls (salon_id, forwarded_from_salon_id, client_id, uis_call_id, direction, caller_phone, dialed_number, started_at, duration_sec, is_answered, recording_url, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const existsStmt = db.prepare('SELECT id FROM calls WHERE uis_call_id = ?');
 
@@ -153,13 +155,15 @@ function importUisCsv(text, { dryRun = false } = {}) {
     if (direction === 'in') status = isAnswered ? 'imported' : 'missed';
     else status = isAnswered ? 'imported' : 'skipped';
 
-    matchedBySalon.set(salon.name, (matchedBySalon.get(salon.name) || 0) + 1);
+    const forwardTo = direction === 'in' ? forwardTargetFor(forwardingRules, salon.id, startedAt) : null;
+    const finalSalon = forwardTo ? (salonsById.get(forwardTo) || salon) : salon;
+    matchedBySalon.set(finalSalon.name, (matchedBySalon.get(finalSalon.name) || 0) + 1);
 
     if (dryRun) { inserted++; return; }
 
     const clientId = callerPhone ? findOrCreateClient(callerPhone) : null;
     insertStmt.run(
-      salon.id, clientId, uisCallId, direction, callerPhone, virtualNumber || null,
+      finalSalon.id, finalSalon.id !== salon.id ? salon.id : null, clientId, uisCallId, direction, callerPhone, virtualNumber || null,
       startedAt, durationToSeconds(row[idx.talkDuration]), isAnswered ? 1 : 0,
       row[idx.recordingUrl] || null, status
     );

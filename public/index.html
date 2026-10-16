@@ -139,6 +139,12 @@ function qualityBadge(score, total) {
   return `<span style="font-weight:600;color:${qualityColor(pct)}">${pct}%</span>`;
 }
 
+function salonCell(c) {
+  return esc(c.salon_name) + (c.forwarded_from_name
+    ? ` <span class="muted" style="font-size:11px" title="Звонок на номер «${esc(c.forwarded_from_name)}» в часы переадресации">↪ из «${esc(c.forwarded_from_name)}»</span>`
+    : '');
+}
+
 // показывает первые visibleCount строк таблицы, остальные — под кнопкой
 // "Показать ещё N" (без пагинации на сервере — списки у нас не настолько
 // большие, чтобы это того стоило, а так один проход по уже загруженным данным)
@@ -256,13 +262,13 @@ RENDERERS.dashboard = async function renderDashboard() {
     <div class="card">
       <h3>🔴 Пропущенные без перезвона (${d.missed_no_callback.length})</h3>
       <table><tr><th>Объект</th><th>Дата</th><th>Телефон</th></tr>
-        ${paginatedRows(d.missed_no_callback.map(c => `<tr><td>${esc(c.salon_name)}</td><td>${esc(c.started_at)}</td><td>${esc(c.caller_phone||'—')}</td></tr>`), 10) || '<tr><td colspan="3" class="muted">Нет</td></tr>'}
+        ${paginatedRows(d.missed_no_callback.map(c => `<tr><td>${salonCell(c)}</td><td>${esc(c.started_at)}</td><td>${esc(c.caller_phone||'—')}</td></tr>`), 10) || '<tr><td colspan="3" class="muted">Нет</td></tr>'}
       </table>
     </div>
     <div class="card">
       <h3>⚠️ Звонки с критическими ошибками (14 дней)</h3>
       <table><tr><th>Дата</th><th>Объект</th><th>Администратор</th><th>Ошибка</th><th></th></tr>
-        ${paginatedRows(d.critical_calls.map(c => { let err=''; try { const e=JSON.parse(c.critical_errors||'[]')[0]; err = e ? (e.description||e.type||'') : ''; } catch {} return `<tr><td>${esc(c.started_at)}</td><td>${esc(c.salon_name)}</td><td>${esc(c.matched_admin_name||'—')}</td><td>${esc(err)}</td><td><button onclick="openCall(${c.id})">Открыть</button></td></tr>`; }), 10) || '<tr><td colspan="5" class="muted">Нет</td></tr>'}
+        ${paginatedRows(d.critical_calls.map(c => { let err=''; try { const e=JSON.parse(c.critical_errors||'[]')[0]; err = e ? (e.description||e.type||'') : ''; } catch {} return `<tr><td>${esc(c.started_at)}</td><td>${salonCell(c)}</td><td>${esc(c.matched_admin_name||'—')}</td><td>${esc(err)}</td><td><button onclick="openCall(${c.id})">Открыть</button></td></tr>`; }), 10) || '<tr><td colspan="5" class="muted">Нет</td></tr>'}
       </table>
     </div>
     <div class="card">
@@ -468,7 +474,7 @@ async function loadCalls() {
   const statusLabel = { new:'новый', processing:'обработка', done:'готово', error:'ошибка', missed:'пропущен', skipped:'без ответа', imported:'историческое (без ИИ)' };
   const rows = calls.map(c => `
         <tr>
-          <td>${esc(c.started_at)}</td><td>${esc(c.salon_name)}${c.is_ad_call ? ' <span class="tag">анкета</span>' : ''}</td><td>${c.direction==='in'?'вх':'исх'}</td>
+          <td>${esc(c.started_at)}</td><td>${salonCell(c)}${c.is_ad_call ? ' <span class="tag">анкета</span>' : ''}</td><td>${c.direction==='in'?'вх':'исх'}</td>
           <td>${esc(c.caller_phone||'—')}</td><td>${esc(c.client_name||'—')}</td>
           <td>${esc(c.matched_admin_name || c.detected_admin_name || '—')}</td>
           <td>${qualityBadge(c.checklist_score, c.checklist_total)}</td>
@@ -537,7 +543,7 @@ async function openCall(id) {
     <div class="modal-bg" onclick="if(event.target===this)this.remove()">
       <div class="modal">
         <div class="row between">
-          <h3>Звонок · ${esc(c.salon_name)} · ${esc(c.started_at)}</h3>
+          <h3>Звонок · ${salonCell(c)} · ${esc(c.started_at)}</h3>
           <button onclick="document.querySelector('.modal-bg').remove()">✕</button>
         </div>
         <p class="muted">Длительность: ${c.duration_sec}с · Направление: ${c.direction==='in'?'входящий':'исходящий'} · Клиент: ${esc(c.client_name || c.caller_phone || '—')}</p>
@@ -585,8 +591,8 @@ async function loadMissedCalls() {
   const calls = await api('/calls?missed=1');
   const badge = { on_time: '🟢 вовремя', late: '🟡 позже', none: '🔴 не перезвонили' };
   const urgent = calls.filter(c => c.callback_status === 'none');
-  const urgentRows = urgent.map(c => `<tr><td>${esc(c.salon_name)}</td><td>${esc(c.started_at)}</td><td>${esc(c.caller_phone||'—')}</td></tr>`);
-  const allRows = calls.map(c => `<tr><td>${esc(c.started_at)}</td><td>${esc(c.salon_name)}</td><td>${esc(c.caller_phone||'—')}</td>
+  const urgentRows = urgent.map(c => `<tr><td>${salonCell(c)}</td><td>${esc(c.started_at)}</td><td>${esc(c.caller_phone||'—')}</td></tr>`);
+  const allRows = calls.map(c => `<tr><td>${esc(c.started_at)}</td><td>${salonCell(c)}</td><td>${esc(c.caller_phone||'—')}</td>
         <td>${esc(c.client_name||'—')}</td><td>${badge[c.callback_status] || '⏳ ожидание'}${c.callback_salon_id && c.callback_salon_id !== c.salon_id
           ? `<div class="muted" style="font-size:11px">с объекта «${esc(c.callback_salon_name)}»</div>` : ''}</td>
         <td>${c.callback_minutes!=null ? c.callback_minutes+' мин' : '—'}</td></tr>`);
@@ -738,7 +744,7 @@ async function openAdminProfile(id) {
   const funnel = buildChecklistFunnel(scoreableCalls).filter(f => f.applicable > 0 || f.na || f.uncertain);
 
   const rows = calls.map(c => `<tr>
-    <td>${esc(c.started_at)}</td><td>${esc(c.salon_name)}${c.is_ad_call ? ' <span class="tag">анкета</span>' : ''}</td><td>${c.direction==='in'?'вх':'исх'}</td>
+    <td>${esc(c.started_at)}</td><td>${salonCell(c)}${c.is_ad_call ? ' <span class="tag">анкета</span>' : ''}</td><td>${c.direction==='in'?'вх':'исх'}</td>
     <td>${qualityBadge(c.checklist_score, c.checklist_total)}</td>
     <td>${esc(c.outcome||'—')}</td>
     <td><button onclick="openCall(${c.id})">Открыть</button></td>
@@ -917,6 +923,7 @@ RENDERERS.salons = async function renderSalons() {
             <button onclick="showSalonForm(${s.id})">Изменить</button>
             <button onclick="manageSalonPhones(${s.id})">Номера</button>
             <button onclick="manageSalonLabels(${s.id})">Метки UIS</button>
+            <button onclick="manageSalonForwarding(${s.id})">Переадресация</button>
             ${s.active ? `<button class="danger" onclick="archiveSalon(${s.id})">В архив</button>` : `<button class="ok" onclick="unarchiveSalon(${s.id})">Вернуть</button>`}
           </td>
         </tr>`).join('')}
@@ -1054,6 +1061,78 @@ async function addSalonLabel(salonId) {
 async function deleteSalonLabel(salonId, labelId) {
   await api(`/salons/${salonId}/labels/${labelId}`, { method: 'DELETE' });
   manageSalonLabels(salonId);
+}
+
+// Переадресация объекта на другой по расписанию (днём Рай -> 8 Марта): звонки
+// на номер объекта в эти часы записываются за салоном, который их принимает.
+const WEEKDAY_LABELS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+function forwardingHoursText(r) {
+  return r.time_from === r.time_till ? 'весь день' : `${r.time_from}–${r.time_till}${r.time_till < r.time_from ? ' (через полночь)' : ''}`;
+}
+async function manageSalonForwarding(salonId) {
+  const salon = SALONS.find(s => s.id === salonId);
+  const rules = await api(`/salons/${salonId}/forwarding`);
+  const targets = SALONS.filter(s => s.active && s.id !== salonId);
+  document.getElementById('modal-root').innerHTML = `
+    <div class="modal-bg" onclick="if(event.target===this)this.remove()">
+      <div class="modal">
+        <h3>Переадресация «${esc(salon.name)}»</h3>
+        <p class="muted">Когда объект не работает и звонки на его номер уходят в другой салон. Входящие звонки
+        в эти дни и часы будут записываться за салоном, который их принимает, — пропущенные и перезвоны
+        считаются там же. В списке звонков у них пометка «↪ из «${esc(salon.name)}»».
+        Время — как в списке звонков CRM. 00:00–00:00 — весь день.</p>
+        <table>
+          <tr><th>Куда</th><th>Дни</th><th>Часы</th><th></th></tr>
+          ${rules.map(r => `<tr><td>${esc(r.target_name)}</td>
+            <td>${r.weekdays.split(',').map(d => WEEKDAY_LABELS[Number(d) - 1]).join(', ')}</td>
+            <td>${forwardingHoursText(r)}</td>
+            <td><button class="danger" onclick="deleteSalonForwarding(${salonId},${r.id})">Удалить</button></td></tr>`).join('')
+            || '<tr><td colspan="4" class="muted">Переадресации нет</td></tr>'}
+        </table>
+        <div style="margin-top:14px;display:flex;flex-direction:column;gap:10px">
+          <label>Куда переадресуется
+            <select id="fw-target">${targets.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select>
+          </label>
+          <div class="row" style="flex-wrap:wrap;gap:10px">
+            ${WEEKDAY_LABELS.map((l, i) => `<label style="display:flex;align-items:center;gap:4px"><input type="checkbox" class="fw-day" value="${i + 1}">${l}</label>`).join('')}
+          </div>
+          <div class="row" style="flex-wrap:wrap;gap:10px">
+            <label>С <input id="fw-from" type="time" value="00:00"></label>
+            <label>До <input id="fw-till" type="time" value="00:00"></label>
+            <button class="primary" onclick="addSalonForwarding(${salonId})">+ Добавить</button>
+          </div>
+        </div>
+        <div class="row between" style="margin-top:16px;flex-wrap:wrap;gap:8px">
+          <button onclick="reapplyForwarding()">Пересчитать звонки за 30 дней</button>
+          <button onclick="document.querySelector('.modal-bg').remove()">Закрыть</button>
+        </div>
+      </div>
+    </div>`;
+}
+async function addSalonForwarding(salonId) {
+  const weekdays = [...document.querySelectorAll('.fw-day:checked')].map(el => Number(el.value));
+  const body = {
+    target_salon_id: Number(document.getElementById('fw-target').value),
+    weekdays,
+    time_from: document.getElementById('fw-from').value,
+    time_till: document.getElementById('fw-till').value
+  };
+  try {
+    await api(`/salons/${salonId}/forwarding`, { method: 'POST', body });
+    manageSalonForwarding(salonId);
+  } catch (e) { alert(e.message); }
+}
+async function deleteSalonForwarding(salonId, ruleId) {
+  if (!confirm('Удалить правило переадресации?')) return;
+  await api(`/salons/${salonId}/forwarding/${ruleId}`, { method: 'DELETE' });
+  manageSalonForwarding(salonId);
+}
+async function reapplyForwarding() {
+  if (!confirm('Пересчитать входящие звонки за последние 30 дней по текущим правилам переадресации? Звонки, попавшие под правила, перейдут в принимающий салон; перенесённые по удалённым правилам вернутся обратно.')) return;
+  try {
+    const r = await api('/forwarding/reapply', { method: 'POST', body: { days: 30 } });
+    alert(`Готово: перенесено ${r.moved}, возвращено обратно ${r.restored}.`);
+  } catch (e) { alert(e.message); }
 }
 
 // ================= ЧЕК-ЛИСТЫ =================

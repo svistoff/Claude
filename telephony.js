@@ -12,7 +12,7 @@
 const fetch = require('node-fetch');
 const { SocksProxyAgent } = require('socks-proxy-agent');
 const db = require('./db');
-const { normalizePhone, findOrCreateClient, getSalonPhoneMap, getSharedIvrNumberSet, getExcludedNumberSet, getExcludedCallerNumberSet, getActionNameSalonMap } = require('./lib');
+const { normalizePhone, findOrCreateClient, getSalonPhoneMap, getSharedIvrNumberSet, getExcludedNumberSet, getExcludedCallerNumberSet, getActionNameSalonMap, getForwardingRules, forwardTargetFor } = require('./lib');
 
 // Прямые исходящие соединения к UIS с этого сервера ловят DPI-блокировку
 // (TCP-соединение и TLS Client Hello уходят, дальше — тишина до таймаута;
@@ -306,13 +306,15 @@ function saveCall(salon, c) {
   else status = isAnswered ? 'new' : 'skipped';
 
   const dialedNumber = c.virtual_phone_number || c.communication_number || null;
+  const startedAt = c.start_time || uisLocalStringFor(Date.now(), getTelephonySettings().uis_timezone_offset_hours);
+  const forwardTo = direction === 'in' ? forwardTargetFor(getForwardingRules(), salon.id, startedAt) : null;
 
   const info = db.prepare(`
-    INSERT INTO calls (salon_id, client_id, uis_call_id, direction, caller_phone, dialed_number, started_at, duration_sec, is_answered, recording_url, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO calls (salon_id, forwarded_from_salon_id, client_id, uis_call_id, direction, caller_phone, dialed_number, started_at, duration_sec, is_answered, recording_url, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
-    salon.id, clientId, uisCallId, direction, callerPhone, dialedNumber,
-    c.start_time || uisLocalStringFor(Date.now(), getTelephonySettings().uis_timezone_offset_hours), Number(c.talk_duration) || 0,
+    forwardTo ?? salon.id, forwardTo ? salon.id : null, clientId, uisCallId, direction, callerPhone, dialedNumber,
+    startedAt, Number(c.talk_duration) || 0,
     isAnswered ? 1 : 0, extractRecordUrl(c), status
   );
   const callId = info.lastInsertRowid;

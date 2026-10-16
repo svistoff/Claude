@@ -134,6 +134,52 @@ function getActionNameSalonMap() {
   return map;
 }
 
+function getForwardingRules() {
+  return db.prepare('SELECT * FROM salon_forwarding').all();
+}
+
+// Куда переадресован объект в момент startedAt ("YYYY-MM-DD HH:mm:ss" в часовом
+// поясе UIS — том же, в котором время показывается в списке звонков) или null.
+// День недели берётся по дате самого звонка, в т.ч. для окна через полночь.
+function forwardTargetFor(rules, salonId, startedAt) {
+  if (!startedAt) return null;
+  const weekday = ((new Date(startedAt.slice(0, 10) + 'T00:00:00Z').getUTCDay() + 6) % 7) + 1;
+  const t = startedAt.slice(11, 16);
+  for (const r of rules) {
+    if (r.salon_id !== salonId || !r.weekdays.split(',').map(Number).includes(weekday)) continue;
+    const inWindow = r.time_from === r.time_till ? true
+      : r.time_from < r.time_till ? (t >= r.time_from && t < r.time_till)
+      : (t >= r.time_from || t < r.time_till);
+    if (inWindow) return r.target_salon_id;
+  }
+  return null;
+}
+
+// Пересчитывает переадресацию входящих звонков начиная с sinceStr по текущим
+// правилам: переносит попавшие под правило и возвращает обратно те, что
+// были перенесены по уже удалённому/изменённому правилу.
+function reapplyForwarding(sinceStr) {
+  const rules = getForwardingRules();
+  const calls = db.prepare(`
+    SELECT id, salon_id, forwarded_from_salon_id, started_at FROM calls
+    WHERE direction = 'in' AND started_at >= ?
+  `).all(sinceStr);
+  const update = db.prepare('UPDATE calls SET salon_id = ?, forwarded_from_salon_id = ? WHERE id = ?');
+  let moved = 0, restored = 0;
+  db.transaction(() => {
+    for (const c of calls) {
+      const original = c.forwarded_from_salon_id ?? c.salon_id;
+      const target = forwardTargetFor(rules, original, c.started_at);
+      const wantSalon = target ?? original;
+      const wantFrom = target ? original : null;
+      if (wantSalon === c.salon_id && wantFrom === c.forwarded_from_salon_id) continue;
+      update.run(wantSalon, wantFrom, c.id);
+      if (target) moved++; else restored++;
+    }
+  })();
+  return { moved, restored };
+}
+
 // Администратор привязан ровно к одному объекту (через users -> admins.user_id).
 function adminForUser(userId) {
   return db.prepare('SELECT * FROM admins WHERE user_id = ?').get(userId);
@@ -148,5 +194,5 @@ function canAccessSalon(user, salonId) {
 module.exports = {
   normalizePhone, findOrCreateClient, getEffectiveChecklist, getAnketaChecklist, getSalonPhoneMap,
   getSharedIvrNumberSet, getExcludedNumberSet, getExcludedCallerNumberSet, getAdPhoneNumberSet,
-  getActionNameSalonMap, adminForUser, canAccessSalon
+  getActionNameSalonMap, adminForUser, canAccessSalon, getForwardingRules, forwardTargetFor, reapplyForwarding
 };
