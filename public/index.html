@@ -70,6 +70,15 @@
     nav.bottom-nav a .icon{ font-size:19px; line-height:1; }
     nav.bottom-nav a.active{ color:#fff; }
     #app.has-bottom-nav main{ padding-bottom:72px; }
+    table.trend-table{ min-width:0 !important; }
+    table.trend-table, table.trend-table tbody, table.trend-table tr, table.trend-table td{ display:block; }
+    table.trend-table tr.trend-head{ display:none; }
+    table.trend-table tr{ border-bottom:1px solid var(--border); padding:8px 0; }
+    table.trend-table td{ border:none; padding:2px 0; text-align:left !important; }
+    table.trend-table td.t-dot, table.trend-table td.t-label{ display:inline-block; vertical-align:top; }
+    table.trend-table td.t-dot{ padding-right:6px; }
+    table.trend-table td[data-l]{ display:inline-block; margin-right:14px; }
+    table.trend-table td[data-l]::before{ content:attr(data-l) ': '; color:var(--muted); font-size:12px; }
   }
 </style>
 </head>
@@ -166,7 +175,7 @@ const STAFF_NAV = [['guest', 'Гости']];
 // теперь отдельные пункты главного меню (см. OWNER_NAV), а не вкладки Настроек.
 const SETTINGS_GROUP = ['settings', 'salons', 'checklist', 'ad-numbers'];
 const MOBILE_NAV = [
-  ['dashboard', 'Дашборд', '📊'], ['calls', 'Звонки', '📞'],
+  ['dashboard', 'Дашборд', '📊'], ['calls', 'Звонки', '📞'], ['anketi', 'Анкеты', '📋'],
   ['clients', 'Клиенты', '👥'], ['reports', 'Отчёты', '📈'], ['settings', 'Настройки', '⚙️']
 ];
 
@@ -1181,7 +1190,8 @@ RENDERERS.anketi = async function renderAnketi() {
   const main = document.getElementById('main');
   main.innerHTML = `
     <h2>Анкеты</h2>
-    <div class="row" style="margin-bottom:8px">
+    <div class="card" id="ad-trend-block">Загрузка тренда анкет…</div>
+    <div class="row" style="margin-bottom:8px;flex-wrap:wrap">
       <button class="${anketiTab==='report'?'primary':''}" onclick="setAnketiTab('report')">Звонки по анкетам</button>
       <button class="${anketiTab==='daily'?'primary':''}" onclick="setAnketiTab('daily')">Динамика по дням для каждой анкеты</button>
     </div>
@@ -1209,8 +1219,121 @@ RENDERERS.anketi = async function renderAnketi() {
       <div id="ad-daily-table" style="margin-top:12px">Загрузка…</div>
     </div>`}
   `;
-  if (anketiTab === 'report') await loadAdReportTab(); else await loadAdDailyTab();
+  await Promise.all([loadAdTrendBlock(), anketiTab === 'report' ? loadAdReportTab() : loadAdDailyTab()]);
 };
+
+const TREND_COLORS = { red: '#dd3333', yellow: '#c98a00', green: '#2a9d5c', new: '#9aa1b0' };
+const TREND_STATUS_LABELS = { red: 'заменить?', yellow: 'присмотреться', green: 'в норме', new: 'мало данных' };
+
+let adTrendRows = [];
+async function loadAdTrendBlock() {
+  const el = document.getElementById('ad-trend-block');
+  try {
+    const data = await api('/ad-numbers/trends');
+    adTrendRows = data.rows;
+    el.innerHTML = renderAdTrend(data);
+  }
+  catch (e) { el.innerHTML = `<p class="muted">Не удалось загрузить тренд анкет: ${esc(e.message)}</p>`; }
+}
+
+function trendSparkline(counts, status) {
+  const w = 96, h = 26, pad = 3;
+  const max = Math.max(1, ...counts.filter(v => v !== null));
+  const x = i => pad + (i * (w - 2 * pad)) / (counts.length - 1);
+  const y = v => h - pad - (v / max) * (h - 2 * pad);
+  let d = '', prevNull = true;
+  counts.forEach((v, i) => {
+    if (v === null) { prevNull = true; return; }
+    d += `${prevNull ? 'M' : 'L'}${x(i).toFixed(1)},${y(v).toFixed(1)} `;
+    prevNull = false;
+  });
+  const lastV = counts[counts.length - 1];
+  const dot = lastV === null ? '' : `<circle cx="${x(counts.length - 1)}" cy="${y(lastV)}" r="2.5" fill="${TREND_COLORS[status]}"/>`;
+  return `<svg width="${w}" height="${h}" style="vertical-align:middle"><path d="${d}" fill="none" stroke="#7a8296" stroke-width="1.5"/>${dot}</svg>`;
+}
+
+function fmtChange(v) {
+  if (v === null || v === undefined) return '<span class="muted">—</span>';
+  const p = Math.round(v * 100);
+  const color = p <= -40 ? TREND_COLORS.red : p < -15 ? TREND_COLORS.yellow : p >= 15 ? TREND_COLORS.green : 'inherit';
+  return `<span style="font-weight:600;color:${color}">${p > 0 ? '+' : ''}${p}%</span>`;
+}
+
+function renderAdTrend(data) {
+  if (!data.rows.length) return `<h3 style="margin-top:0">📉 Тренд анкет</h3><p class="muted">Номера анкет не добавлены — Настройки → Номера и анкеты.</p>`;
+  const byStatus = s => data.rows.filter(r => r.status === s).length;
+  const net = data.network;
+  const first = data.windows[0].label, last = data.windows[data.windows.length - 1].label;
+  const flaggedCount = byStatus('red') + byStatus('yellow');
+
+  const rows = data.rows.map(r => {
+    const flags = r.flags.map(f => `<div style="color:${TREND_COLORS[f.level]};font-size:12px">${esc(f.text)}</div>`).join('');
+    const conv = r.analyzed4w ? `${r.bookings4w} из ${r.analyzed4w} <span class="muted">(${Math.round(r.conv * 100)}%)</span>` : '<span class="muted">—</span>';
+    return `<tr>
+      <td class="t-dot"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${TREND_COLORS[r.status]}" title="${TREND_STATUS_LABELS[r.status]}"></span></td>
+      <td class="t-label">${esc(r.label)}<div class="muted" style="font-size:11px">${esc(r.phone)}${r.note ? ' · ' + noteOrLink(r.note) : ''}</div></td>
+      <td title="${esc(r.counts.map(v => v ?? '—').join(' · '))}">${trendSparkline(r.counts, r.status)}</td>
+      <td style="text-align:center" data-l="7 дней">${r.last ?? '—'}</td>
+      <td style="text-align:center" data-l="среднее">${r.baseline === null ? '—' : r.baseline.toFixed(1)}</td>
+      <td style="text-align:center" data-l="изм.">${fmtChange(r.adjChange)}</td>
+      <td style="text-align:center" data-l="записи">${conv}</td>
+      <td>${flags || '<span class="muted">—</span>'}</td>
+      <td>${r.status === 'red' || r.status === 'yellow' ? `<button onclick="markAnketaReplaced(${r.id})">Заменил</button>` : ''}</td>
+    </tr>`;
+  });
+
+  return `
+    <h3 style="margin-top:0">📉 Тренд анкет — что пора заменить</h3>
+    <p class="muted">Недели — скользящие 7 дней (${esc(first)} … ${esc(last)}). Изменение считается к среднему анкеты за 4 предыдущие недели
+      <b>с поправкой на всю сеть</b>: сейчас вся сеть анкет — ${net.last} звонков за 7 дней (${net.change >= 0 ? '+' : ''}${Math.round(net.change * 100)}%),
+      поэтому общий спад не записывается в вину конкретной анкете.</p>
+    <div class="row" style="flex-wrap:wrap;gap:12px;margin:8px 0">
+      ${['red', 'yellow', 'green', 'new'].map(s => `<span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${TREND_COLORS[s]}"></span> ${TREND_STATUS_LABELS[s]}: <b>${byStatus(s)}</b></span>`).join('')}
+    </div>
+    ${renderAdInsight(data.insight)}
+    <div style="overflow-x:auto;margin-top:12px">
+      <table class="trend-table" style="min-width:820px">
+        <tr class="trend-head"><th></th><th>Анкета</th><th>8 недель</th><th>7 дней</th><th>Среднее 4 нед</th><th>Изменение</th><th>Записи (4 нед)</th><th>Флаги</th><th></th></tr>
+        ${paginatedRows(rows, Math.max(flaggedCount, 5))}
+      </table>
+    </div>`;
+}
+
+function renderAdInsight(insight) {
+  const list = items => items.map(x => `<li><b>${esc(x.label)}</b> — ${esc(x.reason)}</li>`).join('');
+  const body = insight
+    ? `<div style="margin-top:6px">${esc(insight.summary)}</div>
+       ${insight.replace.length ? `<div style="margin-top:8px;font-weight:600;color:${TREND_COLORS.red}">Заменить:</div><ul style="margin:4px 0">${list(insight.replace)}</ul>` : ''}
+       ${insight.watch.length ? `<div style="margin-top:8px;font-weight:600;color:${TREND_COLORS.yellow}">Присмотреться:</div><ul style="margin:4px 0">${list(insight.watch)}</ul>` : ''}
+       <div class="muted" style="margin-top:6px">Вывод от ${esc(insight.created_at.slice(0, 16))} UTC · обновляется автоматически раз в неделю</div>`
+    : '<div class="muted" style="margin-top:6px">Вывода ещё нет — он появится автоматически или по кнопке.</div>';
+  return `<div style="background:#f5f7fb;border-radius:10px;padding:12px 14px">
+    <div class="row between" style="flex-wrap:wrap;gap:8px">
+      <b>🤖 Вывод ИИ</b>
+      <button id="ad-insight-btn" onclick="refreshAdInsight()">Обновить вывод ИИ</button>
+    </div>
+    ${body}
+  </div>`;
+}
+
+async function refreshAdInsight() {
+  const btn = document.getElementById('ad-insight-btn');
+  btn.disabled = true; btn.textContent = 'Анализирую…';
+  try { await api('/ad-numbers/trends/insight', { method: 'POST' }); await loadAdTrendBlock(); }
+  catch (e) { alert(e.message); btn.disabled = false; btn.textContent = 'Обновить вывод ИИ'; }
+}
+
+function localToday() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+async function markAnketaReplaced(id) {
+  const label = (adTrendRows.find(r => r.id === id) || {}).label || '';
+  if (!confirm(`Отметить, что анкета «${label}» заменена сегодня?\n\nТренд по ней начнётся заново с сегодняшнего дня, чтобы новая анкета не унаследовала плохие недели старой. Отчёты по дням и звонки никуда не денутся.`)) return;
+  try { await api('/ad-numbers/' + id, { method: 'PUT', body: { placed_at: localToday() } }); await loadAdTrendBlock(); }
+  catch (e) { alert(e.message); }
+}
 
 function setAnketiTab(tab) { anketiTab = tab; RENDERERS.anketi(); }
 function setAdPeriod(period) {
@@ -1265,10 +1388,15 @@ function noteOrLink(note) {
 }
 
 function renderAdNumbersRows(rows) {
-  return `<tr><th>Метка</th><th>Номер</th><th>Заметка</th><th></th></tr>` +
+  return `<tr><th>Метка</th><th>Номер</th><th>Заметка</th><th title="С этой даты считается тренд анкеты — поменяйте, когда заменили анкету на этом номере">Размещена с</th><th></th></tr>` +
     (rows.map(r => `<tr><td>${esc(r.label)}</td><td>${esc(r.phone)}</td><td>${noteOrLink(r.note)}</td>
+      <td><input type="date" value="${esc(r.placed_at || '')}" onchange="setAdPlacedAt(${r.id}, this.value)"></td>
       <td><button class="danger" onclick="deleteAdNumber(${r.id})">Удалить</button></td></tr>`).join('')
-    || '<tr><td colspan="4" class="muted">Номеров не добавлено</td></tr>');
+    || '<tr><td colspan="5" class="muted">Номеров не добавлено</td></tr>');
+}
+async function setAdPlacedAt(id, value) {
+  try { await api('/ad-numbers/' + id, { method: 'PUT', body: { placed_at: value || null } }); }
+  catch (e) { alert(e.message); }
 }
 async function addAdNumber() {
   const phone = document.getElementById('new-ad-phone').value.trim();

@@ -379,4 +379,4 @@ async function processCall(callId, { reuseTranscript = false } = {}) {
   }
 }
 
-module.exports = { processCall };
+module.exports = { processCall, fetchWithTimeout };

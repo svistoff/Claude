@@ -359,6 +359,21 @@ if (!callColumns2.includes('primary_scenario')) {
   `);
 }
 
+// placed_at — дата размещения/последней замены анкеты на этом номере (YYYY-MM-DD,
+// в часовом поясе UIS): тренд анкеты считается только с этой даты, чтобы новая
+// анкета на старом номере не унаследовала "хвост" плохих недель предыдущей
+const adNumberColumns = db.prepare("PRAGMA table_info(ad_phone_numbers)").all().map(c => c.name);
+if (!adNumberColumns.includes('placed_at')) {
+  db.exec(`ALTER TABLE ad_phone_numbers ADD COLUMN placed_at TEXT;`);
+}
+db.exec(`
+CREATE TABLE IF NOT EXISTS ad_trend_insights (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  content TEXT NOT NULL,  -- JSON {summary, replace:[{label, reason}], watch:[{label, reason}]}
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+`);
+
 // первичный владелец, если пользователей ещё нет
 const usersCount = db.prepare('SELECT COUNT(*) AS c FROM users').get().c;
 if (usersCount === 0) {

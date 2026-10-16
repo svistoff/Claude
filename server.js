@@ -205,9 +205,25 @@ app.post('/api/ad-numbers', auth.requireAdmin, (req, res) => {
 app.put('/api/ad-numbers/:id', auth.requireAdmin, (req, res) => {
   const row = db.prepare('SELECT * FROM ad_phone_numbers WHERE id = ?').get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Не найдено' });
-  const { label, note } = req.body || {};
-  db.prepare('UPDATE ad_phone_numbers SET label=?, note=? WHERE id=?').run(label ?? row.label, note ?? row.note, row.id);
+  const body = req.body || {};
+  let placedAt = row.placed_at;
+  if ('placed_at' in body) {
+    if (body.placed_at && !/^\d{4}-\d{2}-\d{2}$/.test(body.placed_at)) return res.status(400).json({ error: 'Дата в формате ГГГГ-ММ-ДД' });
+    placedAt = body.placed_at || null;
+  }
+  db.prepare('UPDATE ad_phone_numbers SET label=?, note=?, placed_at=? WHERE id=?')
+    .run(body.label ?? row.label, body.note ?? row.note, placedAt, row.id);
   res.json(db.prepare('SELECT * FROM ad_phone_numbers WHERE id = ?').get(row.id));
+});
+
+const adTrends = require('./ad-trends');
+app.get('/api/ad-numbers/trends', auth.requireAdmin, (req, res) => {
+  res.json({ ...adTrends.computeAdTrends(), insight: adTrends.latestInsight() });
+});
+app.post('/api/ad-numbers/trends/insight', auth.requireAdmin, (req, res) => {
+  adTrends.generateAdInsight()
+    .then(insight => res.json(insight))
+    .catch(err => res.status(500).json({ error: err.message }));
 });
 
 app.delete('/api/ad-numbers/:id', auth.requireAdmin, (req, res) => {
@@ -980,4 +996,5 @@ function sendXlsx(res, rows, sheetName, filename) {
 app.listen(PORT, () => {
   console.log(`[server] CRM сети массажных салонов запущена на порту ${PORT}`);
   require('./telephony').startPolling();
+  adTrends.startWeeklyInsights();
 });

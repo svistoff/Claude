@@ -3,6 +3,7 @@
 
 const fetch = require('node-fetch');
 const db = require('./db');
+const { computeAdTrends, latestInsight } = require('./ad-trends');
 
 const OPENAI_BASE = 'https://api.openai.com/v1';
 
@@ -247,6 +248,33 @@ async function renderSalonReport(salonId, period) {
   return page(`Отчёт по объекту «${salon.name}»`, `Тип: ${salon.type === 'sauna' ? 'сауна' : 'салон'} · Период: ${period === 'month' ? 'месяц' : 'неделя'}`, body);
 }
 
+// только анкеты с флагами — полный тренд смотрится в разделе «Анкеты»
+function adTrendBlock() {
+  const trends = computeAdTrends();
+  if (!trends.rows.length) return '';
+  const insight = latestInsight();
+  const flagged = trends.rows.filter(r => r.status === 'red' || r.status === 'yellow');
+  const color = { red: '#d33', yellow: '#b58100' };
+  const flaggedRows = flagged.map(r => `<tr>
+    <td style="color:${color[r.status]};font-weight:600">${r.status === 'red' ? 'заменить?' : 'присмотреться'}</td>
+    <td>${esc(r.label)}<br><span style="color:#888;font-size:11px">${esc(r.phone)}</span></td>
+    <td>${r.counts.map(v => v === null ? '—' : v).join(' · ')}</td>
+    <td>${esc(r.flags.filter(f => f.level === 'red' || f.level === 'yellow').map(f => f.text).join('; '))}</td>
+  </tr>`).join('');
+  const list = items => items.map(x => `<li><b>${esc(x.label)}</b> — ${esc(x.reason)}</li>`).join('');
+  return `
+    <h2>Тренд анкет</h2>
+    <p style="font-size:13px">Вся сеть анкет за последние 7 дней: ${trends.network.last} звонков
+      (${trends.network.change >= 0 ? '+' : ''}${Math.round(trends.network.change * 100)}% к среднему за 4 предыдущие недели).</p>
+    ${insight ? `<p style="font-size:13px"><b>Вывод ИИ</b> (${esc(insight.created_at.slice(0, 10))}): ${esc(insight.summary)}</p>
+      ${insight.replace.length ? `<p style="font-size:13px;margin-bottom:0"><b>Заменить:</b></p><ul style="font-size:13px">${list(insight.replace)}</ul>` : ''}
+      ${insight.watch.length ? `<p style="font-size:13px;margin-bottom:0"><b>Присмотреться:</b></p><ul style="font-size:13px">${list(insight.watch)}</ul>` : ''}` : ''}
+    ${flagged.length
+      ? `<table><tr><th></th><th>Анкета</th><th>Звонки по неделям (${esc(trends.windows[0].label)} → ${esc(trends.windows[trends.windows.length - 1].label)})</th><th>Почему</th></tr>${flaggedRows}</table>`
+      : '<p style="font-size:13px">Проблемных анкет нет.</p>'}
+  `;
+}
+
 async function renderNetworkReport(period) {
   const since = periodStart(period);
   const salons = db.prepare('SELECT * FROM salons WHERE active = 1').all();
@@ -273,6 +301,7 @@ async function renderNetworkReport(period) {
     ])}
     <h2>Сравнение объектов</h2>
     <table><tr><th>Объект</th><th>Звонков</th><th>Пропущено</th><th>Записей</th><th>Конверсия</th></tr>${rows}</table>
+    ${adTrendBlock()}
     ${narrativeBlocks(narrative)}
   `;
   return page('Сводный отчёт по сети', `Период: ${period === 'month' ? 'месяц' : 'неделя'}`, body);
