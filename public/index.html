@@ -1185,41 +1185,51 @@ RENDERERS['ad-numbers'] = async function renderAdNumbers() {
 };
 
 // ================= АНКЕТЫ =================
-let anketiTab = 'report'; // 'report' | 'daily'
+let anketiTab = 'trend'; // 'trend' | 'report' | 'daily'
+const ANKETI_TABS = [['trend', '📉 Тренд'], ['report', '📊 Звонки'], ['daily', '📅 По дням']];
+
+function adPeriodControls(title) {
+  return `
+    <div class="row between" style="flex-wrap:wrap;gap:8px">
+      <h3 style="margin:0">${title}</h3>
+      <div class="row">
+        ${Object.entries(PERIOD_LABELS).map(([key, label]) =>
+          `<button class="${adNumbersState.period===key && !adNumbersState.customFrom ? 'primary' : ''}" onclick="setAdPeriod('${key}')">${label}</button>`).join('')}
+      </div>
+    </div>
+    <div class="row" style="margin-top:8px;flex-wrap:wrap">
+      <label>С <input id="ad-from" type="date"></label>
+      <label>По <input id="ad-till" type="date"></label>
+      <button onclick="applyAdCustomRange()">Показать за период</button>
+    </div>`;
+}
+
 RENDERERS.anketi = async function renderAnketi() {
   const main = document.getElementById('main');
-  main.innerHTML = `
-    <h2>Анкеты</h2>
-    <div class="card" id="ad-trend-block">Загрузка тренда анкет…</div>
-    <div class="row" style="margin-bottom:8px;flex-wrap:wrap">
-      <button class="${anketiTab==='report'?'primary':''}" onclick="setAnketiTab('report')">Звонки по анкетам</button>
-      <button class="${anketiTab==='daily'?'primary':''}" onclick="setAnketiTab('daily')">Динамика по дням для каждой анкеты</button>
-    </div>
-    ${anketiTab === 'report' ? `
+  const content = {
+    trend: `<div class="card" id="ad-trend-block">Загрузка тренда анкет…</div>`,
+    report: `
     <div class="card">
-      <div class="row between" style="flex-wrap:wrap;gap:8px">
-        <h3 style="margin:0">Звонки по анкетам</h3>
-        <div class="row">
-          ${Object.entries(PERIOD_LABELS).map(([key, label]) =>
-            `<button class="${adNumbersState.period===key && !adNumbersState.customFrom ? 'primary' : ''}" onclick="setAdPeriod('${key}')">${label}</button>`).join('')}
-        </div>
-      </div>
-      <div class="row" style="margin-top:8px">
-        <label>С <input id="ad-from" type="date"></label>
-        <label>По <input id="ad-till" type="date"></label>
-        <button onclick="applyAdCustomRange()">Показать за период</button>
-      </div>
+      ${adPeriodControls('Звонки по анкетам')}
       <div id="ad-report-chart" style="margin-top:14px">Загрузка…</div>
       <table id="ad-report-table" style="margin-top:14px"></table>
-    </div>` : `
+    </div>`,
+    daily: `
     <div class="card">
-      <h3 style="margin-top:0">📅 Динамика по дням для каждой анкеты</h3>
-      <p class="muted">Период и диапазон дат — такие же, как во вкладке «Звонки по анкетам». Выходные
-      подсвечены — удобно сверять эффект от изменения ставок по будням/выходным.</p>
+      ${adPeriodControls('Динамика по дням для каждой анкеты')}
+      <p class="muted" style="margin-top:10px">Выходные подсвечены — удобно сверять эффект от изменения ставок по будням/выходным.</p>
       <div id="ad-daily-table" style="margin-top:12px">Загрузка…</div>
-    </div>`}
+    </div>`
+  };
+  main.innerHTML = `
+    <h2>Анкеты</h2>
+    <div class="row" style="margin-bottom:12px;flex-wrap:wrap;gap:6px">
+      ${ANKETI_TABS.map(([key, label]) => `<button class="${anketiTab===key?'primary':''}" onclick="setAnketiTab('${key}')">${label}</button>`).join('')}
+    </div>
+    ${content[anketiTab]}
   `;
-  await Promise.all([loadAdTrendBlock(), anketiTab === 'report' ? loadAdReportTab() : loadAdDailyTab()]);
+  const loaders = { trend: loadAdTrendBlock, report: loadAdReportTab, daily: loadAdDailyTab };
+  await loaders[anketiTab]();
 };
 
 const TREND_COLORS = { red: '#dd3333', yellow: '#c98a00', green: '#2a9d5c', new: '#9aa1b0' };
@@ -1373,10 +1383,11 @@ async function loadAdDailyTab() {
 function renderAdDailyTable(data) {
   if (!data.rows.length) return '<p class="muted">Список номеров пуст — добавьте номера выше</p>';
   const isWeekend = d => { const wd = new Date(d + 'T00:00:00Z').getUTCDay(); return wd === 0 || wd === 6; };
-  const header = `<tr><th>Анкета</th>${data.days.map(d => `<th style="text-align:center;${isWeekend(d)?'background:#fff6e0':''}">${d.slice(8,10)}.${d.slice(5,7)}</th>`).join('')}</tr>`;
+  const sticky = 'position:sticky;left:0;background:#fff;z-index:1';
+  const header = `<tr><th style="${sticky}">Анкета</th>${data.days.map(d => `<th style="text-align:center;${isWeekend(d)?'background:#fff6e0':''}">${d.slice(8,10)}.${d.slice(5,7)}</th>`).join('')}</tr>`;
   const rows = data.rows.map(r => {
     const cells = r.counts.map((c, i) => `<td style="text-align:center;${isWeekend(data.days[i])?'background:#fffaf0':''}">${c || ''}</td>`).join('');
-    return `<tr><td>${esc(r.label)}<div class="muted" style="font-size:11px">${esc(r.phone)}</div></td>${cells}</tr>`;
+    return `<tr><td style="${sticky}">${esc(r.label)}<div class="muted" style="font-size:11px">${esc(r.phone)}</div></td>${cells}</tr>`;
   }).join('');
   return `<div style="overflow-x:auto"><table style="min-width:${360 + data.days.length * 44}px">${header}${rows}</table></div>`;
 }
