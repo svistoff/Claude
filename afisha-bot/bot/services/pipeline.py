@@ -49,6 +49,7 @@ def _format_reply(fields: dict, media_note: str, warnings: list[str]) -> str:
     lines = [
         "✅ Заявка в «Предложенное»",
         f"Заголовок: {fields['title']}",
+        f"Кратко: {fields.get('short_description') or '—'}",
         f"Когда: {_human_when(fields)}",
         f"Площадка: {fields.get('venue_name') or '—'}",
         f"Медиа: {media_note}",
@@ -64,12 +65,16 @@ async def process_submission(bot: Bot, user_id: int, parts: list[dict[str, Any]]
     text = next((p["text"] for p in parts if p["text"]), None)
     photo = next((p["photo"] for p in parts if p["photo"]), None)
     video = next((p["video"] for p in parts if p["video"]), None)
+    subtitle = next((p.get("subtitle") for p in parts if p.get("subtitle")), None)
 
     warnings: list[str] = []
 
     fields = await ai.extract_fields(text) if text else ai.empty_fields()
     if fields.get("parse_failed"):
         warnings.append("AI не смог распознать структуру — проверь вручную")
+    if subtitle:
+        # подзаголовок-хук из поста aireposter — в краткое описание без пересказа AI
+        fields["short_description"] = subtitle
     if not fields.get("title"):
         fields["title"] = (text.splitlines()[0][:80] if text else "Без названия")
     # дата из анонса, как есть (может быть None) — по ней чистится видео-хранилище;

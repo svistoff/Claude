@@ -42,17 +42,18 @@ class AlbumBuffer:
 
     async def handle_single(
         self, *, message: Message, text: str | None, photo: dict | None, video: dict | None,
+        subtitle: str | None = None,
     ) -> None:
         await self._finalize(
             message.bot, message.chat.id, message.from_user.id,
-            [{"text": text, "photo": photo, "video": video}],
+            [{"text": text, "photo": photo, "video": video, "subtitle": subtitle}],
         )
 
     async def handle_album_part(
         self, *, message: Message, media_group_id: str,
-        text: str | None, photo: dict | None, video: dict | None,
+        text: str | None, photo: dict | None, video: dict | None, subtitle: str | None = None,
     ) -> None:
-        part = {"text": text, "photo": photo, "video": video}
+        part = {"text": text, "photo": photo, "video": video, "subtitle": subtitle}
         async with self._lock:
             pending = self._pending.get(media_group_id)
             if pending is None:
