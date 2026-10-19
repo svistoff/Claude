@@ -248,7 +248,8 @@ async function renderSalonReport(salonId, period) {
   return page(`Отчёт по объекту «${salon.name}»`, `Тип: ${salon.type === 'sauna' ? 'сауна' : 'салон'} · Период: ${period === 'month' ? 'месяц' : 'неделя'}`, body);
 }
 
-// только анкеты с флагами — полный тренд смотрится в разделе «Анкеты»
+// только анкеты с флагами — полный тренд смотрится в разделе «Анкеты»;
+// тренд всегда за 8 недель, независимо от периода отчёта
 function adTrendBlock() {
   const trends = computeAdTrends();
   if (!trends.rows.length) return '';
@@ -301,7 +302,6 @@ async function renderNetworkReport(period) {
     ])}
     <h2>Сравнение объектов</h2>
     <table><tr><th>Объект</th><th>Звонков</th><th>Пропущено</th><th>Записей</th><th>Конверсия</th></tr>${rows}</table>
-    ${adTrendBlock()}
     ${narrativeBlocks(narrative)}
   `;
   return page('Сводный отчёт по сети', `Период: ${period === 'month' ? 'месяц' : 'неделя'}`, body);
@@ -408,6 +408,7 @@ async function renderAdNumbersReport(period) {
     <h2>Звонки по анкетам/площадкам</h2>
     <table><tr><th>Метка</th><th>Номер</th><th>Звонков</th><th>Заметка</th></tr>
       ${tableRows || '<tr><td colspan="4">Номера ещё не добавлены (Настройки → Номера и анкеты)</td></tr>'}</table>
+    ${adTrendBlock()}
     <h2>Динамика по дням (каждая анкета отдельно)</h2>
     <div style="overflow-x:auto"><table>${rows.length ? dailyHeader + dailyBodyRows : '<tr><td>Номера ещё не добавлены</td></tr>'}</table></div>
   `;
