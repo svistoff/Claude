@@ -676,10 +676,19 @@ function getTzOffset() {
   return db.prepare('SELECT uis_timezone_offset_hours FROM telephony_settings WHERE id = 1').get().uis_timezone_offset_hours;
 }
 
+// период today/week/month либо произвольные даты date_from/date_till (ГГГГ-ММ-ДД)
+function dashboardRange(query, defaultPeriod) {
+  const dateRe = /^\d{4}-\d{2}-\d{2}$/;
+  if (dateRe.test(query.date_from || '') && dateRe.test(query.date_till || '')) {
+    return { period: 'custom', from: query.date_from + ' 00:00:00', till: query.date_till + ' 23:59:59' };
+  }
+  const period = ['today', 'week', 'month'].includes(query.period) ? query.period : defaultPeriod;
+  return { period, ...periodBounds(period, getTzOffset()) };
+}
+
 // звонки / пропущено / перезвонили по каждому объекту за период — для графиков дашборда
 app.get('/api/dashboard/salon-stats', auth.requireAdmin, (req, res) => {
-  const period = ['today', 'week', 'month'].includes(req.query.period) ? req.query.period : 'today';
-  const { from, till } = periodBounds(period, getTzOffset());
+  const { period, from, till } = dashboardRange(req.query, 'today');
   const salons = db.prepare('SELECT * FROM salons WHERE active = 1').all();
   const stats = salons.map(s => {
     const calls = db.prepare(`SELECT COUNT(*) AS c FROM calls WHERE salon_id=? AND started_at>=? AND started_at<=?`).get(s.id, from, till).c;
@@ -707,8 +716,7 @@ app.get('/api/dashboard/number-ranking', auth.requireAdmin, (req, res) => {
 
 // динамика звонков по дням за период — для линейного графика на дашборде
 app.get('/api/dashboard/calls-timeseries', auth.requireAdmin, (req, res) => {
-  const period = ['today', 'week', 'month'].includes(req.query.period) ? req.query.period : 'week';
-  const { from, till } = periodBounds(period, getTzOffset());
+  const { period, from, till } = dashboardRange(req.query, 'week');
   const rows = db.prepare(`
     SELECT substr(started_at,1,10) AS day,
       COUNT(*) AS calls,

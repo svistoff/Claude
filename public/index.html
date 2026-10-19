@@ -238,23 +238,37 @@ function adminName(id) { return (ADMINS.find(a => a.id === id) || {}).name || nu
 // ================= ДАШБОРД =================
 const PERIOD_LABELS = { today: 'Сегодня', week: 'Неделя', month: 'Месяц' };
 let dashboardPeriod = 'today';
+let dashboardCustom = null; // { from: 'ГГГГ-ММ-ДД', till: 'ГГГГ-ММ-ДД' }
+
+function dashboardQuery() {
+  return dashboardCustom
+    ? `date_from=${dashboardCustom.from}&date_till=${dashboardCustom.till}`
+    : `period=${dashboardPeriod}`;
+}
+function fmtDate(d) { return `${d.slice(8, 10)}.${d.slice(5, 7)}.${d.slice(0, 4)}`; }
 
 RENDERERS.dashboard = async function renderDashboard() {
   const d = await api('/dashboard');
   const main = document.getElementById('main');
+  const showTimeseries = dashboardCustom ? dashboardCustom.from !== dashboardCustom.till : dashboardPeriod !== 'today';
   main.innerHTML = `
     <h2>Дашборд</h2>
     <div class="card">
-      <div class="row between">
-        <h3 style="margin:0">Звонки по объектам</h3>
+      <div class="row between" style="flex-wrap:wrap;gap:8px">
+        <h3 style="margin:0">Звонки по объектам${dashboardCustom ? ` <span class="muted" style="font-size:13px;font-weight:400">${fmtDate(dashboardCustom.from)} — ${fmtDate(dashboardCustom.till)}</span>` : ''}</h3>
         <div class="row">
           ${Object.entries(PERIOD_LABELS).map(([key, label]) =>
-            `<button class="${dashboardPeriod===key?'primary':''}" onclick="setDashboardPeriod('${key}')">${label}</button>`).join('')}
+            `<button class="${!dashboardCustom && dashboardPeriod===key?'primary':''}" onclick="setDashboardPeriod('${key}')">${label}</button>`).join('')}
         </div>
+      </div>
+      <div class="row" style="margin-top:8px;flex-wrap:wrap">
+        <label>С <input id="dash-from" type="date" value="${dashboardCustom ? dashboardCustom.from : ''}"></label>
+        <label>По <input id="dash-till" type="date" value="${dashboardCustom ? dashboardCustom.till : ''}"></label>
+        <button class="${dashboardCustom ? 'primary' : ''}" onclick="applyDashboardRange()">Показать за период</button>
       </div>
       <div id="dash-chart" style="margin-top:12px">Загрузка…</div>
     </div>
-    ${dashboardPeriod !== 'today' ? `
+    ${showTimeseries ? `
     <div class="card">
       <h3>📈 Динамика звонков по дням</h3>
       <div id="dash-timeseries" style="margin-top:12px">Загрузка…</div>
@@ -286,23 +300,36 @@ RENDERERS.dashboard = async function renderDashboard() {
     </div>
   `;
   loadDashboardStats();
-  if (dashboardPeriod !== 'today') loadDashboardTimeseries();
+  if (showTimeseries) loadDashboardTimeseries();
 };
 
 function setDashboardPeriod(period) {
   dashboardPeriod = period;
+  dashboardCustom = null;
+  RENDERERS.dashboard();
+}
+
+function applyDashboardRange() {
+  const from = document.getElementById('dash-from').value;
+  const till = document.getElementById('dash-till').value;
+  if (!from || !till) return alert('Укажите обе даты');
+  dashboardCustom = from <= till ? { from, till } : { from: till, till: from };
   RENDERERS.dashboard();
 }
 
 async function loadDashboardStats() {
-  const { stats } = await api('/dashboard/salon-stats?period=' + dashboardPeriod);
-  document.getElementById('dash-chart').innerHTML = renderSalonStatsChart(stats);
+  const { stats } = await api('/dashboard/salon-stats?' + dashboardQuery());
+  const total = key => stats.reduce((sum, s) => sum + s[key], 0);
+  document.getElementById('dash-chart').innerHTML = renderSalonStatsChart(stats)
+    + (stats.length ? `<div style="margin-top:10px"><b>Итого по сети:</b> звонков <b>${total('calls')}</b>,
+        пропущено <b style="color:var(--danger)">${total('missed')}</b>,
+        перезвонили <b style="color:var(--ok)">${total('called_back')}</b></div>` : '');
 }
 
-// При периоде "Сегодня" график по дням не показываем — это одна точка,
-// содержательной динамики в ней нет (см. dashboardPeriod !== 'today' в шаблоне).
+// За один день график по дням не показываем — это одна точка,
+// содержательной динамики в ней нет (см. showTimeseries в шаблоне).
 async function loadDashboardTimeseries() {
-  const { days } = await api('/dashboard/calls-timeseries?period=' + dashboardPeriod);
+  const { days } = await api('/dashboard/calls-timeseries?' + dashboardQuery());
   document.getElementById('dash-timeseries').innerHTML = renderCallsTimeseriesChart(days);
 }
 
@@ -1278,9 +1305,9 @@ function adPeriodControls(title) {
       </div>
     </div>
     <div class="row" style="margin-top:8px;flex-wrap:wrap">
-      <label>С <input id="ad-from" type="date"></label>
-      <label>По <input id="ad-till" type="date"></label>
-      <button onclick="applyAdCustomRange()">Показать за период</button>
+      <label>С <input id="ad-from" type="date" value="${adNumbersState.customFrom ? adNumbersState.customFrom.slice(0, 10) : ''}"></label>
+      <label>По <input id="ad-till" type="date" value="${adNumbersState.customTill ? adNumbersState.customTill.slice(0, 10) : ''}"></label>
+      <button class="${adNumbersState.customFrom ? 'primary' : ''}" onclick="applyAdCustomRange()">Показать за период</button>
     </div>`;
 }
 
@@ -1434,9 +1461,10 @@ async function applyAdCustomRange() {
   const from = document.getElementById('ad-from').value;
   const till = document.getElementById('ad-till').value;
   if (!from || !till) return alert('Укажите обе даты');
-  adNumbersState.customFrom = from + ' 00:00:00';
-  adNumbersState.customTill = till + ' 23:59:59';
-  if (anketiTab === 'report') await loadAdReportTab(); else await loadAdDailyTab();
+  const [a, b] = from <= till ? [from, till] : [till, from];
+  adNumbersState.customFrom = a + ' 00:00:00';
+  adNumbersState.customTill = b + ' 23:59:59';
+  await RENDERERS.anketi();
 }
 function adQueryString() {
   return adNumbersState.customFrom
@@ -1444,12 +1472,17 @@ function adQueryString() {
     : `period=${adNumbersState.period}`;
 }
 async function loadAdReportTab() {
-  const { rows } = await api('/ad-numbers/report?' + adQueryString());
-  document.getElementById('ad-report-chart').innerHTML = renderAdReportChart(rows);
+  const { rows, from, till } = await api('/ad-numbers/report?' + adQueryString());
+  const total = rows.reduce((sum, r) => sum + r.calls, 0);
+  const periodText = `${fmtDate(from.slice(0, 10))} — ${fmtDate(till.slice(0, 10))}`;
+  document.getElementById('ad-report-chart').innerHTML = (rows.length
+    ? `<div style="font-size:16px;margin-bottom:12px"><b>Итого на все анкеты: ${total}</b> <span class="muted">звонков за ${periodText}</span></div>` : '')
+    + renderAdReportChart(rows);
   document.getElementById('ad-report-table').innerHTML = `
     <tr><th>Метка</th><th>Номер</th><th>Заметка</th><th>Звонков</th></tr>
     ${rows.map(r => `<tr><td>${esc(r.label)}</td><td>${esc(r.phone)}</td><td>${noteOrLink(r.note)}</td><td>${r.calls}</td></tr>`).join('')
-      || '<tr><td colspan="4" class="muted">Номеров не добавлено</td></tr>'}`;
+      || '<tr><td colspan="4" class="muted">Номеров не добавлено</td></tr>'}
+    ${rows.length ? `<tr style="font-weight:700;border-top:2px solid var(--border)"><td colspan="3">Итого (${rows.length} анкет, ${periodText})</td><td>${total}</td></tr>` : ''}`;
 }
 async function loadAdDailyTab() {
   const daily = await api('/ad-numbers/daily-breakdown?' + adQueryString());
