@@ -396,6 +396,69 @@ if (!callColumns3.includes('forwarded_from_salon_id')) {
   db.exec(`ALTER TABLE calls ADD COLUMN forwarded_from_salon_id INTEGER REFERENCES salons(id) ON DELETE SET NULL;`);
 }
 
+// ===== Fuckwell — отдельная сеть на телефонии МегаФон ВАТС (перенесена из
+// crm.fuckwell.ru), см. fuckwell/. Время звонков хранится в UTC
+// ("YYYY-MM-DD HH:MM:SS"), показывается в fw_settings.display_tz.
+db.exec(`
+CREATE TABLE IF NOT EXISTS fw_numbers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  phone TEXT NOT NULL UNIQUE,      -- нормализованный номер линии (см. fuckwell/groups.js)
+  comment TEXT,
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS fw_calls (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  call_id TEXT NOT NULL UNIQUE,    -- callid МегаФона
+  number_id INTEGER REFERENCES fw_numbers(id) ON DELETE SET NULL,
+  client_phone TEXT,
+  diversion TEXT,
+  telnum_name TEXT,
+  direction TEXT,
+  event_type TEXT,
+  status TEXT,                     -- Success / missed / Busy / NotAvailable
+  started_at TEXT,
+  duration INTEGER,
+  wait INTEGER,
+  recording_url TEXT,
+  raw_payload TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_fw_calls_moment ON fw_calls(started_at, created_at);
+CREATE TABLE IF NOT EXISTS fw_analyses (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  call_id TEXT NOT NULL UNIQUE REFERENCES fw_calls(call_id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'pending', -- pending | processing | done | failed | skipped
+  visit_probability INTEGER,       -- оценка ИИ 0..100, не доказанная вероятность
+  ai_comment TEXT,
+  signals TEXT,                    -- JSON-массив коротких признаков
+  model TEXT,
+  error TEXT,
+  analyzed_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS fw_excluded (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  phone TEXT NOT NULL,
+  key TEXT NOT NULL UNIQUE,        -- последние 10 цифр
+  comment TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS fw_settings (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  megafon_crm_token TEXT,          -- «Ключ для авторизации в вашей CRM» из кабинета МегаФона
+  megafon_api_key TEXT,
+  recording_proxy_url TEXT,        -- российский мост для скачивания записей (record.php)
+  bridge_secret TEXT,
+  display_tz TEXT NOT NULL DEFAULT 'Asia/Yekaterinburg',
+  ai_min_duration_sec INTEGER NOT NULL DEFAULT 5
+);
+INSERT OR IGNORE INTO fw_settings (id) VALUES (1);
+`);
+
 // первичный владелец, если пользователей ещё нет
 const usersCount = db.prepare('SELECT COUNT(*) AS c FROM users').get().c;
 if (usersCount === 0) {

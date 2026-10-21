@@ -53,6 +53,8 @@
   .grid3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; }
   .guest-card { background:#fff; border-radius:12px; padding:16px; margin-bottom:12px; box-shadow:0 1px 4px rgba(0,0,0,.06); }
   .guest-card .time { font-size:20px; font-weight:700; }
+  .fw-form label { display:flex; flex-direction:column; gap:4px; font-size:13px; }
+  .fw-form input { width:100%; box-sizing:border-box; }
   nav.bottom-nav { display:none; }
   @media (max-width:800px){
     .layout{flex-direction:column;}
@@ -172,7 +174,7 @@ async function logout() { await api('/logout', { method: 'POST' }); location.rel
 
 const OWNER_NAV = [
   ['dashboard', 'Дашборд'], ['calls', 'Звонки'], ['admins', 'Администраторы'], ['anketi', 'Анкеты'],
-  ['clients', 'Клиенты'], ['reports', 'Отчёты'], ['settings', 'Настройки']
+  ['clients', 'Клиенты'], ['reports', 'Отчёты'], ['fuckwell', 'Fuckwell'], ['settings', 'Настройки']
 ];
 const STAFF_NAV = [['guest', 'Гости']];
 // Салоны/Чек-листы физически убраны из главного меню и живут как вкладки
@@ -182,7 +184,7 @@ const STAFF_NAV = [['guest', 'Гости']];
 const SETTINGS_GROUP = ['settings', 'salons', 'checklist', 'ad-numbers'];
 const MOBILE_NAV = [
   ['dashboard', 'Дашборд', '📊'], ['calls', 'Звонки', '📞'], ['anketi', 'Анкеты', '📋'],
-  ['clients', 'Клиенты', '👥'], ['reports', 'Отчёты', '📈'], ['settings', 'Настройки', '⚙️']
+  ['clients', 'Клиенты', '👥'], ['reports', 'Отчёты', '📈'], ['fuckwell', 'Fuckwell', '🔥'], ['settings', 'Настройки', '⚙️']
 ];
 
 async function boot() {
@@ -632,6 +634,369 @@ async function loadMissedCalls() {
     <table><tr><th>Дата</th><th>Объект</th><th>Телефон</th><th>Клиент</th><th>Перезвон</th><th>Через</th></tr>
       ${allRows.join('') || '<tr><td colspan="6" class="muted">Пропущенных нет</td></tr>'}
     </table>`;
+}
+
+// ================= FUCKWELL (МегаФон ВАТС, перенесено из crm.fuckwell.ru) =================
+let fwTab = 'calls';
+const FW_TABS = [['calls', '☎ Звонки'], ['numbers', '◎ Номера'], ['analysis', '▤ Анализ звонков'], ['anketas', '▦ Звонки по анкетам'], ['settings', '⚙️ Настройки']];
+const fwRange = { calls: null, anketas: null };
+let fwLastAnalysis = null;
+
+function fwIso(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
+function fwDefaultRange(days) { const to = new Date(), from = new Date(); from.setDate(from.getDate() - (days - 1)); return { from: fwIso(from), to: fwIso(to) }; }
+function fwDur(s) { s = s || 0; return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; }
+function fwPhone(p) {
+  const d = String(p || '').replace(/\D/g, '');
+  if (!d) return 'неизвестный';
+  return d.length === 11 ? `+${d[0]} ${d.slice(1, 4)} ${d.slice(4, 7)}-${d.slice(7, 9)}-${d.slice(9)}` : '+' + d;
+}
+function fwProbBadge(a) {
+  if (!a) return '<span class="muted">—</span>';
+  if (a.status !== 'done' || a.visit_probability == null) {
+    const labels = { pending: 'в очереди', processing: 'анализ…', failed: 'ошибка', skipped: 'не анализируется' };
+    return `<span class="muted" style="font-size:12px">${labels[a.status] || a.status}</span>`;
+  }
+  return `<span style="font-weight:700;color:${qualityColor(a.visit_probability)}">${a.visit_probability}%</span>`;
+}
+function fwPeriodControls(key, days) {
+  const r = fwRange[key] || fwDefaultRange(days);
+  return `<div class="row" style="flex-wrap:wrap;gap:8px">
+    <label>С <input id="fw-from" type="date" value="${r.from}"></label>
+    <label>По <input id="fw-to" type="date" value="${r.to}"></label>
+    <button class="primary" onclick="fwApplyRange('${key}')">Применить</button>
+    ${key === 'calls' ? `<button onclick="window.open('/api/fw/report?date_from=${r.from}&date_to=${r.to}','_blank')">Отчёт (PDF)</button>` : ''}
+  </div>`;
+}
+function fwApplyRange(key) {
+  const from = document.getElementById('fw-from').value, to = document.getElementById('fw-to').value;
+  if (!from || !to) return alert('Укажите обе даты');
+  fwRange[key] = from <= to ? { from, to } : { from: to, to: from };
+  RENDERERS.fuckwell();
+}
+async function fwUpload(path, file) {
+  const fd = new FormData();
+  fd.append('file', file);
+  const resp = await fetch('/api' + path, { method: 'POST', body: fd });
+  const json = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(json.error || ('HTTP ' + resp.status));
+  return json;
+}
+
+RENDERERS.fuckwell = async function renderFuckwell() {
+  const main = document.getElementById('main');
+  main.innerHTML = `
+    <h2>Fuckwell</h2>
+    <div class="row" style="margin-bottom:12px;flex-wrap:wrap;gap:6px">
+      ${FW_TABS.map(([k, l]) => `<button class="${fwTab === k ? 'primary' : ''}" onclick="fwTab='${k}';RENDERERS.fuckwell()">${l}</button>`).join('')}
+    </div>
+    <div id="fw-content">Загрузка…</div>`;
+  const el = document.getElementById('fw-content');
+  try { await ({ calls: fwRenderCalls, numbers: fwRenderNumbers, analysis: fwRenderAnalysis, anketas: fwRenderAnketas, settings: fwRenderSettings })[fwTab](el); }
+  catch (e) { el.innerHTML = `<div class="card"><p class="muted">Ошибка: ${esc(e.message)}</p></div>`; }
+};
+
+// ---------- Звонки (дашборд fuckwell) ----------
+let fwCallsCache = [];
+async function fwRenderCalls(el) {
+  const r = fwRange.calls || fwDefaultRange(30);
+  const q = `date_from=${r.from}&date_to=${r.to}`;
+  const [s, { calls }] = await Promise.all([api('/fw/stats?' + q), api('/fw/calls?limit=1000&' + q)]);
+  fwCallsCache = calls;
+  const pct = s.total ? Math.round(s.accepted / s.total * 1000) / 10 : 0;
+  const lastAi = calls.find(c => c.analysis && c.analysis.status === 'done' && c.analysis.visit_probability != null);
+  const byDay = {};
+  for (const c of calls) { const d = (c.time_local || '').slice(0, 10); if (d) byDay[d] = (byDay[d] || 0) + 1; }
+  const days = Object.keys(byDay).sort();
+  const maxDay = Math.max(1, ...days.map(d => byDay[d]));
+  const numberRows = s.numbers.filter(n => n.total).map(n => `<tr>
+    <td>${esc(n.name)}<div class="muted" style="font-size:11px">${esc(n.phone)}</div></td>
+    <td style="text-align:center"><b>${n.total}</b></td><td style="text-align:center">${n.accepted}</td>
+    <td style="text-align:center;color:var(--danger)">${n.missed || ''}</td>
+    <td style="text-align:center">${s.total ? Math.round(n.total / s.total * 1000) / 10 : 0}%</td></tr>`);
+  const callRows = calls.map(c => {
+    const missed = (c.status || '').toLowerCase() === 'missed';
+    return `<tr style="cursor:pointer" onclick="fwOpenCall('${esc(c.call_id)}')">
+      <td>${esc((c.time_local || '').slice(5, 16).replace('-', '.').replace(' ', ' · '))}${c.started_known ? '' : ' <span class="muted" title="Время по первому событию звонка">≈</span>'}</td>
+      <td>${esc(fwPhone(c.client_real_phone))}${c.line ? ` <span class="tag">${esc(c.line)}</span>` : ''}</td>
+      <td>${esc(c.number_name || c.telnum_name || '—')}</td>
+      <td>${missed ? '<span style="color:var(--danger)">Пропущен</span>' : (c.status || '—') === 'Success' ? 'Принят' : esc(c.status || '—')}</td>
+      <td>${missed ? '—' : fwDur(c.duration)}</td>
+      <td>${fwProbBadge(c.analysis)}</td></tr>`;
+  });
+  el.innerHTML = `
+    <div class="card">${fwPeriodControls('calls', 30)}</div>
+    <div class="grid3" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:16px">
+      <div class="card" style="margin:0"><div class="muted">Всего звонков</div><div style="font-size:26px;font-weight:700">${s.total}</div><div class="muted">${fmtDate(s.date_from)} — ${fmtDate(s.date_to)}</div></div>
+      <div class="card" style="margin:0"><div class="muted">Принято</div><div style="font-size:26px;font-weight:700;color:var(--ok)">${s.accepted}</div><div class="muted">${String(pct).replace('.', ',')}% от всех</div></div>
+      <div class="card" style="margin:0"><div class="muted">Пропущено</div><div style="font-size:26px;font-weight:700;color:var(--danger)">${s.missed}</div><div class="muted">требуют внимания</div></div>
+      <div class="card" style="margin:0"><div class="muted">Средний разговор</div><div style="font-size:26px;font-weight:700">${fwDur(s.avg_duration_sec)}</div><div class="muted">ИИ разобрал: ${s.ai_analyzed}${s.ai_avg_probability != null ? `, ср. оценка ${s.ai_avg_probability}%` : ''}</div></div>
+    </div>
+    <div class="grid2">
+      <div class="card">
+        <h3 style="margin-top:0">Номера</h3>
+        <div style="overflow-x:auto"><table><tr><th>Номер</th><th>Всего</th><th>Принято</th><th>Пропущ.</th><th>Доля</th></tr>
+          ${paginatedRows(numberRows, 8) || '<tr><td colspan="5" class="muted">Звонков за период нет</td></tr>'}</table></div>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">Последний ИИ-анализ</h3>
+        ${lastAi ? `<div class="row" style="gap:14px;align-items:center">
+            <div style="font-size:34px;font-weight:800;color:${qualityColor(lastAi.analysis.visit_probability)}">${lastAi.analysis.visit_probability}%</div>
+            <div><b>${lastAi.analysis.visit_probability >= 65 ? 'Вероятно, клиент придёт' : lastAi.analysis.visit_probability >= 35 ? 'Намерение под вопросом' : 'Скорее не придёт'}</b><div class="muted">оценка ИИ</div></div>
+          </div>
+          <p>${esc(lastAi.analysis.ai_comment || '')}</p>
+          <div class="muted">${esc(lastAi.number_name || '')} · ${esc(fwPhone(lastAi.client_real_phone))} · ${esc(lastAi.time_local)}</div>`
+          : '<p class="muted">Пока нет проанализированных разговоров.</p>'}
+      </div>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">Звонки по дням</h3>
+      ${days.length ? `<div style="display:flex;align-items:flex-end;gap:4px;height:140px;overflow-x:auto;padding-bottom:4px">
+        ${days.map(d => `<div style="flex:1;min-width:22px;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%">
+          <div style="font-size:11px">${byDay[d]}</div>
+          <div style="width:100%;max-width:28px;background:var(--accent);border-radius:4px 4px 0 0;height:${Math.round(byDay[d] / maxDay * 100)}px"></div>
+          <div class="muted" style="font-size:10px">${d.slice(8, 10)}.${d.slice(5, 7)}</div></div>`).join('')}
+      </div>` : '<p class="muted">Нет данных за период.</p>'}
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">Звонки (${calls.length})</h3>
+      <div style="overflow-x:auto"><table><tr><th>Время</th><th>Клиент</th><th>Номер</th><th>Статус</th><th>Длит.</th><th>Оценка ИИ</th></tr>
+        ${paginatedRows(callRows, 30) || '<tr><td colspan="6" class="muted">Звонков за период нет</td></tr>'}</table></div>
+    </div>`;
+}
+
+function fwOpenCall(callId) {
+  const c = fwCallsCache.find(x => x.call_id === callId);
+  if (!c) return;
+  const a = c.analysis;
+  const div = document.createElement('div');
+  div.className = 'modal-bg';
+  div.onclick = e => { if (e.target === div) div.remove(); };
+  div.innerHTML = `<div class="modal">
+    <h3>Звонок · ${esc(c.time_local || '')}</h3>
+    <p><b>Клиент:</b> ${esc(fwPhone(c.client_real_phone))}${c.line ? ` <span class="tag">линия ${esc(c.line)}</span>` : ''}<br>
+    <b>Номер:</b> ${esc(c.number_name || '—')} <span class="muted">${esc(c.number_phone || c.diversion || '')}</span><br>
+    <b>Статус:</b> ${esc(c.status || '—')} · <b>Длительность:</b> ${fwDur(c.duration)} · <b>Ожидание:</b> ${c.wait ?? '—'} с</p>
+    ${a ? `<div style="background:#f5f7fb;border-radius:10px;padding:12px 14px">
+      <b>Оценка ИИ:</b> ${fwProbBadge(a)}
+      ${a.ai_comment ? `<p style="margin:8px 0">${esc(a.ai_comment)}</p>` : ''}
+      ${a.signals && a.signals.length ? `<div class="row" style="flex-wrap:wrap;gap:6px">${a.signals.map(s => `<span class="tag">${esc(s)}</span>`).join('')}</div>` : ''}
+      ${a.error ? `<p class="muted">${esc(a.error)}</p>` : ''}
+    </div>` : '<p class="muted">ИИ-анализа нет.</p>'}
+    <div class="row between" style="margin-top:16px">
+      ${c.recording_url && (c.status || '').toLowerCase() === 'success' ? `<button onclick="fwReanalyze('${esc(c.call_id)}')">Повторить анализ</button>` : '<span></span>'}
+      <button onclick="this.closest('.modal-bg').remove()">Закрыть</button>
+    </div></div>`;
+  document.body.appendChild(div);
+}
+async function fwReanalyze(callId) {
+  try { await api(`/fw/calls/${encodeURIComponent(callId)}/reanalyze`, { method: 'POST' }); alert('Звонок отправлен на анализ — результат появится через минуту-две'); document.querySelector('.modal-bg')?.remove(); }
+  catch (e) { alert(e.message); }
+}
+
+// ---------- Номера ----------
+let fwNumbers = [], fwEditingId = null;
+async function fwRenderNumbers(el) {
+  const [numbers, excluded] = await Promise.all([api('/fw/numbers'), api('/fw/excluded')]);
+  fwNumbers = numbers;
+  el.innerHTML = `
+    <div class="card">
+      <h3 style="margin-top:0">Номера</h3>
+      <p class="muted">Имя, номер и комментарий (например, ссылка на анкету) для каждого номера ВАТС. Звонки на доп.-линии раскладываются по своим номерам автоматически.</p>
+      <div class="row" style="flex-wrap:wrap;gap:8px">
+        <input id="fwn-name" placeholder="Имя (напр. Мармеладка)">
+        <input id="fwn-phone" placeholder="Номер">
+        <input id="fwn-comment" placeholder="Комментарий / ссылка на объявление" style="min-width:220px">
+        <button class="primary" onclick="fwAddNumber()">+ Добавить</button>
+      </div>
+      <div class="row" style="margin-top:10px;gap:8px">
+        <input id="fwn-q" placeholder="Поиск по имени, номеру или комментарию…" style="flex:1" oninput="fwEditingId=null;fwDrawNumbers()">
+        <span class="muted" id="fwn-count"></span>
+      </div>
+      <div style="overflow-x:auto"><table id="fwn-table"></table></div>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">Не учитывать в статистике</h3>
+      <p class="muted">Звонки с этих номеров (например, тестовые прозвоны) не попадают в статистику, отчёт, анализ xlsx и ИИ-анализ. Сами звонки в списке остаются.</p>
+      <div class="row" style="flex-wrap:wrap;gap:8px">
+        <input id="fwx-phone" placeholder="Номер"><input id="fwx-comment" placeholder="Комментарий">
+        <button class="primary" onclick="fwAddExcluded()">+ Добавить</button>
+      </div>
+      <table>${excluded.map(x => `<tr><td>${esc(x.phone)}</td><td>${esc(x.comment || '')}</td>
+        <td style="text-align:right"><button class="danger" onclick="fwDeleteExcluded(${x.id})">✕</button></td></tr>`).join('') || '<tr><td class="muted">Список пуст</td></tr>'}</table>
+    </div>`;
+  fwDrawNumbers();
+}
+function fwDrawNumbers() {
+  const q = (document.getElementById('fwn-q').value || '').trim().toLowerCase();
+  const rows = q ? fwNumbers.filter(n => [n.name, n.phone, n.comment].some(v => (v || '').toLowerCase().includes(q))) : fwNumbers;
+  document.getElementById('fwn-count').textContent = `${rows.length} из ${fwNumbers.length}`;
+  document.getElementById('fwn-table').innerHTML = `<tr><th>Имя</th><th>Номер</th><th>Комментарий</th><th>Статус</th><th></th></tr>` +
+    (rows.map(n => n.id === fwEditingId ? `<tr>
+        <td><input id="fwe-name" value="${esc(n.name)}"></td><td><input id="fwe-phone" value="${esc(n.phone)}"></td>
+        <td><input id="fwe-comment" value="${esc(n.comment || '')}" style="min-width:200px"></td><td></td>
+        <td class="row" style="justify-content:flex-end"><button class="primary" onclick="fwSaveNumber(${n.id})">Сохранить</button><button onclick="fwEditingId=null;fwDrawNumbers()">Отмена</button></td></tr>`
+      : `<tr><td>${esc(n.name)}</td><td>${esc(n.phone)}</td><td>${noteOrLink(n.comment)}</td>
+        <td>${n.active ? '<span class="tag done">активен</span>' : '<span class="tag">отключён</span>'}</td>
+        <td class="row" style="justify-content:flex-end">
+          <button onclick="fwUpdateNumber(${n.id}, {active: ${!n.active}})">${n.active ? 'Отключить' : 'Включить'}</button>
+          <button onclick="fwEditingId=${n.id};fwDrawNumbers()">✎</button>
+          <button class="danger" onclick="fwDeleteNumber(${n.id})">✕</button></td></tr>`).join('')
+      || '<tr><td colspan="5" class="muted">Ничего не найдено</td></tr>');
+}
+async function fwAddNumber() {
+  const body = { name: document.getElementById('fwn-name').value.trim(), phone: document.getElementById('fwn-phone').value.trim(), comment: document.getElementById('fwn-comment').value.trim() };
+  if (!body.name || !body.phone) return alert('Заполните имя и номер');
+  try { await api('/fw/numbers', { method: 'POST', body }); RENDERERS.fuckwell(); } catch (e) { alert(e.message); }
+}
+async function fwUpdateNumber(id, body) {
+  try { await api('/fw/numbers/' + id, { method: 'PUT', body }); fwEditingId = null; RENDERERS.fuckwell(); } catch (e) { alert(e.message); }
+}
+function fwSaveNumber(id) {
+  fwUpdateNumber(id, { name: document.getElementById('fwe-name').value.trim(), phone: document.getElementById('fwe-phone').value.trim(), comment: document.getElementById('fwe-comment').value.trim() });
+}
+async function fwDeleteNumber(id) { if (!confirm('Удалить номер?')) return; await api('/fw/numbers/' + id, { method: 'DELETE' }); RENDERERS.fuckwell(); }
+async function fwAddExcluded() {
+  const body = { phone: document.getElementById('fwx-phone').value.trim(), comment: document.getElementById('fwx-comment').value.trim() };
+  if (!body.phone) return alert('Введите номер');
+  try { await api('/fw/excluded', { method: 'POST', body }); RENDERERS.fuckwell(); } catch (e) { alert(e.message); }
+}
+async function fwDeleteExcluded(id) { if (!confirm('Вернуть номер в статистику?')) return; await api('/fw/excluded/' + id, { method: 'DELETE' }); RENDERERS.fuckwell(); }
+
+// ---------- Анализ звонков (выгрузка xlsx из кабинета МегаФона) ----------
+async function fwRenderAnalysis(el) {
+  el.innerHTML = `
+    <div class="card">
+      <h3 style="margin-top:0">Анализ звонков</h3>
+      <p class="muted">Загрузите выгрузку «История внешних звонков» (.xlsx) из кабинета МегаФон — посчитаем звонки по каждому номеру, включая доп.-линии. Файл нигде не сохраняется.</p>
+      <div class="row" style="flex-wrap:wrap;gap:8px">
+        <input type="file" id="fwa-file" accept=".xlsx,.xlsm">
+        <button class="primary" onclick="fwRunAnalysis()">Разобрать файл</button>
+      </div>
+      <div id="fwa-status" class="muted" style="margin-top:8px"></div>
+    </div>
+    <div id="fwa-result">${fwLastAnalysis ? fwAnalysisHtml(fwLastAnalysis) : ''}</div>`;
+}
+async function fwRunAnalysis() {
+  const file = document.getElementById('fwa-file').files[0];
+  if (!file) return alert('Выберите xlsx-файл');
+  const st = document.getElementById('fwa-status');
+  st.textContent = 'Разбираю файл…';
+  try {
+    fwLastAnalysis = await fwUpload('/fw/analysis/upload', file);
+    st.textContent = '';
+    document.getElementById('fwa-result').innerHTML = fwAnalysisHtml(fwLastAnalysis);
+  } catch (e) { st.textContent = 'Не получилось: ' + e.message; }
+}
+function fwAnalysisHtml(d) {
+  const t = d.totals, p = d.period || {};
+  const meta = [d.filename && `Файл: ${esc(d.filename)}`, (p['с'] || p['по']) && `Период: ${esc(p['с'] || '?')} — ${esc(p['по'] || '?')}`, p['звонки'] && `Тип: ${esc(p['звонки'])}`,
+    d.excluded_calls && `исключено звонков: ${d.excluded_calls}`].filter(Boolean).join(' · ');
+  return `
+    <div class="card"><div class="row between" style="flex-wrap:wrap;gap:8px"><span class="muted">${meta}</span>
+      <span class="row"><button onclick="fwAnalysisCsv()">Скачать CSV</button><button onclick="fwAnalysisPrint()">Отчёт (PDF)</button></span></div></div>
+    <div class="grid3" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:16px">
+      <div class="card" style="margin:0"><div class="muted">Всего в файле</div><div style="font-size:26px;font-weight:700">${t.total}</div><div class="muted">вх. ${t.incoming} · проп. ${t.missed} · исх. ${t.outgoing}</div></div>
+      <div class="card" style="margin:0"><div class="muted">Входящие</div><div style="font-size:26px;font-weight:700">${t.incoming}</div></div>
+      <div class="card" style="margin:0"><div class="muted">Пропущено</div><div style="font-size:26px;font-weight:700;color:var(--danger)">${t.missed}</div></div>
+      <div class="card" style="margin:0"><div class="muted">Сопоставлено</div><div style="font-size:26px;font-weight:700">${t.matched}</div><div class="muted">не сопоставлено: ${t.unmatched}</div></div>
+    </div>
+    <div class="card"><h3 style="margin-top:0">По салонам</h3>
+      <table><tr><th>Салон</th><th>Всего</th><th>Входящие</th><th>Пропущено</th><th>Исходящие</th></tr>
+      ${d.by_salon.map(s => `<tr><td>${esc(s.salon)}</td><td><b>${s.total}</b></td><td>${s.incoming}</td><td>${s.missed}</td><td>${s.outgoing}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">Нет данных</td></tr>'}</table></div>
+    <div class="card"><h3 style="margin-top:0">По номерам</h3>
+      <div style="overflow-x:auto"><table><tr><th>Номер</th><th>Имя</th><th>Комментарий</th><th>Всего</th><th>Вх.</th><th>Проп.</th><th>Исх.</th></tr>
+      ${paginatedRows(d.numbers.map(n => `<tr><td>${esc(n.phone)}</td><td>${esc(n.name)}${n.id ? '' : ' <span class="muted">(нет в номерах)</span>'}<div class="muted" style="font-size:11px">${esc(n.label)}</div></td>
+        <td>${noteOrLink(n.comment)}</td><td><b>${n.total}</b></td><td>${n.incoming}</td><td>${n.missed}</td><td>${n.outgoing}</td></tr>`), 20) || '<tr><td colspan="7" class="muted">Совпадений нет</td></tr>'}</table></div></div>
+    ${d.unmatched.length ? `<div class="card"><h3 style="margin-top:0">Не удалось сопоставить</h3>
+      <p class="muted">Этих основных номеров нет в схеме рекламных групп — опечатка или новый номер.</p>
+      <table><tr><th>Номер (Через)</th><th>Звонков</th></tr>${d.unmatched.map(u => `<tr><td>${esc(u.phone)}</td><td>${u.count}</td></tr>`).join('')}</table></div>` : ''}`;
+}
+function fwAnalysisCsv() {
+  const d = fwLastAnalysis;
+  const lines = [['Номер', 'Имя', 'Комментарий', 'Салон', 'Группа', 'Роль', 'Всего', 'Входящие', 'Пропущено', 'Исходящие'].join(';')];
+  for (const n of d.numbers) lines.push([n.phone, n.name, n.comment || '', n.salon, n.group, n.role_label, n.total, n.incoming, n.missed, n.outgoing].map(v => String(v).replace(/;/g, ',')).join(';'));
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' }));
+  a.download = 'fuckwell-analiz-zvonkov.csv';
+  a.click();
+}
+function fwAnalysisPrint() {
+  const w = window.open('', '_blank');
+  if (!w) return alert('Разрешите всплывающие окна для этого сайта');
+  w.document.write(`<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>Fuckwell — анализ звонков</title>
+    <style>body{font-family:-apple-system,Segoe UI,Arial,sans-serif;max-width:960px;margin:24px auto;padding:0 16px;color:#1d1d1f}
+    table{width:100%;border-collapse:collapse}td,th{padding:6px 8px;border-bottom:1px solid #eee;font-size:13px;text-align:left}
+    .muted{color:#6e6e73;font-size:12px}.card{margin-bottom:16px}button{display:none}.grid3{display:flex;gap:12px;flex-wrap:wrap}.grid3 .card{background:#f5f5f7;border-radius:10px;padding:12px 16px}
+    @media print{.noprint{display:none}}</style></head><body><h1>Fuckwell — анализ звонков</h1>
+    ${fwAnalysisHtml(fwLastAnalysis).replace(/<tbody id="more-[^"]+" style="display:none">/g, '<tbody>').replace(/<tr><td colspan="20"[\s\S]*?<\/tr>/g, '')}
+    <p class="noprint"><a href="#" onclick="window.print();return false">Сохранить в PDF</a></p></body></html>`);
+  w.document.close();
+}
+
+// ---------- Звонки по анкетам (матрица анкета × день) ----------
+async function fwRenderAnketas(el) {
+  const r = fwRange.anketas || fwDefaultRange(14);
+  const d = await api(`/fw/anketa-daily?date_from=${r.from}&date_to=${r.to}`);
+  const dow = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
+  const isWeekend = day => { const w = new Date(day + 'T00:00:00Z').getUTCDay(); return w === 0 || w === 6; };
+  const sticky = 'position:sticky;left:0;background:#fff;z-index:1';
+  const head = `<tr><th style="${sticky}">Анкета</th><th style="text-align:center">Всего</th>${d.days.map(day => `<th style="text-align:center;${isWeekend(day) ? 'background:#fff6e0' : ''}">${day.slice(8, 10)}.${day.slice(5, 7)}<div class="muted" style="font-size:10px">${dow[new Date(day + 'T00:00:00Z').getUTCDay()]}</div></th>`).join('')}</tr>`;
+  const body = d.anketas.map(a => `<tr>
+    <td style="${sticky}">${esc(a.name)}<div class="muted" style="font-size:11px">${esc(a.phone)}${a.active ? '' : ' · откл.'}</div></td>
+    <td style="text-align:center"><b>${a.total}</b></td>
+    ${d.days.map(day => `<td style="text-align:center;${isWeekend(day) ? 'background:#fffaf0' : ''}">${a.by_day[day] || '<span class="muted">·</span>'}</td>`).join('')}</tr>`).join('');
+  const foot = `<tr style="font-weight:700;border-top:2px solid var(--border)"><td style="${sticky}">Все анкеты</td><td style="text-align:center">${d.grand_total}</td>
+    ${d.days.map(day => `<td style="text-align:center">${d.col_totals[day] || '·'}</td>`).join('')}</tr>`;
+  el.innerHTML = `
+    <div class="card">
+      <div class="row between" style="flex-wrap:wrap;gap:8px"><h3 style="margin:0">Звонки по анкетам</h3>${fwPeriodControls('anketas', 14)}</div>
+      <div style="font-size:16px;margin:12px 0"><b>Итого на все анкеты: ${d.grand_total}</b> <span class="muted">звонков за ${fmtDate(d.date_from)} — ${fmtDate(d.date_to)}</span></div>
+      <div style="overflow-x:auto"><table style="min-width:${300 + d.days.length * 44}px">${head}${body || '<tr><td class="muted">Номеров нет</td></tr>'}${foot}</table></div>
+      <p class="muted">«Всего» — звонки анкеты за период, нижняя строка — все анкеты по дням. Выходные подсвечены. Исключённые номера не учитываются.</p>
+    </div>`;
+}
+
+// ---------- Настройки ----------
+async function fwRenderSettings(el) {
+  const s = await api('/fw/settings');
+  const secretInput = (id, has, label) => `<label>${label}<input id="${id}" type="password" autocomplete="off" placeholder="${has ? '•••••• сохранён — оставьте пустым, чтобы не менять' : 'не задан'}"></label>`;
+  el.innerHTML = `
+    <div class="card">
+      <h3 style="margin-top:0">Подключение МегаФон ВАТС</h3>
+      <p class="muted">Адрес для вебхуков: <b>${esc(location.origin)}/api/megafon</b>. Его указывает российский мост (webhook.php на most.fuckwell.ru) либо сам кабинет МегаФона.</p>
+      <div class="fw-form" style="display:flex;flex-direction:column;gap:12px;max-width:520px">
+        ${secretInput('fws-token', s.has_megafon_crm_token, 'Ключ для авторизации в CRM (crm_token из кабинета МегаФона)')}
+        ${secretInput('fws-apikey', s.has_megafon_api_key, 'Ключ авторизации в АТС (X-API-KEY, для закрытых записей)')}
+        <label>Мост для скачивания записей (record.php)<input id="fws-proxy" value="${esc(s.recording_proxy_url)}" placeholder="https://most.fuckwell.ru/record.php"></label>
+        ${secretInput('fws-secret', s.has_bridge_secret, 'Секрет моста (SECRET в record.php)')}
+        <label>Часовой пояс отображения<input id="fws-tz" value="${esc(s.display_tz)}"></label>
+        <label>Не анализировать ИИ разговоры короче, сек<input id="fws-min" type="number" min="0" value="${s.ai_min_duration_sec}"></label>
+        <div><button class="primary" onclick="fwSaveSettings()">Сохранить</button></div>
+      </div>
+      <p class="muted">Ключ OpenAI и модели ИИ — общие с xmassage (Настройки → Основное).</p>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">Импорт из старой crm.fuckwell.ru</h3>
+      <p class="muted">Файл импорта (fuckwell-import.json): номера, звонки, оценки ИИ, исключённые номера и настройки подключения. Повторный импорт ничего не дублирует.</p>
+      <div class="row" style="flex-wrap:wrap;gap:8px"><input type="file" id="fws-import" accept=".json"><button onclick="fwImport()">Импортировать</button></div>
+    </div>`;
+}
+async function fwSaveSettings() {
+  const body = {
+    megafon_crm_token: document.getElementById('fws-token').value, megafon_api_key: document.getElementById('fws-apikey').value,
+    bridge_secret: document.getElementById('fws-secret').value, recording_proxy_url: document.getElementById('fws-proxy').value,
+    display_tz: document.getElementById('fws-tz').value, ai_min_duration_sec: document.getElementById('fws-min').value
+  };
+  try { await api('/fw/settings', { method: 'PUT', body }); alert('Сохранено'); RENDERERS.fuckwell(); } catch (e) { alert(e.message); }
+}
+async function fwImport() {
+  const file = document.getElementById('fws-import').files[0];
+  if (!file) return alert('Выберите файл fuckwell-import.json');
+  try {
+    const r = await fwUpload('/fw/import', file);
+    alert(`Импортировано: номеров ${r.numbers}, звонков ${r.calls}, оценок ИИ ${r.analyses}, исключённых номеров ${r.excluded}, настроек ${r.settings}.`);
+    RENDERERS.fuckwell();
+  } catch (e) { alert(e.message); }
 }
 
 // ================= КЛИЕНТЫ =================

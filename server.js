@@ -23,7 +23,11 @@ app.get('/api/me', auth.requireAuth, (req, res) => {
   res.json({ ...req.user, salon_id: admin ? admin.salon_id : null, admin_id: admin ? admin.id : null });
 });
 
+// вебхук МегаФон ВАТС (Fuckwell) — без входа в CRM, авторизация по crm_token в теле
+app.post('/api/megafon', express.urlencoded({ extended: false }), require('./fuckwell/webhook').megafonWebhook);
+
 app.use('/api', auth.requireAuth);
+app.use('/api/fw', auth.requireAdmin, require('./fuckwell/routes'));
 
 function formatCall(c) {
   return { ...c, checklist_results: c.checklist_results ? JSON.parse(c.checklist_results) : null };
@@ -1048,4 +1052,6 @@ app.listen(PORT, () => {
   console.log(`[server] CRM сети массажных салонов запущена на порту ${PORT}`);
   require('./telephony').startPolling();
   adTrends.startWeeklyInsights();
+  const fwPending = require('./fuckwell/ai').rescanPending();
+  if (fwPending) console.log(`[fuckwell] дообработка ИИ-анализов после запуска: ${fwPending}`);
 });
