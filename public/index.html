@@ -709,7 +709,7 @@ async function fwRenderCalls(el) {
   const days = Object.keys(byDay).sort();
   const maxDay = Math.max(1, ...days.map(d => byDay[d]));
   const numberRows = s.numbers.filter(n => n.total).map(n => `<tr>
-    <td>${esc(n.name)}<div class="muted" style="font-size:11px">${esc(n.phone)}</div></td>
+    <td>${esc(n.name)}${n.kind === 'salon' ? ' <span class="tag">прямой номер</span>' : ''}<div class="muted" style="font-size:11px">${esc(n.salon || 'салон не указан')} · ${esc(n.phone)}</div></td>
     <td style="text-align:center"><b>${n.total}</b></td><td style="text-align:center">${n.accepted}</td>
     <td style="text-align:center;color:var(--danger)">${n.missed || ''}</td>
     <td style="text-align:center">${s.total ? Math.round(n.total / s.total * 1000) / 10 : 0}%</td></tr>`);
@@ -718,7 +718,7 @@ async function fwRenderCalls(el) {
     return `<tr style="cursor:pointer" onclick="fwOpenCall('${esc(c.call_id)}')">
       <td>${esc((c.time_local || '').slice(5, 16).replace('-', '.').replace(' ', ' · '))}${c.started_known ? '' : ' <span class="muted" title="Время по первому событию звонка">≈</span>'}</td>
       <td>${esc(fwPhone(c.client_real_phone))}${c.line ? ` <span class="tag">${esc(c.line)}</span>` : ''}</td>
-      <td>${esc(c.number_name || c.telnum_name || '—')}</td>
+      <td>${esc(c.number_name || c.telnum_name || '—')}${c.number_salon ? `<div class="muted" style="font-size:11px">${esc(c.number_salon)}</div>` : ''}</td>
       <td>${missed ? '<span style="color:var(--danger)">Пропущен</span>' : (c.status || '—') === 'Success' ? 'Принят' : esc(c.status || '—')}</td>
       <td>${missed ? '—' : fwDur(c.duration)}</td>
       <td>${fwProbBadge(c.analysis)}</td></tr>`;
@@ -730,6 +730,17 @@ async function fwRenderCalls(el) {
       <div class="card" style="margin:0"><div class="muted">Принято</div><div style="font-size:26px;font-weight:700;color:var(--ok)">${s.accepted}</div><div class="muted">${String(pct).replace('.', ',')}% от всех</div></div>
       <div class="card" style="margin:0"><div class="muted">Пропущено</div><div style="font-size:26px;font-weight:700;color:var(--danger)">${s.missed}</div><div class="muted">требуют внимания</div></div>
       <div class="card" style="margin:0"><div class="muted">Средний разговор</div><div style="font-size:26px;font-weight:700">${fwDur(s.avg_duration_sec)}</div><div class="muted">ИИ разобрал: ${s.ai_analyzed}${s.ai_avg_probability != null ? `, ср. оценка ${s.ai_avg_probability}%` : ''}</div></div>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">По салонам</h3>
+      <p class="muted" style="margin-top:0">Входящие звонки салона = звонки на его анкеты + на его прямой номер (куда переадресуются анкеты). Исходящие — отдельно.</p>
+      <div style="overflow-x:auto"><table><tr><th>Салон</th><th>Входящих</th><th>через анкеты</th><th>на прямой номер</th><th>Принято</th><th>Пропущено</th><th>Исходящих</th></tr>
+        ${s.salons.map(x => `<tr><td><b>${esc(x.salon)}</b></td><td style="text-align:center"><b>${x.incoming}</b></td><td style="text-align:center">${x.via_anketa}</td>
+          <td style="text-align:center">${x.direct}</td><td style="text-align:center;color:var(--ok)">${x.accepted}</td>
+          <td style="text-align:center;color:var(--danger)">${x.missed || ''}</td><td style="text-align:center">${x.outgoing || ''}</td></tr>`).join('')}
+        <tr style="font-weight:700;border-top:2px solid var(--border)"><td>Итого</td>
+          ${['incoming', 'via_anketa', 'direct', 'accepted', 'missed', 'outgoing'].map(k => `<td style="text-align:center">${s.salons.reduce((sum, x) => sum + x[k], 0)}</td>`).join('')}</tr>
+      </table></div>
     </div>
     <div class="grid2">
       <div class="card">
@@ -795,6 +806,11 @@ async function fwReanalyze(callId) {
 
 // ---------- Номера ----------
 let fwNumbers = [], fwEditingId = null;
+const FW_SALONS = ['8 марта', 'Юмашева', 'Чайковского'];
+function fwSalonSelect(id, value) {
+  const opts = [...FW_SALONS, ...(value && !FW_SALONS.includes(value) ? [value] : [])];
+  return `<select id="${id}"><option value="">салон не указан</option>${opts.map(x => `<option ${x === value ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>`;
+}
 async function fwRenderNumbers(el) {
   const [numbers, excluded] = await Promise.all([api('/fw/numbers'), api('/fw/excluded')]);
   fwNumbers = numbers;
@@ -806,6 +822,8 @@ async function fwRenderNumbers(el) {
         <input id="fwn-name" placeholder="Имя (напр. Мармеладка)">
         <input id="fwn-phone" placeholder="Номер">
         <input id="fwn-comment" placeholder="Комментарий / ссылка на объявление" style="min-width:220px">
+        ${fwSalonSelect('fwn-salon', '')}
+        <select id="fwn-kind"><option value="anketa">анкета</option><option value="salon">прямой номер салона</option></select>
         <button class="primary" onclick="fwAddNumber()">+ Добавить</button>
       </div>
       <div class="row" style="margin-top:10px;gap:8px">
@@ -830,21 +848,24 @@ function fwDrawNumbers() {
   const q = (document.getElementById('fwn-q').value || '').trim().toLowerCase();
   const rows = q ? fwNumbers.filter(n => [n.name, n.phone, n.comment].some(v => (v || '').toLowerCase().includes(q))) : fwNumbers;
   document.getElementById('fwn-count').textContent = `${rows.length} из ${fwNumbers.length}`;
-  document.getElementById('fwn-table').innerHTML = `<tr><th>Имя</th><th>Номер</th><th>Комментарий</th><th>Статус</th><th></th></tr>` +
+  document.getElementById('fwn-table').innerHTML = `<tr><th>Имя</th><th>Номер</th><th>Салон</th><th>Комментарий</th><th>Статус</th><th></th></tr>` +
     (rows.map(n => n.id === fwEditingId ? `<tr>
         <td><input id="fwe-name" value="${esc(n.name)}"></td><td><input id="fwe-phone" value="${esc(n.phone)}"></td>
+        <td>${fwSalonSelect('fwe-salon', n.salon)}<select id="fwe-kind"><option value="anketa" ${n.kind !== 'salon' ? 'selected' : ''}>анкета</option><option value="salon" ${n.kind === 'salon' ? 'selected' : ''}>прямой номер</option></select></td>
         <td><input id="fwe-comment" value="${esc(n.comment || '')}" style="min-width:200px"></td><td></td>
         <td class="row" style="justify-content:flex-end"><button class="primary" onclick="fwSaveNumber(${n.id})">Сохранить</button><button onclick="fwEditingId=null;fwDrawNumbers()">Отмена</button></td></tr>`
-      : `<tr><td>${esc(n.name)}</td><td>${esc(n.phone)}</td><td>${noteOrLink(n.comment)}</td>
+      : `<tr><td>${esc(n.name)}</td><td>${esc(n.phone)}</td>
+        <td>${esc(n.salon || '—')}${n.kind === 'salon' ? '<div class="muted" style="font-size:11px">прямой номер</div>' : ''}</td><td>${noteOrLink(n.comment)}</td>
         <td>${n.active ? '<span class="tag done">активен</span>' : '<span class="tag">отключён</span>'}</td>
         <td class="row" style="justify-content:flex-end">
           <button onclick="fwUpdateNumber(${n.id}, {active: ${!n.active}})">${n.active ? 'Отключить' : 'Включить'}</button>
           <button onclick="fwEditingId=${n.id};fwDrawNumbers()">✎</button>
           <button class="danger" onclick="fwDeleteNumber(${n.id})">✕</button></td></tr>`).join('')
-      || '<tr><td colspan="5" class="muted">Ничего не найдено</td></tr>');
+      || '<tr><td colspan="6" class="muted">Ничего не найдено</td></tr>');
 }
 async function fwAddNumber() {
-  const body = { name: document.getElementById('fwn-name').value.trim(), phone: document.getElementById('fwn-phone').value.trim(), comment: document.getElementById('fwn-comment').value.trim() };
+  const body = { name: document.getElementById('fwn-name').value.trim(), phone: document.getElementById('fwn-phone').value.trim(), comment: document.getElementById('fwn-comment').value.trim(),
+    salon: document.getElementById('fwn-salon').value, kind: document.getElementById('fwn-kind').value };
   if (!body.name || !body.phone) return alert('Заполните имя и номер');
   try { await api('/fw/numbers', { method: 'POST', body }); RENDERERS.fuckwell(); } catch (e) { alert(e.message); }
 }
@@ -852,7 +873,8 @@ async function fwUpdateNumber(id, body) {
   try { await api('/fw/numbers/' + id, { method: 'PUT', body }); fwEditingId = null; RENDERERS.fuckwell(); } catch (e) { alert(e.message); }
 }
 function fwSaveNumber(id) {
-  fwUpdateNumber(id, { name: document.getElementById('fwe-name').value.trim(), phone: document.getElementById('fwe-phone').value.trim(), comment: document.getElementById('fwe-comment').value.trim() });
+  fwUpdateNumber(id, { name: document.getElementById('fwe-name').value.trim(), phone: document.getElementById('fwe-phone').value.trim(), comment: document.getElementById('fwe-comment').value.trim(),
+    salon: document.getElementById('fwe-salon').value, kind: document.getElementById('fwe-kind').value });
 }
 async function fwDeleteNumber(id) { if (!confirm('Удалить номер?')) return; await api('/fw/numbers/' + id, { method: 'DELETE' }); RENDERERS.fuckwell(); }
 async function fwAddExcluded() {
@@ -941,18 +963,25 @@ async function fwRenderAnketas(el) {
   const isWeekend = day => { const w = new Date(day + 'T00:00:00Z').getUTCDay(); return w === 0 || w === 6; };
   const sticky = 'position:sticky;left:0;background:#fff;z-index:1';
   const head = `<tr><th style="${sticky}">Анкета</th><th style="text-align:center">Всего</th>${d.days.map(day => `<th style="text-align:center;${isWeekend(day) ? 'background:#fff6e0' : ''}">${day.slice(8, 10)}.${day.slice(5, 7)}<div class="muted" style="font-size:10px">${dow[new Date(day + 'T00:00:00Z').getUTCDay()]}</div></th>`).join('')}</tr>`;
-  const body = d.anketas.map(a => `<tr>
+  const anketaRow = a => `<tr>
     <td style="${sticky}">${esc(a.name)}<div class="muted" style="font-size:11px">${esc(a.phone)}${a.active ? '' : ' · откл.'}</div></td>
     <td style="text-align:center"><b>${a.total}</b></td>
-    ${d.days.map(day => `<td style="text-align:center;${isWeekend(day) ? 'background:#fffaf0' : ''}">${a.by_day[day] || '<span class="muted">·</span>'}</td>`).join('')}</tr>`).join('');
+    ${d.days.map(day => `<td style="text-align:center;${isWeekend(day) ? 'background:#fffaf0' : ''}">${a.by_day[day] || '<span class="muted">·</span>'}</td>`).join('')}</tr>`;
+  const body = d.salons.map(st => {
+    const subSticky = 'position:sticky;left:0;background:#eef3ff;z-index:1';
+    return `<tr style="background:#eef3ff;font-weight:700"><td style="${subSticky}">${esc(st.salon)}</td><td style="text-align:center">${st.total}</td>
+      ${d.days.map(day => `<td style="text-align:center">${st.by_day[day] || '·'}</td>`).join('')}</tr>`
+      + d.anketas.filter(a => (a.salon || 'Салон не определён') === st.salon).map(anketaRow).join('');
+  }).join('');
   const foot = `<tr style="font-weight:700;border-top:2px solid var(--border)"><td style="${sticky}">Все анкеты</td><td style="text-align:center">${d.grand_total}</td>
     ${d.days.map(day => `<td style="text-align:center">${d.col_totals[day] || '·'}</td>`).join('')}</tr>`;
   el.innerHTML = `
     <div class="card">
       <div class="row between" style="flex-wrap:wrap;gap:8px"><h3 style="margin:0">Звонки по анкетам</h3>${fwPeriodControls('anketas', 14)}</div>
       <div style="font-size:16px;margin:12px 0"><b>Итого на все анкеты: ${d.grand_total}</b> <span class="muted">звонков за ${fmtDate(d.date_from)} — ${fmtDate(d.date_to)}</span></div>
+      <div class="row" style="flex-wrap:wrap;gap:14px;margin-bottom:12px">${d.salons.map(st => `<span><b>${esc(st.salon)}:</b> ${st.total}</span>`).join('')}</div>
       <div style="overflow-x:auto"><table style="min-width:${300 + d.days.length * 44}px">${head}${body || '<tr><td class="muted">Номеров нет</td></tr>'}${foot}</table></div>
-      <p class="muted">«Всего» — звонки анкеты за период, нижняя строка — все анкеты по дням. Выходные подсвечены. Исключённые номера не учитываются.</p>
+      <p class="muted">Анкеты сгруппированы по салонам, синяя строка — итог салона. «Всего» — звонки анкеты за период, нижняя строка — все анкеты по дням. Выходные подсвечены. Звонки на прямые номера салонов сюда не входят — они на вкладке «Звонки» в блоке «По салонам». Исключённые номера не учитываются.</p>
     </div>`;
 }
 

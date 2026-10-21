@@ -458,6 +458,15 @@ CREATE TABLE IF NOT EXISTS fw_settings (
 );
 INSERT OR IGNORE INTO fw_settings (id) VALUES (1);
 `);
+// salon — к какому салону относится номер; kind: 'anketa' — рекламный номер
+// анкеты, 'salon' — прямой номер салона, на который переадресуются анкеты
+const fwNumberColumns = db.prepare("PRAGMA table_info(fw_numbers)").all().map(c => c.name);
+if (!fwNumberColumns.includes('salon')) {
+  db.exec(`
+    ALTER TABLE fw_numbers ADD COLUMN salon TEXT;
+    ALTER TABLE fw_numbers ADD COLUMN kind TEXT NOT NULL DEFAULT 'anketa';
+  `);
+}
 
 // первичный владелец, если пользователей ещё нет
 const usersCount = db.prepare('SELECT COUNT(*) AS c FROM users').get().c;

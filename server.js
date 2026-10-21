@@ -1052,6 +1052,8 @@ app.listen(PORT, () => {
   console.log(`[server] CRM сети массажных салонов запущена на порту ${PORT}`);
   require('./telephony').startPolling();
   adTrends.startWeeklyInsights();
+  require('./fuckwell/util').syncKnownNumbers();
+  require('./fuckwell/webhook').relinkAllCalls();
   const fwPending = require('./fuckwell/ai').rescanPending();
   if (fwPending) console.log(`[fuckwell] дообработка ИИ-анализов после запуска: ${fwPending}`);
 });

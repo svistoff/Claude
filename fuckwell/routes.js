@@ -5,7 +5,7 @@ const multer = require('multer');
 const XLSX = require('xlsx');
 const db = require('../db');
 const {
-  normalizePhone, phoneKey, lineRole, realClientPhone, resolveCall, ROLE_LABELS,
+  normalizePhone, phoneKey, lineRole, realClientPhone, resolveCall, ROLE_LABELS, SALONS, syncKnownNumbers,
   getSettings, excludedKeys, toLocal, resolvePeriod, daysBetween, safeTz
 } = require('./util');
 const { enqueueAnalysis } = require('./ai');
@@ -33,6 +33,7 @@ function formatCallRow(c, zone) {
   const role = lineRole(c.client_phone);
   return {
     id: c.id, call_id: c.call_id, number_id: c.number_id, number_name: c.number_name, number_phone: c.number_phone,
+    number_salon: c.number_salon, number_kind: c.number_kind,
     client_phone: c.client_phone, client_real_phone: realClientPhone(c.client_phone), line: role ? ROLE_LABELS[role] : null,
     diversion: c.diversion, telnum_name: c.telnum_name, direction: c.direction, status: c.status,
     duration: c.duration, wait: c.wait, recording_url: c.recording_url,
@@ -45,7 +46,7 @@ function formatCallRow(c, zone) {
 }
 
 const CALL_SELECT = `
-  SELECT c.*, n.name AS number_name, n.phone AS number_phone,
+  SELECT c.*, n.name AS number_name, n.phone AS number_phone, n.salon AS number_salon, n.kind AS number_kind,
     a.status AS a_status, a.visit_probability, a.ai_comment, a.signals, a.error AS a_error, a.analyzed_at
   FROM fw_calls c
   LEFT JOIN fw_numbers n ON n.id = c.number_id
@@ -63,12 +64,28 @@ function computeStats(p) {
     FROM fw_calls c WHERE ${where}
   `).get(...params);
   const numbers = db.prepare(`
-    SELECT n.id, n.name, n.phone, n.comment, n.active, COUNT(c.id) AS total,
+    SELECT n.id, n.name, n.phone, n.comment, n.active, n.salon, n.kind, COUNT(c.id) AS total,
       COALESCE(SUM(CASE WHEN lower(c.status) = 'success' THEN 1 ELSE 0 END), 0) AS accepted,
       COALESCE(SUM(CASE WHEN lower(c.status) = 'missed' THEN 1 ELSE 0 END), 0) AS missed
     FROM fw_numbers n LEFT JOIN fw_calls c ON c.number_id = n.id AND ${where}
     GROUP BY n.id ORDER BY total DESC, n.name
   `).all(...params);
+  // по салонам: входящие (через анкеты и на прямой номер салона), исходящие отдельно
+  const IN = `COALESCE(c.direction, 'in') != 'out'`;
+  const salonRows = db.prepare(`
+    SELECT COALESCE(n.salon, 'Салон не определён') AS salon,
+      SUM(CASE WHEN ${IN} THEN 1 ELSE 0 END) AS incoming,
+      SUM(CASE WHEN ${IN} AND n.kind = 'anketa' THEN 1 ELSE 0 END) AS via_anketa,
+      SUM(CASE WHEN ${IN} AND n.kind = 'salon' THEN 1 ELSE 0 END) AS direct,
+      SUM(CASE WHEN ${IN} AND lower(c.status) = 'success' THEN 1 ELSE 0 END) AS accepted,
+      SUM(CASE WHEN ${IN} AND lower(c.status) = 'missed' THEN 1 ELSE 0 END) AS missed,
+      SUM(CASE WHEN c.direction = 'out' THEN 1 ELSE 0 END) AS outgoing
+    FROM fw_calls c LEFT JOIN fw_numbers n ON n.id = c.number_id
+    WHERE ${where} GROUP BY 1
+  `).all(...params);
+  const salonMap = new Map(salonRows.map(r => [r.salon, r]));
+  const salons = [...SALONS, ...salonRows.map(r => r.salon).filter(x => !SALONS.includes(x))].map(salon =>
+    salonMap.get(salon) || { salon, incoming: 0, via_anketa: 0, direct: 0, accepted: 0, missed: 0, outgoing: 0 });
   const ai = db.prepare(`
     SELECT COUNT(*) AS cnt, AVG(a.visit_probability) AS avg_prob
     FROM fw_analyses a JOIN fw_calls c ON c.call_id = a.call_id
@@ -78,7 +95,7 @@ function computeStats(p) {
     date_from: p.from, date_to: p.to,
     total: totals.total || 0, accepted: totals.accepted || 0, missed: totals.missed || 0,
     avg_duration_sec: Math.round(totals.avg_dur || 0),
-    numbers, ai_analyzed: ai.cnt || 0,
+    numbers, salons, ai_analyzed: ai.cnt || 0,
     ai_avg_probability: ai.avg_prob == null ? null : Math.round(ai.avg_prob * 10) / 10
   };
 }
@@ -112,8 +129,9 @@ router.get('/anketa-daily', (req, res) => {
     WHERE c.number_id IS NOT NULL AND ${MOMENT} >= ? AND ${MOMENT} <= ?${ex.sql}
   `).all(p.utcFrom, p.utcTo, ...ex.params);
   const days = daysBetween(p.from, p.to);
-  const byId = new Map(db.prepare('SELECT * FROM fw_numbers ORDER BY name').all().map(n => [n.id, {
-    id: n.id, name: n.name, phone: n.phone, comment: n.comment, active: !!n.active,
+  // прямые номера салонов — не анкеты, их звонки видны в разбивке по салонам
+  const byId = new Map(db.prepare(`SELECT * FROM fw_numbers WHERE kind = 'anketa' ORDER BY name`).all().map(n => [n.id, {
+    id: n.id, name: n.name, phone: n.phone, comment: n.comment, active: !!n.active, salon: n.salon,
     by_day: Object.fromEntries(days.map(d => [d, 0])), total: 0, accepted: 0, missed: 0
   }]));
   const colTotals = Object.fromEntries(days.map(d => [d, 0]));
@@ -127,18 +145,29 @@ router.get('/anketa-daily', (req, res) => {
     if ((c.status || '').toLowerCase() === 'missed') row.missed++;
   }
   const anketas = [...byId.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
-  res.json({ date_from: p.from, date_to: p.to, days, anketas, col_totals: colTotals, grand_total: Object.values(colTotals).reduce((s, v) => s + v, 0) });
+  const salonTotals = new Map();
+  for (const a of anketas) {
+    const key = a.salon || 'Салон не определён';
+    if (!salonTotals.has(key)) salonTotals.set(key, { salon: key, total: 0, by_day: Object.fromEntries(days.map(d => [d, 0])) });
+    const st = salonTotals.get(key);
+    st.total += a.total;
+    for (const d of days) st.by_day[d] += a.by_day[d];
+  }
+  const salons = [...salonTotals.values()].sort((a, b) => (SALONS.indexOf(a.salon) + 1 || 99) - (SALONS.indexOf(b.salon) + 1 || 99));
+  res.json({ date_from: p.from, date_to: p.to, days, anketas, salons, col_totals: colTotals, grand_total: Object.values(colTotals).reduce((s, v) => s + v, 0) });
 });
 
 // ---------- номера ----------
 router.get('/numbers', (req, res) => res.json(db.prepare('SELECT * FROM fw_numbers ORDER BY name').all()));
 
 router.post('/numbers', (req, res) => {
-  const { name, phone, comment } = req.body || {};
+  const { name, phone, comment, salon, kind } = req.body || {};
   const norm = normalizePhone(phone);
   if (!String(name || '').trim() || !norm) return res.status(400).json({ error: 'Укажите имя и корректный номер' });
   if (db.prepare('SELECT 1 FROM fw_numbers WHERE phone = ?').get(norm)) return res.status(409).json({ error: 'Такой номер уже есть' });
-  const info = db.prepare('INSERT INTO fw_numbers (name, phone, comment) VALUES (?, ?, ?)').run(String(name).trim(), norm, comment || null);
+  const info = db.prepare('INSERT INTO fw_numbers (name, phone, comment, salon, kind) VALUES (?, ?, ?, ?, ?)')
+    .run(String(name).trim(), norm, comment || null, salon || null, kind === 'salon' ? 'salon' : 'anketa');
+  syncKnownNumbers();
   relinkAllCalls();
   res.json(db.prepare('SELECT * FROM fw_numbers WHERE id = ?').get(info.lastInsertRowid));
 });
@@ -155,9 +184,11 @@ router.put('/numbers/:id', (req, res) => {
   }
   const name = body.name !== undefined ? String(body.name).trim() : row.name;
   if (!name) return res.status(400).json({ error: 'Имя не может быть пустым' });
-  db.prepare('UPDATE fw_numbers SET name = ?, phone = ?, comment = ?, active = ? WHERE id = ?').run(
+  db.prepare('UPDATE fw_numbers SET name = ?, phone = ?, comment = ?, active = ?, salon = ?, kind = ? WHERE id = ?').run(
     name, phone, body.comment !== undefined ? (body.comment || null) : row.comment,
-    body.active !== undefined ? (body.active ? 1 : 0) : row.active, row.id
+    body.active !== undefined ? (body.active ? 1 : 0) : row.active,
+    body.salon !== undefined ? (body.salon || null) : row.salon,
+    body.kind !== undefined ? (body.kind === 'salon' ? 'salon' : 'anketa') : row.kind, row.id
   );
   if (phone !== row.phone) relinkAllCalls();
   res.json(db.prepare('SELECT * FROM fw_numbers WHERE id = ?').get(row.id));
@@ -374,6 +405,7 @@ router.post('/import', upload.single('file'), (req, res) => {
       if (!s[key] && incoming[key]) { db.prepare(`UPDATE fw_settings SET ${key} = ? WHERE id = 1`).run(incoming[key]); result.settings++; }
     }
   })();
+  syncKnownNumbers();
   relinkAllCalls();
   res.json(result);
 });

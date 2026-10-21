@@ -43,8 +43,33 @@ const GROUPS = [
   ]]
 ];
 const GROUPS_BY_MAIN = new Map();
+const SALON_BY_NUMBER = new Map();
 for (const [salon, groups] of GROUPS) {
-  groups.forEach((numbers, i) => GROUPS_BY_MAIN.set(numbers[0], { salon, group: i + 1, numbers }));
+  groups.forEach((numbers, i) => {
+    GROUPS_BY_MAIN.set(numbers[0], { salon, group: i + 1, numbers });
+    for (const n of numbers) SALON_BY_NUMBER.set(n, salon);
+  });
+}
+const SALONS = GROUPS.map(([salon]) => salon);
+
+// прямые номера салонов — на них переадресуются все анкеты салона (определено
+// по полю user вебхуков МегаФона: chayka / 8_marta / yumasheva)
+const SALON_LINES = { '79994994776': 'Чайковского', '79221397135': '8 марта', '79994993114': 'Юмашева' };
+for (const [phone, salon] of Object.entries(SALON_LINES)) SALON_BY_NUMBER.set(phone, salon);
+
+// заводит прямые номера салонов и подписывает салон у известных номеров
+function syncKnownNumbers() {
+  db.transaction(() => {
+    for (const [phone, salon] of Object.entries(SALON_LINES)) {
+      db.prepare(`INSERT OR IGNORE INTO fw_numbers (name, phone, comment, salon, kind) VALUES (?, ?, ?, ?, 'salon')`)
+        .run(`Салон ${salon}`, phone, 'Прямой номер салона — на него переадресуются анкеты', salon);
+      db.prepare(`UPDATE fw_numbers SET kind = 'salon', salon = COALESCE(salon, ?) WHERE phone = ?`).run(salon, phone);
+    }
+    const update = db.prepare('UPDATE fw_numbers SET salon = ? WHERE id = ?');
+    for (const n of db.prepare('SELECT id, phone FROM fw_numbers WHERE salon IS NULL').all()) {
+      if (SALON_BY_NUMBER.has(n.phone)) update.run(SALON_BY_NUMBER.get(n.phone), n.id);
+    }
+  })();
 }
 
 function lineRole(clientRaw) {
@@ -60,7 +85,12 @@ function realClientPhone(clientRaw) {
 }
 
 function resolveCall(diversionRaw, clientRaw) {
-  const info = GROUPS_BY_MAIN.get(normalizePhone(diversionRaw));
+  const diversion = normalizePhone(diversionRaw);
+  if (SALON_LINES[diversion]) {
+    const salon = SALON_LINES[diversion];
+    return { salon, group: 0, role: -1, role_label: 'прямой номер', number: diversion, label: `${salon} — прямой номер салона` };
+  }
+  const info = GROUPS_BY_MAIN.get(diversion);
   if (!info) return null;
   const role = lineRole(clientRaw);
   return {
@@ -127,6 +157,6 @@ function daysBetween(from, to) {
 }
 
 module.exports = {
-  normalizePhone, phoneKey, lineRole, realClientPhone, resolveCall, ROLE_LABELS,
+  normalizePhone, phoneKey, lineRole, realClientPhone, resolveCall, ROLE_LABELS, SALONS, syncKnownNumbers,
   getSettings, excludedKeys, toDbString, toLocal, resolvePeriod, daysBetween, safeTz
 };
