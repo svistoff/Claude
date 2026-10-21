@@ -343,9 +343,10 @@ def stt_env(env, monkeypatch):
         return said["text"]
 
     async def fake_complete(api_key, base_url, model, system, user, max_tokens=800):
-        if "диктует" in system:
-            return ('```json\n[{"text": "Позвонить бухгалтеру", "priority": "urgent"},'
-                    '{"text": "Разобрать почту", "priority": "later"}]\n```')
+        if "ИИ-секретарь" in system:
+            return ('```json\n{"reply": "Записал две задачи", "actions": ['
+                    '{"type": "add_task", "text": "Позвонить бухгалтеру", "priority": "urgent"},'
+                    '{"type": "add_task", "text": "Разобрать почту", "priority": "later"}]}\n```')
         return "ok"
 
     monkeypatch.setattr("mentor_bot.stt.transcribe", fake_stt)
@@ -358,10 +359,10 @@ def test_voice_splits_into_tasks_with_priorities(stt_env):
     run(h.handle(voice()))
     got = [(t["text"], t["priority"]) for t in db.open_tasks()]
     assert got == [("Позвонить бухгалтеру", "urgent"), ("Разобрать почту", "later")]
-    assert "задачи (2)" in tg.last and "срочно позвонить" in tg.last
+    assert "Записал две задачи" in tg.last and "срочно позвонить" in tg.last
 
 
-def test_voice_falls_back_to_single_task_on_bad_json(stt_env, monkeypatch):
+def test_voice_falls_back_to_single_task_when_ai_fails(stt_env, monkeypatch):
     _, db, tg, h, said = stt_env
 
     async def junk(*a, **kw):
@@ -504,3 +505,90 @@ def test_github_failure_does_not_break_advice(env, monkeypatch):
     monkeypatch.setattr(github, "fetch_context", boom)
     run(h.handle(msg("/now shop")))
     assert "GitHub недоступен" in prompts[-1] and "Фокус" in tg.last
+
+
+# --- Диалог и память -----------------------------------------------------------
+
+def set_ai(monkeypatch, answer):
+    """Подменить ИИ; answer — строка или функция(user_prompt) -> строка. Возвращает список промптов."""
+    seen: list[str] = []
+
+    async def fake(api_key, base_url, model, system, user, max_tokens=800):
+        seen.append(user)
+        return answer(user) if callable(answer) else answer
+
+    monkeypatch.setattr(advisor.llm, "complete", fake)
+    return seen
+
+
+def test_question_is_answered_not_saved_as_task(env, monkeypatch):
+    _, db, tg, h, _ = env
+    set_ai(monkeypatch, '{"reply": "Да, готов! Присылай задачи.", "actions": []}')
+    run(h.handle(msg("готов? могу уже тебе задачи слать?")))
+    assert tg.last == "Да, готов! Присылай задачи." and db.open_tasks() == []
+    assert [m["role"] for m in db.recent_chat()] == ["user", "assistant"]
+
+
+def test_assistant_adds_task_and_remembers_fact(env, monkeypatch):
+    _, db, tg, h, _ = env
+    set_ai(monkeypatch, '{"reply": "Записал.", "actions": ['
+           '{"type": "add_task", "text": "Позвонить бухгалтеру", "priority": "urgent"},'
+           '{"type": "remember", "text": "Бухгалтер — Ольга"}]}')
+    run(h.handle(msg("надо срочно набрать Ольгу, это моя бухгалтер")))
+    t = db.open_tasks()[0]
+    assert (t["text"], t["priority"]) == ("Позвонить бухгалтеру", "urgent")
+    assert [f["text"] for f in db.list_facts()] == ["Бухгалтер — Ольга"]
+    assert tg.buttons[-1] is not None  # одна новая задача — кнопки приоритета
+
+
+def test_assistant_done_and_ignores_bad_ids(env, monkeypatch):
+    _, db, _, h, _ = env
+    a = db.add_task("отчёт")
+    set_ai(monkeypatch, f'{{"reply": "Отлично!", "actions": ['
+           f'{{"type": "done_task", "id": {a}}}, {{"type": "done_task", "id": 999}},'
+           f'{{"type": "add_task", "text": ""}}, {{"type": "bogus"}}]}}')
+    run(h.handle(msg("отчёт сделал")))
+    assert db.get_task(a)["done"] == 1 and db.open_tasks() == []
+
+
+def test_memory_and_history_go_into_next_prompt(env, monkeypatch):
+    _, db, _, h, _ = env
+    seen = set_ai(monkeypatch, '{"reply": "ок", "actions": [{"type": "remember", "text": "Работаю по утрам"}]}')
+    run(h.handle(msg("я лучше всего работаю по утрам")))
+    run(h.handle(msg("а когда мне лучше созвониться?")))
+    assert "[1] Работаю по утрам" in seen[-1] and "Человек: я лучше всего" in seen[-1]
+
+
+def test_duplicate_fact_not_saved_twice(env):
+    _, db, _, _, _ = env
+    assert db.add_fact("Любит кофе") and db.add_fact("любит кофе") is None
+
+
+def test_ai_down_question_not_saved_but_statement_is(env, monkeypatch):
+    from mentor_bot.llm import LLMError
+    _, db, tg, h, _ = env
+
+    async def down(*a, **kw):
+        raise LLMError("API 500")
+
+    monkeypatch.setattr(advisor.llm, "complete", down)
+    run(h.handle(msg("ты тут?")))
+    assert db.open_tasks() == [] and "не могу ответить" in tg.last
+    run(h.handle(msg("купить кофе")))
+    assert db.open_tasks()[0]["text"] == "купить кофе"
+
+
+def test_explicit_prefix_skips_ai(env, monkeypatch):
+    _, db, _, h, _ = env
+    seen = set_ai(monkeypatch, "should not be called")
+    run(h.handle(msg("! оплатить хостинг")))
+    assert seen == [] and db.open_tasks()[0]["priority"] == "urgent"
+
+
+def test_memory_commands(env):
+    _, db, tg, h, _ = env
+    fid = db.add_fact("Клиент — салоны")
+    run(h.handle(msg("/memory")))
+    assert "Клиент — салоны" in tg.last
+    run(h.handle(msg(f"/forget {fid}")))
+    assert db.list_facts() == []

@@ -52,6 +52,17 @@ CREATE TABLE IF NOT EXISTS notes (
     source TEXT NOT NULL DEFAULT '',    -- откуда переслано
     created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS facts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    text TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS chat (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    role TEXT NOT NULL,  -- user | assistant
+    text TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS state (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -247,6 +258,35 @@ class DB:
         cur = self.conn.execute("DELETE FROM notes WHERE id = ?", (note_id,))
         self.conn.commit()
         return cur.rowcount > 0
+
+    # --- Память: факты о владельце и история диалога -------------------------
+    def add_fact(self, text: str) -> int | None:
+        text = text.strip()
+        # lower() в SQLite не понимает кириллицу — сравниваем в Python.
+        if any(f["text"].lower() == text.lower() for f in self.list_facts(1000)):
+            return None
+        cur = self.conn.execute("INSERT INTO facts (text, created_at) VALUES (?, ?)", (text, _now()))
+        self.conn.commit()
+        return cur.lastrowid
+
+    def list_facts(self, limit: int = 60) -> list[dict]:
+        rows = self.conn.execute("SELECT * FROM facts ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+        return [dict(r) for r in reversed(rows)]
+
+    def delete_fact(self, fact_id: int) -> bool:
+        cur = self.conn.execute("DELETE FROM facts WHERE id = ?", (fact_id,))
+        self.conn.commit()
+        return cur.rowcount > 0
+
+    def add_chat(self, role: str, text: str, keep: int = 200) -> None:
+        self.conn.execute("INSERT INTO chat (role, text, created_at) VALUES (?, ?, ?)",
+                          (role, text[:2000], _now()))
+        self.conn.execute("DELETE FROM chat WHERE id <= (SELECT MAX(id) FROM chat) - ?", (keep,))
+        self.conn.commit()
+
+    def recent_chat(self, limit: int = 12) -> list[dict]:
+        rows = self.conn.execute("SELECT * FROM chat ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+        return [dict(r) for r in reversed(rows)]
 
     # --- Состояние ---------------------------------------------------------
     def get_state(self, key: str) -> str | None:

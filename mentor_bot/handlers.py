@@ -8,7 +8,7 @@ from pathlib import Path
 
 from .config import Config
 from .db import DB
-from . import advisor, github, stt
+from . import assistant, github, stt
 from . import tasks as tasks_mod
 from .llm import LLMError
 from .scheduler import local_now, send_advice, send_plan
@@ -22,6 +22,8 @@ HELP = """\
 
 📥 Задачи — просто пиши мне сообщением, всё попадёт во входящие:
 «позвонить бухгалтеру», «доделать оплату в боте», «ответить клиенту»…
+🧠 Со мной можно просто разговаривать: пойму, задача это, вопрос или мысль, и сам
+запишу. Запоминаю важное о тебе (/memory, /forget N).
 💡 Копилка мыслей: пересылай мне цитаты и посты, присылай картинки и ссылки
 (или пиши «💡 текст») — всё сохраню. /notes [слово] — посмотреть и найти.
 🎙 Можно и голосовым — разберу на задачи (можно сразу несколько).
@@ -126,6 +128,10 @@ class Handler:
             await self.cmd_report(chat_id, rest)
         elif cmd == "/tasks":
             await self.cmd_tasks(chat_id)
+        elif cmd == "/memory":
+            await self.cmd_memory(chat_id)
+        elif cmd == "/forget":
+            await self.cmd_forget(chat_id, args)
         elif cmd == "/notes":
             await self.cmd_notes(chat_id, rest)
         elif cmd == "/unnote":
@@ -332,12 +338,50 @@ class Handler:
             await self.save_note(chat_id, message, note_text, "", None)
             return
         prio, clean = tasks_mod.parse_priority(text)
-        task_id = self.db.add_task(clean, prio)
-        label = {"urgent": "🔥 срочную", "later": "🕓 «на потом»", "normal": ""}[prio]
-        await self.tg.send(chat_id, f"📥 Записал {label + ' ' if label else ''}задачу #{task_id}. "
-                           f"Открытых: {len(self.db.open_tasks())}.\n"
-                           "Утром разложу по приоритетам · /tasks · /plan",
-                           buttons=tasks_mod.new_task_buttons(task_id))
+        if prio != "normal":  # явная пометка «!» / «потом» — без раздумий записываем
+            task_id = self.db.add_task(clean, prio)
+            label = "🔥 срочную" if prio == "urgent" else "🕓 «на потом»"
+            await self.tg.send(chat_id, f"📥 Записал {label} задачу #{task_id}. "
+                               f"Открытых: {len(self.db.open_tasks())}.",
+                               buttons=tasks_mod.new_task_buttons(task_id))
+            return
+        await self.converse(chat_id, text)
+
+    # --- Диалог: секретарь понимает сообщение и сам ведёт базу ----------------
+    async def converse(self, chat_id: int, text: str, prefix: str = "") -> None:
+        try:
+            result = await assistant.respond(self.cfg, self.db, local_now(self.cfg), text)
+        except LLMError as exc:
+            result, why = None, str(exc)
+        else:
+            why = "ответ не по формату"
+        if result is None:
+            # ИИ недоступен: вопрос не превращаем в задачу, остальное не теряем.
+            if "?" in text:
+                await self.reply(chat_id, f"{prefix}⚠ Сейчас не могу ответить ({why}). Повтори чуть позже.")
+                return
+            prio, clean = tasks_mod.parse_priority(text)
+            tid = self.db.add_task(clean, prio)
+            await self.reply(chat_id, f"{prefix}📥 ИИ недоступен ({why}), записал как задачу #{tid}.")
+            return
+        reply, summary = result
+        one = summary["added"] if len(summary["added"]) == 1 and not summary["done"] else []
+        await self.tg.send(chat_id, prefix + reply,
+                           buttons=tasks_mod.new_task_buttons(one[0]) if one else None)
+
+    async def cmd_memory(self, chat_id: int) -> None:
+        facts = self.db.list_facts()
+        await self.reply(chat_id, "🧠 Что я помню о тебе:\n" +
+                         "\n".join(f"[{f['id']}] {f['text']}" for f in facts) +
+                         "\n\nЗабыть: /forget номер" if facts else
+                         "Пока ничего не запомнил. Расскажи о себе и проектах — запомню важное.")
+
+    async def cmd_forget(self, chat_id: int, args: list[str]) -> None:
+        if not args or not args[0].lstrip("#").isdigit():
+            await self.reply(chat_id, "Формат: /forget номер (номера — в /memory)")
+            return
+        fid = int(args[0].lstrip("#"))
+        await self.reply(chat_id, "Забыл." if self.db.delete_fact(fid) else f"Факта #{fid} нет.")
 
     # --- Копилка мыслей --------------------------------------------------------
     async def save_note(self, chat_id: int, message: dict, text: str, source: str,
@@ -407,22 +451,7 @@ class Handler:
         if is_note:
             await self.save_note(chat_id, message, note_text, "", None)
             return
-        try:
-            items = await advisor.split_tasks(self.cfg, transcript)
-        except LLMError:
-            items = []
-        if not items:
-            items = [tasks_mod.parse_priority(transcript)[::-1]]
-        marks = {"urgent": "🔥", "normal": "•", "later": "🕓"}
-        ids, lines = [], []
-        for text, prio in items:
-            tid = self.db.add_task(text, prio)
-            ids.append(tid)
-            lines.append(f"{marks[prio]} #{tid} {text}")
-        head = f"🎙 «{transcript[:300]}»\n\n📥 Записал " + ("задачу:" if len(ids) == 1 else f"задачи ({len(ids)}):")
-        buttons = tasks_mod.new_task_buttons(ids[0]) if len(ids) == 1 else None
-        await self.tg.send(chat_id, head + "\n" + "\n".join(lines) +
-                           "\n\nНе так поняли? /drop N · /urgent N · /later N", buttons=buttons)
+        await self.converse(chat_id, transcript, prefix=f"🎙 «{transcript[:300]}»\n\n")
 
     # --- Нажатия на inline-кнопки -------------------------------------------
     async def handle_callback(self, cb: dict) -> None:
