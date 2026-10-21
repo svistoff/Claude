@@ -17,11 +17,15 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 30 
 const tz = () => safeTz(getSettings().display_tz);
 const MOMENT = 'COALESCE(c.started_at, c.created_at)';
 
-// звонки с исключённых номеров (тестовые прозвоны) в статистику не идут
+// прямые номера салонов в рекламе не указываются — только принимают переадресацию
+// с анкет, поэтому звонки, набранные прямо на них, не входят ни в статистику, ни в список
+const NOT_SALON_LINE = ` AND (c.number_id IS NULL OR c.number_id NOT IN (SELECT id FROM fw_numbers WHERE kind = 'salon'))`;
+
+// плюс звонки с исключённых номеров клиентов (тестовые прозвоны) в статистику не идут
 function excludedClause() {
   const keys = [...excludedKeys()];
-  if (!keys.length) return { sql: '', params: [] };
-  return { sql: ` AND (c.client_phone IS NULL OR substr(c.client_phone, -10) NOT IN (${keys.map(() => '?').join(',')}))`, params: keys };
+  if (!keys.length) return { sql: NOT_SALON_LINE, params: [] };
+  return { sql: `${NOT_SALON_LINE} AND (c.client_phone IS NULL OR substr(c.client_phone, -10) NOT IN (${keys.map(() => '?').join(',')}))`, params: keys };
 }
 
 function periodFromQuery(q, defaultDays) {
@@ -68,15 +72,14 @@ function computeStats(p) {
       COALESCE(SUM(CASE WHEN lower(c.status) = 'success' THEN 1 ELSE 0 END), 0) AS accepted,
       COALESCE(SUM(CASE WHEN lower(c.status) = 'missed' THEN 1 ELSE 0 END), 0) AS missed
     FROM fw_numbers n LEFT JOIN fw_calls c ON c.number_id = n.id AND ${where}
+    WHERE n.kind != 'salon'
     GROUP BY n.id ORDER BY total DESC, n.name
   `).all(...params);
-  // по салонам: входящие (через анкеты и на прямой номер салона), исходящие отдельно
+  // по салонам: входящие на анкеты салона, исходящие отдельно
   const IN = `COALESCE(c.direction, 'in') != 'out'`;
   const salonRows = db.prepare(`
     SELECT COALESCE(n.salon, 'Салон не определён') AS salon,
       SUM(CASE WHEN ${IN} THEN 1 ELSE 0 END) AS incoming,
-      SUM(CASE WHEN ${IN} AND n.kind = 'anketa' THEN 1 ELSE 0 END) AS via_anketa,
-      SUM(CASE WHEN ${IN} AND n.kind = 'salon' THEN 1 ELSE 0 END) AS direct,
       SUM(CASE WHEN ${IN} AND lower(c.status) = 'success' THEN 1 ELSE 0 END) AS accepted,
       SUM(CASE WHEN ${IN} AND lower(c.status) = 'missed' THEN 1 ELSE 0 END) AS missed,
       SUM(CASE WHEN c.direction = 'out' THEN 1 ELSE 0 END) AS outgoing
@@ -85,7 +88,7 @@ function computeStats(p) {
   `).all(...params);
   const salonMap = new Map(salonRows.map(r => [r.salon, r]));
   const salons = [...SALONS, ...salonRows.map(r => r.salon).filter(x => !SALONS.includes(x))].map(salon =>
-    salonMap.get(salon) || { salon, incoming: 0, via_anketa: 0, direct: 0, accepted: 0, missed: 0, outgoing: 0 });
+    salonMap.get(salon) || { salon, incoming: 0, accepted: 0, missed: 0, outgoing: 0 });
   const ai = db.prepare(`
     SELECT COUNT(*) AS cnt, AVG(a.visit_probability) AS avg_prob
     FROM fw_analyses a JOIN fw_calls c ON c.call_id = a.call_id
@@ -106,7 +109,7 @@ router.get('/calls', (req, res) => {
   const p = periodFromQuery(req.query, 30);
   const limit = Math.min(1000, Math.max(1, Number(req.query.limit) || 300));
   const zone = tz();
-  const rows = db.prepare(`${CALL_SELECT} WHERE ${MOMENT} >= ? AND ${MOMENT} <= ? ORDER BY ${MOMENT} DESC LIMIT ?`)
+  const rows = db.prepare(`${CALL_SELECT} WHERE ${MOMENT} >= ? AND ${MOMENT} <= ?${NOT_SALON_LINE} ORDER BY ${MOMENT} DESC LIMIT ?`)
     .all(p.utcFrom, p.utcTo, limit);
   res.json({ date_from: p.from, date_to: p.to, calls: rows.map(r => formatCallRow(r, zone)) });
 });
@@ -257,15 +260,16 @@ router.post('/analysis/upload', upload.single('file'), (req, res) => {
   const excl = excludedKeys();
   const totals = { total: 0, incoming: 0, outgoing: 0, missed: 0, matched: 0, unmatched: 0 };
   const agg = new Map(), unmatched = new Map();
-  let excludedCount = 0;
+  let excludedCount = 0, directCount = 0;
   for (const row of rows.slice(headerIdx + 1)) {
     if (!row || row.every(v => v == null)) continue;
     const via = row[cols['Через']], client = row[cols['Клиент']];
     if (!via) continue;
     if (excl.size && excl.has(phoneKey(client))) { excludedCount++; continue; }
+    const resolved = resolveCall(String(via), String(client || ''));
+    if (resolved && resolved.role === -1) { directCount++; continue; }
     const kind = classify(row[cols['Тип звонка']]);
     totals.total++; totals[kind]++;
-    const resolved = resolveCall(String(via), String(client || ''));
     if (!resolved) {
       const k = normalizePhone(via) || String(via);
       unmatched.set(k, (unmatched.get(k) || 0) + 1);
@@ -294,7 +298,7 @@ router.post('/analysis/upload', upload.single('file'), (req, res) => {
     filename: req.file.originalname, period: meta, totals, numbers,
     by_salon: [...bySalon.values()].sort((a, b) => b.total - a.total),
     unmatched: [...unmatched].map(([phone, count]) => ({ phone, count })).sort((a, b) => b.count - a.count),
-    excluded_calls: excludedCount
+    excluded_calls: excludedCount, direct_salon_calls: directCount
   });
 });
 
@@ -307,7 +311,7 @@ router.get('/report', (req, res) => {
   const p = periodFromQuery(req.query, 30);
   const s = computeStats(p);
   const zone = tz();
-  const analyzed = db.prepare(`${CALL_SELECT} WHERE a.status = 'done' AND ${MOMENT} >= ? AND ${MOMENT} <= ? ORDER BY ${MOMENT} DESC LIMIT 50`)
+  const analyzed = db.prepare(`${CALL_SELECT} WHERE a.status = 'done' AND ${MOMENT} >= ? AND ${MOMENT} <= ?${NOT_SALON_LINE} ORDER BY ${MOMENT} DESC LIMIT 50`)
     .all(p.utcFrom, p.utcTo).map(r => formatCallRow(r, zone));
   const pct = s.total ? Math.round(s.accepted / s.total * 100) : 0;
   res.send(`<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>Fuckwell — отчёт</title>

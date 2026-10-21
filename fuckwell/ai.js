@@ -88,6 +88,10 @@ async function processAnalysis(callId) {
   const analysis = db.prepare('SELECT * FROM fw_analyses WHERE call_id = ?').get(callId);
   if (analysis.status === 'done') return;
 
+  if (!shouldAnalyze(call)) {
+    setAnalysis(callId, { status: 'skipped', error: 'Прямой звонок на номер салона или исключённый номер — не анализируется' });
+    return;
+  }
   const settings = getSettings();
   const success = (call.status || '').toLowerCase() === 'success';
   if (!success || !call.recording_url || (call.duration || 0) < settings.ai_min_duration_sec) {
@@ -119,7 +123,9 @@ function enqueueAnalysis(callId) {
   return queue;
 }
 
+// звонки на прямые номера салонов и с исключённых номеров не разбираем — не тратим ИИ
 function shouldAnalyze(call) {
+  if (call.number_id && db.prepare(`SELECT 1 FROM fw_numbers WHERE id = ? AND kind = 'salon'`).get(call.number_id)) return false;
   return !excludedKeys().has(phoneKey(call.client_phone));
 }
 

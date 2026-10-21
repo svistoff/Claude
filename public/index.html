@@ -733,13 +733,13 @@ async function fwRenderCalls(el) {
     </div>
     <div class="card">
       <h3 style="margin-top:0">По салонам</h3>
-      <p class="muted" style="margin-top:0">Входящие звонки салона = звонки на его анкеты + на его прямой номер (куда переадресуются анкеты). Исходящие — отдельно.</p>
-      <div style="overflow-x:auto"><table><tr><th>Салон</th><th>Входящих</th><th>через анкеты</th><th>на прямой номер</th><th>Принято</th><th>Пропущено</th><th>Исходящих</th></tr>
-        ${s.salons.map(x => `<tr><td><b>${esc(x.salon)}</b></td><td style="text-align:center"><b>${x.incoming}</b></td><td style="text-align:center">${x.via_anketa}</td>
-          <td style="text-align:center">${x.direct}</td><td style="text-align:center;color:var(--ok)">${x.accepted}</td>
+      <p class="muted" style="margin-top:0">Входящие — звонки на анкеты салона. Прямые звонки на номера салонов (куда переадресуются анкеты) не учитываются.</p>
+      <div style="overflow-x:auto"><table><tr><th>Салон</th><th>Входящих</th><th>Принято</th><th>Пропущено</th><th>Исходящих</th></tr>
+        ${s.salons.map(x => `<tr><td><b>${esc(x.salon)}</b></td><td style="text-align:center"><b>${x.incoming}</b></td>
+          <td style="text-align:center;color:var(--ok)">${x.accepted}</td>
           <td style="text-align:center;color:var(--danger)">${x.missed || ''}</td><td style="text-align:center">${x.outgoing || ''}</td></tr>`).join('')}
         <tr style="font-weight:700;border-top:2px solid var(--border)"><td>Итого</td>
-          ${['incoming', 'via_anketa', 'direct', 'accepted', 'missed', 'outgoing'].map(k => `<td style="text-align:center">${s.salons.reduce((sum, x) => sum + x[k], 0)}</td>`).join('')}</tr>
+          ${['incoming', 'accepted', 'missed', 'outgoing'].map(k => `<td style="text-align:center">${s.salons.reduce((sum, x) => sum + x[k], 0)}</td>`).join('')}</tr>
       </table></div>
     </div>
     <div class="grid2">
@@ -823,7 +823,7 @@ async function fwRenderNumbers(el) {
         <input id="fwn-phone" placeholder="Номер">
         <input id="fwn-comment" placeholder="Комментарий / ссылка на объявление" style="min-width:220px">
         ${fwSalonSelect('fwn-salon', '')}
-        <select id="fwn-kind"><option value="anketa">анкета</option><option value="salon">прямой номер салона</option></select>
+        <select id="fwn-kind"><option value="anketa">анкета</option><option value="salon">прямой номер салона (не в статистике)</option></select>
         <button class="primary" onclick="fwAddNumber()">+ Добавить</button>
       </div>
       <div class="row" style="margin-top:10px;gap:8px">
@@ -855,7 +855,7 @@ function fwDrawNumbers() {
         <td><input id="fwe-comment" value="${esc(n.comment || '')}" style="min-width:200px"></td><td></td>
         <td class="row" style="justify-content:flex-end"><button class="primary" onclick="fwSaveNumber(${n.id})">Сохранить</button><button onclick="fwEditingId=null;fwDrawNumbers()">Отмена</button></td></tr>`
       : `<tr><td>${esc(n.name)}</td><td>${esc(n.phone)}</td>
-        <td>${esc(n.salon || '—')}${n.kind === 'salon' ? '<div class="muted" style="font-size:11px">прямой номер</div>' : ''}</td><td>${noteOrLink(n.comment)}</td>
+        <td>${esc(n.salon || '—')}${n.kind === 'salon' ? '<div class="muted" style="font-size:11px">прямой номер — не в статистике</div>' : ''}</td><td>${noteOrLink(n.comment)}</td>
         <td>${n.active ? '<span class="tag done">активен</span>' : '<span class="tag">отключён</span>'}</td>
         <td class="row" style="justify-content:flex-end">
           <button onclick="fwUpdateNumber(${n.id}, {active: ${!n.active}})">${n.active ? 'Отключить' : 'Включить'}</button>
@@ -912,7 +912,7 @@ async function fwRunAnalysis() {
 function fwAnalysisHtml(d) {
   const t = d.totals, p = d.period || {};
   const meta = [d.filename && `Файл: ${esc(d.filename)}`, (p['с'] || p['по']) && `Период: ${esc(p['с'] || '?')} — ${esc(p['по'] || '?')}`, p['звонки'] && `Тип: ${esc(p['звонки'])}`,
-    d.excluded_calls && `исключено звонков: ${d.excluded_calls}`].filter(Boolean).join(' · ');
+    d.excluded_calls && `исключено звонков: ${d.excluded_calls}`, d.direct_salon_calls && `прямых звонков на номера салонов (не учитываются): ${d.direct_salon_calls}`].filter(Boolean).join(' · ');
   return `
     <div class="card"><div class="row between" style="flex-wrap:wrap;gap:8px"><span class="muted">${meta}</span>
       <span class="row"><button onclick="fwAnalysisCsv()">Скачать CSV</button><button onclick="fwAnalysisPrint()">Отчёт (PDF)</button></span></div></div>
@@ -981,7 +981,7 @@ async function fwRenderAnketas(el) {
       <div style="font-size:16px;margin:12px 0"><b>Итого на все анкеты: ${d.grand_total}</b> <span class="muted">звонков за ${fmtDate(d.date_from)} — ${fmtDate(d.date_to)}</span></div>
       <div class="row" style="flex-wrap:wrap;gap:14px;margin-bottom:12px">${d.salons.map(st => `<span><b>${esc(st.salon)}:</b> ${st.total}</span>`).join('')}</div>
       <div style="overflow-x:auto"><table style="min-width:${300 + d.days.length * 44}px">${head}${body || '<tr><td class="muted">Номеров нет</td></tr>'}${foot}</table></div>
-      <p class="muted">Анкеты сгруппированы по салонам, синяя строка — итог салона. «Всего» — звонки анкеты за период, нижняя строка — все анкеты по дням. Выходные подсвечены. Звонки на прямые номера салонов сюда не входят — они на вкладке «Звонки» в блоке «По салонам». Исключённые номера не учитываются.</p>
+      <p class="muted">Анкеты сгруппированы по салонам, синяя строка — итог салона. «Всего» — звонки анкеты за период, нижняя строка — все анкеты по дням. Выходные подсвечены. Прямые звонки на номера салонов не учитываются. Исключённые номера не учитываются.</p>
     </div>`;
 }
 
