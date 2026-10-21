@@ -58,3 +58,35 @@ def new_task_buttons(task_id: int) -> list[list[dict]]:
     return [[{"text": "🔥 Срочно", "callback_data": f"urgent:{task_id}"},
              {"text": "🕓 На потом", "callback_data": f"later:{task_id}"},
              {"text": "🗑", "callback_data": f"drop:{task_id}"}]]
+
+
+# --- Копилка мыслей ------------------------------------------------------------
+
+NOTE_RE = re.compile(r"^\s*(💡|мысль\b|цитата\b|идея\b|заметка\b)[:,.\s-]*", re.IGNORECASE)
+URL_RE = re.compile(r"https?://\S+")
+
+
+def parse_note(text: str) -> tuple[bool, str]:
+    """Это мысль для копилки? «💡 …», «мысль: …», «цитата …» или одна ссылка."""
+    m = NOTE_RE.match(text)
+    if m and text[m.end():].strip():
+        return True, text[m.end():].strip()
+    if URL_RE.fullmatch(text.strip()):
+        return True, text.strip()
+    return False, text
+
+
+def forward_source(message: dict) -> str:
+    """Имя источника пересланного сообщения ('' если не пересылка)."""
+    fo = message.get("forward_origin")
+    if fo:
+        chat = fo.get("chat") or {}
+        user = fo.get("sender_user") or {}
+        return (chat.get("title") or fo.get("sender_user_name") or user.get("first_name")
+                or "переслано")
+    if message.get("forward_date"):
+        chat = message.get("forward_from_chat") or {}
+        user = message.get("forward_from") or {}
+        return (chat.get("title") or message.get("forward_sender_name")
+                or user.get("first_name") or "переслано")
+    return ""

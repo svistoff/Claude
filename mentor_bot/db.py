@@ -42,6 +42,15 @@ CREATE TABLE IF NOT EXISTS tasks (
     hidden_until TEXT,   -- локальная дата YYYY-MM-DD: до неё задача не попадает в план
     last_shown TEXT      -- локальная дата, когда задача в последний раз была в плане
 );
+CREATE TABLE IF NOT EXISTS notes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL DEFAULT 'text',  -- text | link | photo
+    text TEXT NOT NULL DEFAULT '',
+    url TEXT NOT NULL DEFAULT '',
+    file_id TEXT NOT NULL DEFAULT '',   -- Telegram file_id картинки
+    source TEXT NOT NULL DEFAULT '',    -- откуда переслано
+    created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS state (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -206,6 +215,34 @@ class DB:
         self.conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
         self.conn.commit()
         return dict(row)
+
+    # --- Копилка мыслей ------------------------------------------------------
+    def add_note(self, text: str = "", kind: str = "text", url: str = "",
+                 file_id: str = "", source: str = "") -> int:
+        cur = self.conn.execute(
+            "INSERT INTO notes (kind, text, url, file_id, source, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)", (kind, text, url, file_id, source, _now()))
+        self.conn.commit()
+        return cur.lastrowid
+
+    def list_notes(self, query: str = "", limit: int = 10) -> list[dict]:
+        if query:
+            like = f"%{query}%"
+            rows = self.conn.execute(
+                "SELECT * FROM notes WHERE text LIKE ? OR url LIKE ? OR source LIKE ? "
+                "ORDER BY id DESC LIMIT ?", (like, like, like, limit)).fetchall()
+        else:
+            rows = self.conn.execute("SELECT * FROM notes ORDER BY id DESC LIMIT ?",
+                                     (limit,)).fetchall()
+        return [dict(r) for r in rows]
+
+    def count_notes(self) -> int:
+        return self.conn.execute("SELECT COUNT(*) FROM notes").fetchone()[0]
+
+    def delete_note(self, note_id: int) -> bool:
+        cur = self.conn.execute("DELETE FROM notes WHERE id = ?", (note_id,))
+        self.conn.commit()
+        return cur.rowcount > 0
 
     # --- Состояние ---------------------------------------------------------
     def get_state(self, key: str) -> str | None:

@@ -22,6 +22,8 @@ HELP = """\
 
 📥 Задачи — просто пиши мне сообщением, всё попадёт во входящие:
 «позвонить бухгалтеру», «доделать оплату в боте», «ответить клиенту»…
+💡 Копилка мыслей: пересылай мне цитаты и посты, присылай картинки и ссылки
+(или пиши «💡 текст») — всё сохраню. /notes [слово] — посмотреть и найти.
 🎙 Можно и голосовым — разберу на задачи (можно сразу несколько).
 Срочное начинай с «!» или «срочно», несрочное — с «потом».
 /tasks — открытые задачи · /urgent N · /later N — сменить срочность
@@ -61,7 +63,8 @@ class Handler:
         chat_id = message.get("chat", {}).get("id")
         text = (message.get("text") or "").strip()
         voice = message.get("voice")
-        if chat_id is None or not (text or voice):
+        photo = message.get("photo")
+        if chat_id is None or not (text or voice or photo):
             return
 
         # Режим настройки: владелец ещё не указан — подсказываем chat_id.
@@ -73,6 +76,12 @@ class Handler:
             await self.reply(chat_id, "Это личный бот-наставник, он отвечает только владельцу.")
             return
 
+        # Копилка: картинки и пересылки сохраняем сразу, не превращая в задачи.
+        caption = (message.get("caption") or "").strip()
+        source = tasks_mod.forward_source(message)
+        if photo or (source and not text.startswith("/")):
+            await self.save_note(chat_id, message, text or caption, source, photo)
+            return
         if voice and not text:
             await self.voice_message(chat_id, message, voice)
             return
@@ -112,6 +121,10 @@ class Handler:
             await self.cmd_report(chat_id, rest)
         elif cmd == "/tasks":
             await self.cmd_tasks(chat_id)
+        elif cmd == "/notes":
+            await self.cmd_notes(chat_id, rest)
+        elif cmd == "/unnote":
+            await self.cmd_unnote(chat_id, args)
         elif cmd in ("/urgent", "/later"):
             await self.cmd_priority(chat_id, args, cmd[1:])
         elif cmd in ("/done", "/drop"):
@@ -284,6 +297,10 @@ class Handler:
             self.db.add_report(project, text)
             await self.reply(chat_id, f"Записал отчёт по «{project}». Учту в следующем совете.")
             return
+        is_note, note_text = tasks_mod.parse_note(text)
+        if is_note:
+            await self.save_note(chat_id, message, note_text, "", None)
+            return
         prio, clean = tasks_mod.parse_priority(text)
         task_id = self.db.add_task(clean, prio)
         label = {"urgent": "🔥 срочную", "later": "🕓 «на потом»", "normal": ""}[prio]
@@ -291,6 +308,41 @@ class Handler:
                            f"Открытых: {len(self.db.open_tasks())}.\n"
                            "Утром разложу по приоритетам · /tasks · /plan",
                            buttons=tasks_mod.new_task_buttons(task_id))
+
+    # --- Копилка мыслей --------------------------------------------------------
+    async def save_note(self, chat_id: int, message: dict, text: str, source: str,
+                        photo: list | None) -> None:
+        url_m = tasks_mod.URL_RE.search(text)
+        file_id = photo[-1]["file_id"] if photo else ""  # последний размер — самый крупный
+        kind = "photo" if photo else "link" if url_m and len(text) < 400 else "text"
+        nid = self.db.add_note(text, kind, url_m.group(0) if url_m else "", file_id, source)
+        what = {"photo": "картинку", "link": "ссылку", "text": "мысль"}[kind]
+        await self.reply(chat_id, f"💡 Сохранил {what} в копилку (#{nid}, всего {self.db.count_notes()}).\n"
+                         "/notes — посмотреть · /unnote N — убрать")
+
+    async def cmd_notes(self, chat_id: int, query: str) -> None:
+        notes = self.db.list_notes(query)
+        if not notes:
+            await self.reply(chat_id, "Копилка пуста. Перешли мне мысль, пришли картинку, "
+                             "ссылку или напиши «💡 текст»." if not query else "Ничего не нашёл.")
+            return
+        icon = {"photo": "🖼", "link": "🔗", "text": "💬"}
+        lines = []
+        for n in notes:
+            body = n["text"][:200] or "(без подписи)"
+            src = f" — {n['source']}" if n["source"] else ""
+            lines.append(f"{icon[n['kind']]} #{n['id']} {body}{src}")
+        head = f"💡 Копилка (последние {len(notes)} из {self.db.count_notes()}):" if not query \
+            else f"🔎 Нашёл {len(notes)}:"
+        await self.reply(chat_id, head + "\n" + "\n".join(lines))
+
+    async def cmd_unnote(self, chat_id: int, args: list[str]) -> None:
+        if not args or not args[0].lstrip("#").isdigit():
+            await self.reply(chat_id, "Формат: /unnote номер (номера — в /notes)")
+            return
+        nid = int(args[0].lstrip("#"))
+        await self.reply(chat_id, "🗑 Убрал из копилки." if self.db.delete_note(nid)
+                         else f"Мысли #{nid} нет.")
 
     # --- Голосовые: расшифровка → отчёт или задачи ---------------------------
     async def voice_message(self, chat_id: int, message: dict, voice: dict) -> None:
@@ -320,6 +372,10 @@ class Handler:
         if project is not None:
             self.db.add_report(project, transcript)
             await self.reply(chat_id, f"🎙 «{transcript}»\nЗаписал отчёт по «{project}».")
+            return
+        is_note, note_text = tasks_mod.parse_note(transcript)
+        if is_note:
+            await self.save_note(chat_id, message, note_text, "", None)
             return
         try:
             items = await advisor.split_tasks(self.cfg, transcript)

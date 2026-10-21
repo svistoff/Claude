@@ -408,3 +408,49 @@ def test_stt_error_is_reported(stt_env, monkeypatch):
     monkeypatch.setattr("mentor_bot.stt.transcribe", boom)
     run(h.handle(voice()))
     assert "401" in tg.last and db.open_tasks() == []
+
+
+# --- Копилка мыслей ------------------------------------------------------------
+
+def test_forwarded_message_goes_to_notes_not_tasks(env):
+    _, db, tg, h, _ = env
+    m = msg("Делай маленькие шаги каждый день")
+    m["forward_origin"] = {"type": "channel", "chat": {"title": "Мудрость"}}
+    run(h.handle(m))
+    n = db.list_notes()[0]
+    assert n["text"].startswith("Делай") and n["source"] == "Мудрость"
+    assert db.open_tasks() == [] and "копилку" in tg.last
+
+
+def test_photo_saved_with_caption_and_file_id(env):
+    _, db, _, h, _ = env
+    run(h.handle({"chat": {"id": OWNER}, "caption": "схема воронки",
+                  "photo": [{"file_id": "small"}, {"file_id": "big"}]}))
+    n = db.list_notes()[0]
+    assert (n["kind"], n["file_id"], n["text"]) == ("photo", "big", "схема воронки")
+
+
+def test_prefix_and_bare_link_are_notes(env):
+    _, db, _, h, _ = env
+    run(h.handle(msg("💡 Лучший маркетинг — продукт")))
+    run(h.handle(msg("https://example.com/post")))
+    run(h.handle(msg("обычная задача")))
+    kinds = sorted(n["kind"] for n in db.list_notes())
+    assert kinds == ["link", "text"] and len(db.open_tasks()) == 1
+
+
+def test_notes_list_search_and_delete(env):
+    _, db, tg, h, _ = env
+    a = db.add_note("про деньги")
+    db.add_note("про время")
+    run(h.handle(msg("/notes деньги")))
+    assert "про деньги" in tg.last and "про время" not in tg.last
+    run(h.handle(msg(f"/unnote {a}")))
+    assert db.count_notes() == 1
+
+
+def test_voice_with_prefix_is_note(stt_env):
+    _, db, _, h, said = stt_env
+    said["text"] = "Мысль: делегировать рутину"
+    run(h.handle(voice()))
+    assert db.list_notes()[0]["text"] == "делегировать рутину" and db.open_tasks() == []
