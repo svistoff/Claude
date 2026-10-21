@@ -18,11 +18,21 @@ OWNER = 111
 class FakeTG:
     def __init__(self) -> None:
         self.sent: list[tuple[int, str, int]] = []
+        self.buttons: list[list[list[dict]] | None] = []
+        self.answers: list[tuple[str, str]] = []
+        self.markups: list[tuple[int, list[list[dict]]]] = []
 
-    async def send(self, chat_id: int, text: str) -> int:
+    async def send(self, chat_id: int, text: str, buttons=None) -> int:
         mid = len(self.sent) + 1000
         self.sent.append((chat_id, text, mid))
+        self.buttons.append(buttons)
         return mid
+
+    async def answer_callback(self, callback_id: str, text: str = "") -> None:
+        self.answers.append((callback_id, text))
+
+    async def set_buttons(self, chat_id: int, message_id: int, buttons) -> None:
+        self.markups.append((message_id, buttons))
 
     @property
     def last(self) -> str:
@@ -192,7 +202,7 @@ def test_plan_uses_open_tasks(env):
     db.add_task("доделать оплату")
     run(h.handle(msg("/plan")))
     assert "Главное" in tg.last
-    assert "#1 доделать оплату" in prompts[-1]
+    assert "#1 [обычная] доделать оплату" in prompts[-1]
 
 
 def test_morning_plan_and_evening_summary(env, monkeypatch):
@@ -207,3 +217,105 @@ def test_morning_plan_and_evening_summary(env, monkeypatch):
     monkeypatch.setattr(scheduler, "local_now", lambda c: datetime.now().replace(hour=20, minute=0))
     run(scheduler.tick(cfg, db, tg))
     assert "Сделано: задача раз" in tg.last and "#2 задача два" in tg.last
+
+
+# --- Срочность, порция на день, кнопки ---------------------------------------
+
+def cb(data: str, rows=None, chat_id: int = OWNER) -> dict:
+    m = {"chat": {"id": chat_id}, "message_id": 77}
+    if rows is not None:
+        m["reply_markup"] = {"inline_keyboard": rows}
+    return {"id": "cb1", "data": data, "message": m}
+
+
+def test_priority_prefixes_parsed():
+    from mentor_bot.tasks import parse_priority
+    assert parse_priority("! позвонить") == ("urgent", "позвонить")
+    assert parse_priority("Срочно: оплатить") == ("urgent", "оплатить")
+    assert parse_priority("потом разобрать почту") == ("later", "разобрать почту")
+    assert parse_priority("потомство") == ("normal", "потомство")
+    assert parse_priority("!") == ("normal", "!")
+
+
+def test_message_sets_priority_and_offers_buttons(env):
+    _, db, tg, h, _ = env
+    run(h.handle(msg("!! сдать отчёт")))
+    t = db.open_tasks()[0]
+    assert t["priority"] == "urgent" and t["text"] == "сдать отчёт"
+    assert tg.buttons[-1][0][0]["callback_data"] == f"urgent:{t['id']}"
+
+
+def test_priority_commands(env):
+    _, db, _, h, _ = env
+    i = db.add_task("x")
+    run(h.handle(msg(f"/later {i}")))
+    assert db.get_task(i)["priority"] == "later"
+    run(h.handle(msg(f"/urgent #{i}")))
+    assert db.get_task(i)["priority"] == "urgent"
+
+
+def test_plan_portion_is_limited_and_has_buttons(env):
+    cfg, db, tg, h, prompts = env
+    for n in range(5):
+        db.add_task(f"позже {n}", "later")
+    db.add_task("срочное", "urgent")
+    run(h.handle(msg("/plan")))
+    # «на потом» — максимум 2 за раз, остальное в запасе
+    assert prompts[-1].count("на потом") == 2 and "в запасе" in prompts[-1]
+    # в ответе фейка есть «#1» → под планом кнопки для этой задачи
+    rows = tg.buttons[-1]
+    assert [b["callback_data"] for b in rows[0]] == ["done:1", "snooze:1"]
+
+
+def test_later_tasks_rotate(env):
+    from mentor_bot.tasks import select_for_plan
+    ts = [{"id": i, "priority": "later", "postponed": 0, "hidden_until": None,
+           "last_shown": "2026-01-01" if i < 3 else None, "text": "t"} for i in range(1, 5)]
+    picked, reserve = select_for_plan(ts, "2026-02-01")
+    assert sorted(t["id"] for t in picked) == [3, 4] and reserve == 2
+
+
+def test_snoozed_task_hidden_until_tomorrow(env):
+    from mentor_bot.tasks import select_for_plan
+    t = {"id": 1, "priority": "normal", "postponed": 1, "hidden_until": "2026-02-02",
+         "last_shown": None, "text": "t"}
+    assert select_for_plan([t], "2026-02-01")[0] == []
+    assert select_for_plan([t], "2026-02-02")[0] == [t]
+
+
+def test_callback_done_removes_task_buttons(env):
+    _, db, tg, h, _ = env
+    a, b = db.add_task("a"), db.add_task("b")
+    from mentor_bot.tasks import plan_buttons
+    run(h.handle_callback(cb(f"done:{a}", plan_buttons([a, b]))))
+    assert db.get_task(a)["done"] == 1 and db.get_task(b)["done"] == 0
+    assert tg.answers[-1][1] == "✅ Сделано"
+    kept = tg.markups[-1][1]
+    assert len(kept) == 1 and kept[0][0]["callback_data"] == f"done:{b}"
+
+
+def test_callback_snooze_counts_postpone(env):
+    _, db, tg, h, _ = env
+    a = db.add_task("a")
+    run(h.handle_callback(cb(f"snooze:{a}", [])))
+    t = db.get_task(a)
+    assert t["postponed"] == 1 and t["hidden_until"]
+
+
+def test_callback_from_stranger_ignored(env):
+    _, db, tg, h, _ = env
+    a = db.add_task("a")
+    run(h.handle_callback(cb(f"done:{a}", [], chat_id=999)))
+    assert db.get_task(a)["done"] == 0
+
+
+def test_db_migrates_old_tasks_table(tmp_path):
+    import sqlite3
+    path = str(tmp_path / "old.db")
+    c = sqlite3.connect(path)
+    c.execute("CREATE TABLE tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT NOT NULL, "
+              "done INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, done_at TEXT)")
+    c.execute("INSERT INTO tasks (text, created_at) VALUES ('старая', 'x')")
+    c.commit(); c.close()
+    db = DB(path)
+    assert db.open_tasks()[0]["priority"] == "normal"

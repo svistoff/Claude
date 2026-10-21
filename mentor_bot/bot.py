@@ -25,11 +25,14 @@ async def polling_loop(handler: Handler, tg: Telegram) -> None:
             continue
         for upd in updates:
             offset = upd["update_id"] + 1
-            msg = upd.get("message")
-            if not msg:
+            msg, cb = upd.get("message"), upd.get("callback_query")
+            if not msg and not cb:
                 continue
             try:
-                await handler.handle(msg)
+                if cb:
+                    await handler.handle_callback(cb)
+                else:
+                    await handler.handle(msg)
             except Exception:  # noqa: BLE001 — одна ошибка не роняет бота
                 log.exception("ошибка обработки сообщения")
 

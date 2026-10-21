@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from . import advisor
+from . import tasks as tasks_mod
 from .config import Config
 from .db import DB
 from .llm import LLMError
@@ -38,16 +39,29 @@ async def send_advice(cfg: Config, db: DB, tg, project: dict) -> str:
 
 
 async def send_plan(cfg: Config, db: DB, tg) -> str:
-    """План дня по входящим задачам."""
-    if not db.open_tasks():
-        text = "📭 Входящих задач нет. Скидывай их сюда обычными сообщениями — утром разложу по приоритетам."
+    """План дня: порция задач (не вся пачка) + кнопки «сделано / завтра»."""
+    today = local_now(cfg).strftime("%Y-%m-%d")
+    open_tasks = db.open_tasks()
+    picked, reserve = tasks_mod.select_for_plan(open_tasks, today)
+    if not picked:
+        text = ("📭 Входящих задач нет. Скидывай их сюда обычными сообщениями — "
+                "утром разложу по приоритетам." if not open_tasks else
+                f"На сегодня всё отложено ({len(open_tasks)} задач). Вернутся завтра · /tasks")
         await tg.send(cfg.owner_chat_id, text)
         return text
     try:
-        text = await advisor.plan_day(cfg, db)
+        text = await advisor.plan_day(cfg, db, picked, reserve)
     except LLMError as exc:
         text = f"⚠ Не смог составить план: {exc}"
-    await tg.send(cfg.owner_chat_id, text or "Модель вернула пустой ответ — попробуй /plan ещё раз.")
+        await tg.send(cfg.owner_chat_id, text)
+        return text
+    if not text:
+        text = "Модель вернула пустой ответ — попробуй /plan ещё раз."
+        await tg.send(cfg.owner_chat_id, text)
+        return text
+    db.mark_shown([t["id"] for t in picked], today)
+    ids = tasks_mod.task_ids_in(text, {t["id"] for t in picked})
+    await tg.send(cfg.owner_chat_id, text, buttons=tasks_mod.plan_buttons(ids) or None)
     return text
 
 

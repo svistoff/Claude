@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import re
+from datetime import timedelta
 from pathlib import Path
 
 from .config import Config
 from .db import DB
-from .scheduler import send_advice, send_plan
+from . import tasks as tasks_mod
+from .scheduler import local_now, send_advice, send_plan
 
 NAME_RE = re.compile(r"^[\w-]{1,40}$")
 TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
@@ -17,7 +19,8 @@ HELP = """\
 
 📥 Задачи — просто пиши мне сообщением, всё попадёт во входящие:
 «позвонить бухгалтеру», «доделать оплату в боте», «ответить клиенту»…
-/tasks — открытые задачи
+Срочное начинай с «!» или «срочно», несрочное — с «потом».
+/tasks — открытые задачи · /urgent N · /later N — сменить срочность
 /done N — задача сделана · /drop N — убрать задачу
 /plan — план дня прямо сейчас
 
@@ -101,6 +104,8 @@ class Handler:
             await self.cmd_report(chat_id, rest)
         elif cmd == "/tasks":
             await self.cmd_tasks(chat_id)
+        elif cmd in ("/urgent", "/later"):
+            await self.cmd_priority(chat_id, args, cmd[1:])
         elif cmd in ("/done", "/drop"):
             await self.cmd_close(chat_id, args, cmd == "/done")
         elif cmd == "/plan":
@@ -229,9 +234,25 @@ class Handler:
         if not tasks:
             await self.reply(chat_id, "📭 Открытых задач нет. Просто напиши мне задачу сообщением.")
             return
+        marks = {"urgent": "🔥", "normal": "•", "later": "🕓"}
+        order = {"urgent": 0, "normal": 1, "later": 2}
+        tasks.sort(key=lambda t: (order[t["priority"]], t["id"]))
         await self.reply(chat_id, "📋 Открытые задачи:\n" +
-                         "\n".join(f"#{t['id']} {t['text']}" for t in tasks) +
+                         "\n".join(f"{marks[t['priority']]} #{t['id']} {t['text']}" for t in tasks) +
                          "\n\nСделал — /done номер. План дня — /plan")
+
+    async def cmd_priority(self, chat_id: int, args: list[str], prio: str) -> None:
+        cmd = "/urgent" if prio == "urgent" else "/later"
+        if not args or not args[0].lstrip("#").isdigit():
+            await self.reply(chat_id, f"Формат: {cmd} номер (номера — в /tasks)")
+            return
+        task_id = int(args[0].lstrip("#"))
+        task = self.db.set_priority(task_id, prio)
+        if task is None:
+            await self.reply(chat_id, f"Открытой задачи #{task_id} нет. /tasks — список.")
+            return
+        mark = "🔥 срочная" if prio == "urgent" else "🕓 на потом"
+        await self.reply(chat_id, f"#{task_id} теперь {mark}: {task['text']}")
 
     async def cmd_close(self, chat_id: int, args: list[str], done: bool) -> None:
         cmd = "/done" if done else "/drop"
@@ -255,6 +276,45 @@ class Handler:
             self.db.add_report(project, text)
             await self.reply(chat_id, f"Записал отчёт по «{project}». Учту в следующем совете.")
             return
-        task_id = self.db.add_task(text)
-        await self.reply(chat_id, f"📥 Записал задачу #{task_id}. Открытых: {len(self.db.open_tasks())}.\n"
-                         "Утром разложу по приоритетам · /tasks · /plan")
+        prio, clean = tasks_mod.parse_priority(text)
+        task_id = self.db.add_task(clean, prio)
+        label = {"urgent": "🔥 срочную", "later": "🕓 «на потом»", "normal": ""}[prio]
+        await self.tg.send(chat_id, f"📥 Записал {label + ' ' if label else ''}задачу #{task_id}. "
+                           f"Открытых: {len(self.db.open_tasks())}.\n"
+                           "Утром разложу по приоритетам · /tasks · /plan",
+                           buttons=tasks_mod.new_task_buttons(task_id))
+
+    # --- Нажатия на inline-кнопки -------------------------------------------
+    async def handle_callback(self, cb: dict) -> None:
+        msg = cb.get("message") or {}
+        chat_id = msg.get("chat", {}).get("id")
+        if not self.cfg.owner_chat_id or chat_id != self.cfg.owner_chat_id:
+            await self.tg.answer_callback(cb["id"])
+            return
+        action, _, raw = (cb.get("data") or "").partition(":")
+        if not raw.isdigit():
+            await self.tg.answer_callback(cb["id"])
+            return
+        task_id = int(raw)
+        db = self.db
+        if action == "done":
+            ok, toast = db.complete_task(task_id) is not None, "✅ Сделано"
+        elif action == "drop":
+            ok, toast = db.delete_task(task_id) is not None, "🗑 Убрал"
+        elif action == "snooze":
+            tomorrow = (local_now(self.cfg) + timedelta(days=1)).strftime("%Y-%m-%d")
+            ok, toast = db.postpone_task(task_id, tomorrow) is not None, "⏸ Вернётся завтра"
+        elif action in ("urgent", "later"):
+            ok = db.set_priority(task_id, action) is not None
+            toast = "🔥 Срочно" if action == "urgent" else "🕓 На потом"
+        else:
+            ok, toast = False, ""
+        await self.tg.answer_callback(cb["id"], toast if ok else "Уже неактуально")
+        # Убираем кнопки закрытой задачи; у остальных строк клавиатура остаётся.
+        if ok and action in ("done", "drop", "snooze") and msg.get("message_id"):
+            rows = msg.get("reply_markup", {}).get("inline_keyboard", [])
+            keep = [r for r in rows if not any(b.get("callback_data", "").endswith(f":{task_id}")
+                                               for b in r)]
+            await self.tg.set_buttons(chat_id, msg["message_id"], keep)
+        elif ok:  # смена срочности на карточке новой задачи — кнопки больше не нужны
+            await self.tg.set_buttons(chat_id, msg["message_id"], [])

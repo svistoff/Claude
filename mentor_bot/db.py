@@ -36,13 +36,25 @@ CREATE TABLE IF NOT EXISTS tasks (
     text TEXT NOT NULL,
     done INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
-    done_at TEXT
+    done_at TEXT,
+    priority TEXT NOT NULL DEFAULT 'normal',  -- urgent | normal | later
+    postponed INTEGER NOT NULL DEFAULT 0,
+    hidden_until TEXT,   -- локальная дата YYYY-MM-DD: до неё задача не попадает в план
+    last_shown TEXT      -- локальная дата, когда задача в последний раз была в плане
 );
 CREATE TABLE IF NOT EXISTS state (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
 """
+
+PRIORITIES = ("urgent", "normal", "later")
+TASK_MIGRATIONS = {
+    "priority": "TEXT NOT NULL DEFAULT 'normal'",
+    "postponed": "INTEGER NOT NULL DEFAULT 0",
+    "hidden_until": "TEXT",
+    "last_shown": "TEXT",
+}
 
 PROJECT_FIELDS = {"path", "goal", "time_local", "weekdays_only", "enabled", "last_sent_date"}
 
@@ -58,6 +70,11 @@ class DB:
         self.conn = sqlite3.connect(path)
         self.conn.row_factory = sqlite3.Row
         self.conn.executescript(SCHEMA)
+        # Базы, созданные до появления приоритетов, дополняем недостающими колонками.
+        have = {r["name"] for r in self.conn.execute("PRAGMA table_info(tasks)")}
+        for col, ddl in TASK_MIGRATIONS.items():
+            if col not in have:
+                self.conn.execute(f"ALTER TABLE tasks ADD COLUMN {col} {ddl}")
         self.conn.commit()
 
     # --- Проекты -----------------------------------------------------------
@@ -133,15 +150,40 @@ class DB:
         return row is not None
 
     # --- Входящие задачи ----------------------------------------------------
-    def add_task(self, text: str) -> int:
-        cur = self.conn.execute("INSERT INTO tasks (text, created_at) VALUES (?, ?)",
-                                (text, _now()))
+    def add_task(self, text: str, priority: str = "normal") -> int:
+        cur = self.conn.execute("INSERT INTO tasks (text, priority, created_at) VALUES (?, ?, ?)",
+                                (text, priority, _now()))
         self.conn.commit()
         return cur.lastrowid
 
     def open_tasks(self) -> list[dict]:
         rows = self.conn.execute("SELECT * FROM tasks WHERE done = 0 ORDER BY id").fetchall()
         return [dict(r) for r in rows]
+
+    def get_task(self, task_id: int) -> dict | None:
+        row = self.conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        return dict(row) if row else None
+
+    def set_priority(self, task_id: int, priority: str) -> dict | None:
+        if priority not in PRIORITIES:
+            raise ValueError(priority)
+        cur = self.conn.execute("UPDATE tasks SET priority = ? WHERE id = ? AND done = 0",
+                                (priority, task_id))
+        self.conn.commit()
+        return self.get_task(task_id) if cur.rowcount else None
+
+    def postpone_task(self, task_id: int, until: str) -> dict | None:
+        """Отложить: скрыть из плана до даты `until` и учесть перенос."""
+        cur = self.conn.execute(
+            "UPDATE tasks SET postponed = postponed + 1, hidden_until = ? "
+            "WHERE id = ? AND done = 0", (until, task_id))
+        self.conn.commit()
+        return self.get_task(task_id) if cur.rowcount else None
+
+    def mark_shown(self, task_ids: list[int], day: str) -> None:
+        self.conn.executemany("UPDATE tasks SET last_shown = ? WHERE id = ?",
+                              [(day, i) for i in task_ids])
+        self.conn.commit()
 
     def done_tasks_since(self, since_iso: str) -> list[dict]:
         rows = self.conn.execute(
