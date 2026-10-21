@@ -8,9 +8,12 @@ from pathlib import Path
 
 from .config import Config
 from .db import DB
+from . import advisor, stt
 from . import tasks as tasks_mod
+from .llm import LLMError
 from .scheduler import local_now, send_advice, send_plan
 
+MAX_VOICE_SECONDS = 300
 NAME_RE = re.compile(r"^[\w-]{1,40}$")
 TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
@@ -19,6 +22,7 @@ HELP = """\
 
 📥 Задачи — просто пиши мне сообщением, всё попадёт во входящие:
 «позвонить бухгалтеру», «доделать оплату в боте», «ответить клиенту»…
+🎙 Можно и голосовым — разберу на задачи (можно сразу несколько).
 Срочное начинай с «!» или «срочно», несрочное — с «потом».
 /tasks — открытые задачи · /urgent N · /later N — сменить срочность
 /done N — задача сделана · /drop N — убрать задачу
@@ -56,7 +60,8 @@ class Handler:
     async def handle(self, message: dict) -> None:
         chat_id = message.get("chat", {}).get("id")
         text = (message.get("text") or "").strip()
-        if chat_id is None or not text:
+        voice = message.get("voice")
+        if chat_id is None or not (text or voice):
             return
 
         # Режим настройки: владелец ещё не указан — подсказываем chat_id.
@@ -68,6 +73,9 @@ class Handler:
             await self.reply(chat_id, "Это личный бот-наставник, он отвечает только владельцу.")
             return
 
+        if voice and not text:
+            await self.voice_message(chat_id, message, voice)
+            return
         if text.startswith("/"):
             cmd, _, rest = text.partition(" ")
             cmd = cmd.split("@")[0].lower()
@@ -283,6 +291,52 @@ class Handler:
                            f"Открытых: {len(self.db.open_tasks())}.\n"
                            "Утром разложу по приоритетам · /tasks · /plan",
                            buttons=tasks_mod.new_task_buttons(task_id))
+
+    # --- Голосовые: расшифровка → отчёт или задачи ---------------------------
+    async def voice_message(self, chat_id: int, message: dict, voice: dict) -> None:
+        if not self.cfg.stt_api_key:
+            await self.reply(chat_id, "🎙 Голосовые пока не включены: добавь STT_API_KEY в .env "
+                             "(см. .env.example) и перезапусти бота.")
+            return
+        if voice.get("duration", 0) > MAX_VOICE_SECONDS or voice.get("file_size", 0) > 19_000_000:
+            await self.reply(chat_id, "🎙 Слишком длинное голосовое — запиши покороче (до 5 минут).")
+            return
+        try:
+            audio = await self.tg.download_file(voice["file_id"])
+            transcript = await stt.transcribe(self.cfg.stt_api_key, self.cfg.stt_base_url,
+                                              self.cfg.stt_model, audio)
+        except stt.STTError as exc:
+            await self.reply(chat_id, f"⚠ Не смог расшифровать голосовое: {exc}")
+            return
+        except Exception as exc:  # noqa: BLE001 — скачивание из Telegram
+            await self.reply(chat_id, f"⚠ Не смог скачать голосовое: {exc}")
+            return
+        if not transcript:
+            await self.reply(chat_id, "🎙 Ничего не расслышал — попробуй ещё раз.")
+            return
+        # Ответ голосом на совет — это отчёт, как и обычный текстовый reply.
+        reply_to = message.get("reply_to_message")
+        project = self.db.project_by_message(reply_to.get("message_id")) if reply_to else None
+        if project is not None:
+            self.db.add_report(project, transcript)
+            await self.reply(chat_id, f"🎙 «{transcript}»\nЗаписал отчёт по «{project}».")
+            return
+        try:
+            items = await advisor.split_tasks(self.cfg, transcript)
+        except LLMError:
+            items = []
+        if not items:
+            items = [tasks_mod.parse_priority(transcript)[::-1]]
+        marks = {"urgent": "🔥", "normal": "•", "later": "🕓"}
+        ids, lines = [], []
+        for text, prio in items:
+            tid = self.db.add_task(text, prio)
+            ids.append(tid)
+            lines.append(f"{marks[prio]} #{tid} {text}")
+        head = f"🎙 «{transcript[:300]}»\n\n📥 Записал " + ("задачу:" if len(ids) == 1 else f"задачи ({len(ids)}):")
+        buttons = tasks_mod.new_task_buttons(ids[0]) if len(ids) == 1 else None
+        await self.tg.send(chat_id, head + "\n" + "\n".join(lines) +
+                           "\n\nНе так поняли? /drop N · /urgent N · /later N", buttons=buttons)
 
     # --- Нажатия на inline-кнопки -------------------------------------------
     async def handle_callback(self, cb: dict) -> None:

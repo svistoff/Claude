@@ -145,3 +145,42 @@ def build_plan_context(db: DB, tasks: list[dict], reserve: int) -> str:
 async def plan_day(cfg: Config, db: DB, tasks: list[dict], reserve: int) -> str:
     return await llm.complete(cfg.llm_api_key, cfg.llm_base_url, cfg.llm_model,
                               PLAN_PROMPT, build_plan_context(db, tasks, reserve))
+
+
+# --- Голосовая заметка → несколько задач ------------------------------------
+
+SPLIT_PROMPT = """\
+Тебе дают расшифровку голосового сообщения, в котором человек диктует задачи.
+Выдели отдельные задачи. Для каждой: короткая формулировка с глагола (без слов
+«надо», «мне нужно») и срочность: "urgent" — если сказано срочно/сегодня/горит,
+"later" — если сказано потом/когда-нибудь/не горит, иначе "normal".
+Ничего не выдумывай и не добавляй. Если это не задачи, а просто мысль — одна
+задача с этой мыслью.
+
+Ответ — ТОЛЬКО JSON-массив без пояснений:
+[{"text": "...", "priority": "urgent|normal|later"}]"""
+
+
+def parse_split(raw: str) -> list[tuple[str, str]]:
+    """Разобрать ответ модели; при мусоре вернуть пустой список."""
+    import json
+    raw = raw.strip()
+    if raw.startswith("```"):
+        raw = raw.strip("`").removeprefix("json").strip()
+    try:
+        items = json.loads(raw)
+    except ValueError:
+        return []
+    out: list[tuple[str, str]] = []
+    if isinstance(items, list):
+        for it in items[:15]:
+            if isinstance(it, dict) and str(it.get("text", "")).strip():
+                prio = it.get("priority") if it.get("priority") in ("urgent", "normal", "later") else "normal"
+                out.append((str(it["text"]).strip(), prio))
+    return out
+
+
+async def split_tasks(cfg: Config, transcript: str) -> list[tuple[str, str]]:
+    raw = await llm.complete(cfg.llm_api_key, cfg.llm_base_url, cfg.llm_model,
+                             SPLIT_PROMPT, transcript, max_tokens=600)
+    return parse_split(raw)

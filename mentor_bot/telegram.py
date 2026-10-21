@@ -30,6 +30,15 @@ class Telegram:
             return None
         return r.json().get("result", {}).get("message_id")
 
+    async def download_file(self, file_id: str) -> bytes:
+        """Скачать файл по file_id (лимит Bot API — 20 МБ)."""
+        r = await self.client.get(f"{self.base}/getFile", params={"file_id": file_id})
+        r.raise_for_status()
+        path = r.json()["result"]["file_path"]
+        f = await self.client.get(self.base.replace("/bot", "/file/bot", 1) + "/" + path)
+        f.raise_for_status()
+        return f.content
+
     async def answer_callback(self, callback_id: str, text: str = "") -> None:
         await self.client.post(f"{self.base}/answerCallbackQuery",
                                json={"callback_query_id": callback_id, "text": text[:200]})

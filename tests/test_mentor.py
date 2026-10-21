@@ -28,6 +28,9 @@ class FakeTG:
         self.buttons.append(buttons)
         return mid
 
+    async def download_file(self, file_id: str) -> bytes:
+        return b"ogg"
+
     async def answer_callback(self, callback_id: str, text: str = "") -> None:
         self.answers.append((callback_id, text))
 
@@ -319,3 +322,89 @@ def test_db_migrates_old_tasks_table(tmp_path):
     c.commit(); c.close()
     db = DB(path)
     assert db.open_tasks()[0]["priority"] == "normal"
+
+
+# --- Голосовые -----------------------------------------------------------------
+
+def voice(reply_to: int | None = None, duration: int = 10) -> dict:
+    m = {"chat": {"id": OWNER}, "voice": {"file_id": "f1", "duration": duration}}
+    if reply_to is not None:
+        m["reply_to_message"] = {"message_id": reply_to}
+    return m
+
+
+@pytest.fixture
+def stt_env(env, monkeypatch):
+    cfg, db, tg, h, prompts = env
+    cfg.stt_api_key = "s"
+    said = {"text": "срочно позвонить бухгалтеру, а ещё потом разобрать почту"}
+
+    async def fake_stt(api_key, base_url, model, audio, **kw):
+        return said["text"]
+
+    async def fake_complete(api_key, base_url, model, system, user, max_tokens=800):
+        if "диктует" in system:
+            return ('```json\n[{"text": "Позвонить бухгалтеру", "priority": "urgent"},'
+                    '{"text": "Разобрать почту", "priority": "later"}]\n```')
+        return "ok"
+
+    monkeypatch.setattr("mentor_bot.stt.transcribe", fake_stt)
+    monkeypatch.setattr(advisor.llm, "complete", fake_complete)
+    return cfg, db, tg, h, said
+
+
+def test_voice_splits_into_tasks_with_priorities(stt_env):
+    _, db, tg, h, _ = stt_env
+    run(h.handle(voice()))
+    got = [(t["text"], t["priority"]) for t in db.open_tasks()]
+    assert got == [("Позвонить бухгалтеру", "urgent"), ("Разобрать почту", "later")]
+    assert "задачи (2)" in tg.last and "срочно позвонить" in tg.last
+
+
+def test_voice_falls_back_to_single_task_on_bad_json(stt_env, monkeypatch):
+    _, db, tg, h, said = stt_env
+
+    async def junk(*a, **kw):
+        return "не json"
+
+    monkeypatch.setattr(advisor.llm, "complete", junk)
+    said["text"] = "срочно оплатить хостинг"
+    run(h.handle(voice()))
+    t = db.open_tasks()[0]
+    assert (t["text"], t["priority"]) == ("оплатить хостинг", "urgent")
+
+
+def test_voice_reply_to_advice_is_report(stt_env):
+    _, db, tg, h, said = stt_env
+    db.add_project("app")
+    db.add_advice("app", "шаг", 555)
+    said["text"] = "написал трём клиентам"
+    run(h.handle(voice(reply_to=555)))
+    assert db.open_tasks() == [] and db.recent_reports("app")[0]["text"] == "написал трём клиентам"
+
+
+def test_voice_without_stt_key(env):
+    _, db, tg, h, _ = env
+    run(h.handle(voice()))
+    assert "STT_API_KEY" in tg.last and db.open_tasks() == []
+
+
+def test_voice_too_long_and_stranger(stt_env):
+    _, db, tg, h, _ = stt_env
+    run(h.handle(voice(duration=900)))
+    assert "покороче" in tg.last and db.open_tasks() == []
+    m = voice(); m["chat"]["id"] = 999
+    run(h.handle(m))
+    assert "только владельцу" in tg.last and db.open_tasks() == []
+
+
+def test_stt_error_is_reported(stt_env, monkeypatch):
+    from mentor_bot.stt import STTError
+    _, db, tg, h, _ = stt_env
+
+    async def boom(*a, **kw):
+        raise STTError("API 401")
+
+    monkeypatch.setattr("mentor_bot.stt.transcribe", boom)
+    run(h.handle(voice()))
+    assert "401" in tg.last and db.open_tasks() == []

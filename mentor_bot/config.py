@@ -29,6 +29,9 @@ class Config:
     llm_api_key: str
     llm_base_url: str = "https://api.deepseek.com"
     llm_model: str = "deepseek-flash"
+    stt_api_key: str = ""
+    stt_base_url: str = "https://api.groq.com/openai/v1"
+    stt_model: str = "whisper-large-v3-turbo"
     tz_offset_hours: int = 5
     plan_time: str = "08:30"
     default_time: str = "09:00"
@@ -52,6 +55,9 @@ def load() -> Config:
         llm_api_key=os.environ.get("LLM_API_KEY", ""),
         llm_base_url=os.environ.get("LLM_BASE_URL", "https://api.deepseek.com"),
         llm_model=os.environ.get("LLM_MODEL", "deepseek-flash"),
+        stt_api_key=os.environ.get("STT_API_KEY", ""),
+        stt_base_url=os.environ.get("STT_BASE_URL", "https://api.groq.com/openai/v1"),
+        stt_model=os.environ.get("STT_MODEL", "whisper-large-v3-turbo"),
         tz_offset_hours=int(os.environ.get("TZ_OFFSET_HOURS", "5")),
         plan_time=os.environ.get("PLAN_TIME", "08:30"),
         default_time=os.environ.get("DEFAULT_TIME", "09:00"),
