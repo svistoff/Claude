@@ -454,3 +454,53 @@ def test_voice_with_prefix_is_note(stt_env):
     said["text"] = "Мысль: делегировать рутину"
     run(h.handle(voice()))
     assert db.list_notes()[0]["text"] == "делегировать рутину" and db.open_tasks() == []
+
+
+# --- GitHub ----------------------------------------------------------------------
+
+def test_parse_repo():
+    from mentor_bot.github import parse_repo
+    assert parse_repo("svistoff/Claude") == "svistoff/Claude"
+    assert parse_repo("https://github.com/svistoff/my-shop.git") == "svistoff/my-shop"
+    assert parse_repo("просто слово") is None
+
+
+def test_repo_command_binds_and_advice_uses_github(env, monkeypatch):
+    from mentor_bot import github
+    _, db, tg, h, prompts = env
+    db.add_project("shop")
+
+    async def fake_fetch(repo, token=""):
+        return [f"GitHub {repo}: магазин", "Открытые issue/PR:\nissue #3: оплата не работает"]
+
+    monkeypatch.setattr(github, "fetch_context", fake_fetch)
+    run(h.handle(msg("/repo shop https://github.com/svistoff/my-shop")))
+    assert db.get_project("shop")["repo"] == "svistoff/my-shop"
+    run(h.handle(msg("/now shop")))
+    assert "issue #3: оплата не работает" in prompts[-1]
+
+
+def test_repo_command_rejects_unreachable(env, monkeypatch):
+    from mentor_bot import github
+    _, db, tg, h, _ = env
+    db.add_project("shop")
+
+    async def boom(repo, token=""):
+        raise github.GitHubError("x/y: репозиторий не найден")
+
+    monkeypatch.setattr(github, "fetch_context", boom)
+    run(h.handle(msg("/repo shop x/y")))
+    assert db.get_project("shop")["repo"] == "" and "не найден" in tg.last
+
+
+def test_github_failure_does_not_break_advice(env, monkeypatch):
+    from mentor_bot import github
+    _, db, tg, h, prompts = env
+    db.add_project("shop"); db.update_project("shop", repo="x/y")
+
+    async def boom(repo, token=""):
+        raise github.GitHubError("x/y: сетевая ошибка")
+
+    monkeypatch.setattr(github, "fetch_context", boom)
+    run(h.handle(msg("/now shop")))
+    assert "GitHub недоступен" in prompts[-1] and "Фокус" in tg.last

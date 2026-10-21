@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS projects (
     name TEXT PRIMARY KEY,
     path TEXT NOT NULL DEFAULT '',
     goal TEXT NOT NULL DEFAULT '',
+    repo TEXT NOT NULL DEFAULT '',
     time_local TEXT NOT NULL DEFAULT '09:00',
     weekdays_only INTEGER NOT NULL DEFAULT 0,
     enabled INTEGER NOT NULL DEFAULT 1,
@@ -65,7 +66,7 @@ TASK_MIGRATIONS = {
     "last_shown": "TEXT",
 }
 
-PROJECT_FIELDS = {"path", "goal", "time_local", "weekdays_only", "enabled", "last_sent_date"}
+PROJECT_FIELDS = {"path", "repo", "goal", "time_local", "weekdays_only", "enabled", "last_sent_date"}
 
 
 def _now() -> str:
@@ -84,6 +85,9 @@ class DB:
         for col, ddl in TASK_MIGRATIONS.items():
             if col not in have:
                 self.conn.execute(f"ALTER TABLE tasks ADD COLUMN {col} {ddl}")
+        pcols = {r["name"] for r in self.conn.execute("PRAGMA table_info(projects)")}
+        if "repo" not in pcols:
+            self.conn.execute("ALTER TABLE projects ADD COLUMN repo TEXT NOT NULL DEFAULT ''")
         self.conn.commit()
 
     # --- Проекты -----------------------------------------------------------

@@ -5,7 +5,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from . import llm
+from . import github, llm
 from .config import Config
 from .db import DB
 
@@ -28,6 +28,7 @@ SYSTEM_PROMPT = """\
 ✅ Задача на сегодня (2–4ч): <одно конкретное действие>
 🏁 Done: <проверяемый результат>
 💰 Бизнес-результат: <чем это приближает первый рубль>
+💡 Идея развития: <одна идея, как улучшить или развить проект дальше — по состоянию кода, коммитов и issue>
 
 Без вступлений. По-русски."""
 
@@ -63,7 +64,7 @@ def _project_files(root: Path) -> list[str]:
     return parts
 
 
-def build_context(db: DB, project: dict) -> str:
+def build_context(db: DB, project: dict, remote: list[str] | None = None) -> str:
     name = project["name"]
     parts = [f"Проект: {name}"]
     if project.get("goal"):
@@ -74,6 +75,7 @@ def build_context(db: DB, project: dict) -> str:
     root = Path(project["path"]) if project.get("path") else None
     if root and root.is_dir():
         parts.extend(_project_files(root))
+    parts.extend(remote or [])
 
     # Память: от старых к новым, чтобы модель видела развитие.
     advice = list(reversed(db.recent_advice(name, 3)))
@@ -90,7 +92,13 @@ def build_context(db: DB, project: dict) -> str:
 
 
 async def generate(cfg: Config, db: DB, project: dict) -> str:
-    context = build_context(db, project)
+    remote: list[str] = []
+    if project.get("repo"):
+        try:
+            remote = await github.fetch_context(project["repo"], cfg.github_token)
+        except github.GitHubError as exc:
+            remote = [f"GitHub недоступен: {exc}. Опирайся на остальной контекст."]
+    context = build_context(db, project, remote)
     user = "Вот контекст. Выдай один шаг на сегодня в заданном формате.\n\n" + context
     return await llm.complete(cfg.llm_api_key, cfg.llm_base_url, cfg.llm_model,
                               SYSTEM_PROMPT, user)

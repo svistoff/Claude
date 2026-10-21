@@ -8,7 +8,7 @@ from pathlib import Path
 
 from .config import Config
 from .db import DB
-from . import advisor, stt
+from . import advisor, github, stt
 from . import tasks as tasks_mod
 from .llm import LLMError
 from .scheduler import local_now, send_advice, send_plan
@@ -35,6 +35,7 @@ HELP = """\
 
 🎯 Проекты (по желанию) — для долгих целей, с советом раз в день:
 /add имя [путь] · /goal имя текст · /path имя путь
+/repo имя owner/name — GitHub-репозиторий: читаю коммиты, issue, README
 /time имя ЧЧ:ММ [будни] · /on имя · /off имя · /del имя
 /projects · /now [имя] — совет по проекту сейчас
 /report имя текст — отчёт (или просто reply на мой совет)
@@ -48,6 +49,8 @@ def _fmt_project(p: dict) -> str:
     lines = [f"• {p['name']} — {when}, {state}"]
     if p["path"]:
         lines.append(f"  папка: {p['path']}")
+    if p.get("repo"):
+        lines.append(f"  GitHub: {p['repo']}")
     lines.append(f"  цель: {p['goal'][:200] if p['goal'] else '— не задана (/goal)'}")
     return "\n".join(lines)
 
@@ -109,6 +112,8 @@ class Handler:
             await self.cmd_goal(chat_id, rest)
         elif cmd == "/path":
             await self.cmd_path(chat_id, args)
+        elif cmd == "/repo":
+            await self.cmd_repo(chat_id, args)
         elif cmd == "/time":
             await self.cmd_time(chat_id, args)
         elif cmd in ("/on", "/off"):
@@ -192,6 +197,31 @@ class Handler:
             return
         self.db.update_project(p["name"], path=path)
         await self.reply(chat_id, f"Папка «{p['name']}»: {path}")
+
+    async def cmd_repo(self, chat_id: int, args: list[str]) -> None:
+        p = await self._need_project(chat_id, args[0] if args else None)
+        if p is None:
+            return
+        if len(args) < 2:
+            await self.reply(chat_id, f"Формат: /repo {p['name']} owner/name\n"
+                             f"Сейчас: {p['repo'] or '— не задан'} · убрать: /repo {p['name']} -")
+            return
+        if args[1] == "-":
+            self.db.update_project(p["name"], repo="")
+            await self.reply(chat_id, f"GitHub у «{p['name']}» отвязан.")
+            return
+        repo = github.parse_repo(args[1])
+        if repo is None:
+            await self.reply(chat_id, "Не похоже на репозиторий. Пример: /repo shop svistoff/my-shop")
+            return
+        try:
+            await github.fetch_context(repo, self.cfg.github_token)
+        except github.GitHubError as exc:
+            await self.reply(chat_id, f"⚠ {exc}")
+            return
+        self.db.update_project(p["name"], repo=repo)
+        await self.reply(chat_id, f"Привязал {repo} к «{p['name']}». Теперь советы учитывают "
+                         f"коммиты, issue и README. Проверить: /now {p['name']}")
 
     async def cmd_time(self, chat_id: int, args: list[str]) -> None:
         p = await self._need_project(chat_id, args[0] if args else None)
