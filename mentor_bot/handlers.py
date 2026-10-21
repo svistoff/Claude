@@ -7,28 +7,28 @@ from pathlib import Path
 
 from .config import Config
 from .db import DB
-from .scheduler import send_advice
+from .scheduler import send_advice, send_plan
 
 NAME_RE = re.compile(r"^[\w-]{1,40}$")
 TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
 HELP = """\
-Я наставник: каждый день присылаю ОДИН шаг к первой выручке по твоим проектам,
-а вечером спрашиваю, как прошло. Твои ответы учитываю в следующих советах.
+Я «Мой наставник» — организую твой рабочий день.
 
-Проекты:
-/add имя [путь] — добавить проект (путь к папке на сервере — по желанию)
-/goal имя текст — цель: кто клиент, за что платит, что мешает первому рублю
-/path имя путь — привязать папку проекта (смотрю git-лог и README)
-/time имя ЧЧ:ММ [будни] — во сколько присылать совет
-/on имя · /off имя — включить/выключить советы
-/del имя — удалить проект
-/projects — список проектов
+📥 Задачи — просто пиши мне сообщением, всё попадёт во входящие:
+«позвонить бухгалтеру», «доделать оплату в боте», «ответить клиенту»…
+/tasks — открытые задачи
+/done N — задача сделана · /drop N — убрать задачу
+/plan — план дня прямо сейчас
 
-Работа:
-/now [имя] — совет прямо сейчас
-/report имя текст — отчёт о сделанном
-Или просто ответь (reply) на мой совет — запишу как отчёт.
+Утром присылаю план: главное дело дня и что можно отложить.
+Вечером — итог: что сделано, что осталось.
+
+🎯 Проекты (по желанию) — для долгих целей, с советом раз в день:
+/add имя [путь] · /goal имя текст · /path имя путь
+/time имя ЧЧ:ММ [будни] · /on имя · /off имя · /del имя
+/projects · /now [имя] — совет по проекту сейчас
+/report имя текст — отчёт (или просто reply на мой совет)
 
 /id — показать chat_id"""
 
@@ -99,6 +99,13 @@ class Handler:
             await self.cmd_now(chat_id, args)
         elif cmd == "/report":
             await self.cmd_report(chat_id, rest)
+        elif cmd == "/tasks":
+            await self.cmd_tasks(chat_id)
+        elif cmd in ("/done", "/drop"):
+            await self.cmd_close(chat_id, args, cmd == "/done")
+        elif cmd == "/plan":
+            await self.reply(chat_id, "Раскладываю задачи…")
+            await send_plan(self.cfg, self.db, self.tg)
         else:
             await self.reply(chat_id, "Не знаю такой команды. /help — список.")
 
@@ -120,7 +127,7 @@ class Handler:
 
     async def cmd_add(self, chat_id: int, args: list[str]) -> None:
         if not args:
-            await self.reply(chat_id, "Формат: /add имя [путь]\nНапример: /add ai-companion /root/ai-companion")
+            await self.reply(chat_id, "Формат: /add имя [путь]\nНапример: /add my-shop /root/my-shop")
             return
         name = args[0].lower()
         if not NAME_RE.match(name):
@@ -216,22 +223,38 @@ class Handler:
         self.db.add_report(p["name"], text.strip())
         await self.reply(chat_id, f"Записал отчёт по «{p['name']}». Учту в следующем совете.")
 
-    # --- Отчёт обычным сообщением ------------------------------------------
-    async def plain_report(self, chat_id: int, message: dict, text: str) -> None:
-        project = None
-        reply_to = message.get("reply_to_message")
-        if reply_to:
-            project = self.db.project_by_message(reply_to.get("message_id"))
-        if project is None:
-            ps = self.db.list_projects()
-            if len(ps) == 1:
-                project = ps[0]["name"]
-            elif reply_to is None:
-                last = self.db.get_state("last_project")
-                project = last if last and self.db.get_project(last) else None
-        if project is None:
-            await self.reply(chat_id, "Не понял, к какому проекту это отчёт. "
-                             "Ответь (reply) на мой совет или напиши /report имя текст.")
+    # --- Задачи --------------------------------------------------------------
+    async def cmd_tasks(self, chat_id: int) -> None:
+        tasks = self.db.open_tasks()
+        if not tasks:
+            await self.reply(chat_id, "📭 Открытых задач нет. Просто напиши мне задачу сообщением.")
             return
-        self.db.add_report(project, text)
-        await self.reply(chat_id, f"Записал отчёт по «{project}». Учту в следующем совете.")
+        await self.reply(chat_id, "📋 Открытые задачи:\n" +
+                         "\n".join(f"#{t['id']} {t['text']}" for t in tasks) +
+                         "\n\nСделал — /done номер. План дня — /plan")
+
+    async def cmd_close(self, chat_id: int, args: list[str], done: bool) -> None:
+        cmd = "/done" if done else "/drop"
+        if not args or not args[0].lstrip("#").isdigit():
+            await self.reply(chat_id, f"Формат: {cmd} номер (номера — в /tasks)")
+            return
+        task_id = int(args[0].lstrip("#"))
+        task = self.db.complete_task(task_id) if done else self.db.delete_task(task_id)
+        if task is None:
+            await self.reply(chat_id, f"Открытой задачи #{task_id} нет. /tasks — список.")
+            return
+        left = len(self.db.open_tasks())
+        mark = "✅ Сделано" if done else "🗑 Убрал"
+        await self.reply(chat_id, f"{mark}: {task['text']}\nОсталось открытых: {left}")
+
+    # --- Обычное сообщение: отчёт (reply на совет) или новая задача ---------
+    async def plain_report(self, chat_id: int, message: dict, text: str) -> None:
+        reply_to = message.get("reply_to_message")
+        project = self.db.project_by_message(reply_to.get("message_id")) if reply_to else None
+        if project is not None:
+            self.db.add_report(project, text)
+            await self.reply(chat_id, f"Записал отчёт по «{project}». Учту в следующем совете.")
+            return
+        task_id = self.db.add_task(text)
+        await self.reply(chat_id, f"📥 Записал задачу #{task_id}. Открытых: {len(self.db.open_tasks())}.\n"
+                         "Утром разложу по приоритетам · /tasks · /plan")

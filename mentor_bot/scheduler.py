@@ -1,4 +1,4 @@
-"""Расписание: утренний совет по каждому проекту и вечерний вопрос «как прошло?»."""
+"""Расписание: утренний план дня, советы по проектам, вечерний итог."""
 
 from __future__ import annotations
 
@@ -37,6 +37,20 @@ async def send_advice(cfg: Config, db: DB, tg, project: dict) -> str:
     return text
 
 
+async def send_plan(cfg: Config, db: DB, tg) -> str:
+    """План дня по входящим задачам."""
+    if not db.open_tasks():
+        text = "📭 Входящих задач нет. Скидывай их сюда обычными сообщениями — утром разложу по приоритетам."
+        await tg.send(cfg.owner_chat_id, text)
+        return text
+    try:
+        text = await advisor.plan_day(cfg, db)
+    except LLMError as exc:
+        text = f"⚠ Не смог составить план: {exc}"
+    await tg.send(cfg.owner_chat_id, text or "Модель вернула пустой ответ — попробуй /plan ещё раз.")
+    return text
+
+
 async def tick(cfg: Config, db: DB, tg) -> None:
     if not cfg.owner_chat_id:
         return  # режим настройки: владельца ещё нет
@@ -45,7 +59,13 @@ async def tick(cfg: Config, db: DB, tg) -> None:
     today = now.strftime("%Y-%m-%d")
     is_weekend = now.weekday() >= 5
 
-    # Утро: совет по каждому проекту в его время.
+    # Утро: план дня по входящим задачам.
+    if hhmm == cfg.plan_time and db.get_state("plan_date") != today:
+        db.set_state("plan_date", today)
+        if db.open_tasks():
+            await send_plan(cfg, db, tg)
+
+    # Совет по каждому проекту в его время.
     for p in db.list_projects():
         if not p["enabled"] or p["time_local"] != hhmm or p["last_sent_date"] == today:
             continue
@@ -67,3 +87,15 @@ async def tick(cfg: Config, db: DB, tg) -> None:
                                 "Ответь на это сообщение парой слов: что сделал, что мешало.")
             if mid:
                 db.add_advice(name, "вечерний вопрос", mid, kind="evening")
+
+        # Итог по задачам: что закрыто сегодня, что осталось.
+        done = db.done_tasks_since(since)
+        left = db.open_tasks()
+        if done or left:
+            lines = ["🌙 Итог дня"]
+            if done:
+                lines.append("✅ Сделано: " + "; ".join(t["text"] for t in done))
+            if left:
+                lines.append("📋 Открыто: " + "; ".join(f"#{t['id']} {t['text']}" for t in left[:10]))
+                lines.append("Закрой сделанное: /done номер. Остальное завтра утром разложу снова.")
+            await tg.send(cfg.owner_chat_id, "\n".join(lines))

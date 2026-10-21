@@ -1,4 +1,4 @@
-"""SQLite-хранилище: проекты, выданные советы, отчёты пользователя, служебное состояние."""
+"""SQLite-хранилище: входящие задачи, проекты, советы, отчёты, служебное состояние."""
 
 from __future__ import annotations
 
@@ -30,6 +30,13 @@ CREATE TABLE IF NOT EXISTS reports (
     project TEXT NOT NULL,
     text TEXT NOT NULL,
     created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS tasks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    text TEXT NOT NULL,
+    done INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    done_at TEXT
 );
 CREATE TABLE IF NOT EXISTS state (
     key TEXT PRIMARY KEY,
@@ -124,6 +131,39 @@ class DB:
             "SELECT 1 FROM reports WHERE project = ? AND created_at >= ? LIMIT 1", (project, since_iso)
         ).fetchone()
         return row is not None
+
+    # --- Входящие задачи ----------------------------------------------------
+    def add_task(self, text: str) -> int:
+        cur = self.conn.execute("INSERT INTO tasks (text, created_at) VALUES (?, ?)",
+                                (text, _now()))
+        self.conn.commit()
+        return cur.lastrowid
+
+    def open_tasks(self) -> list[dict]:
+        rows = self.conn.execute("SELECT * FROM tasks WHERE done = 0 ORDER BY id").fetchall()
+        return [dict(r) for r in rows]
+
+    def done_tasks_since(self, since_iso: str) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT * FROM tasks WHERE done = 1 AND done_at >= ? ORDER BY done_at", (since_iso,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def complete_task(self, task_id: int) -> dict | None:
+        row = self.conn.execute("SELECT * FROM tasks WHERE id = ? AND done = 0", (task_id,)).fetchone()
+        if row is None:
+            return None
+        self.conn.execute("UPDATE tasks SET done = 1, done_at = ? WHERE id = ?", (_now(), task_id))
+        self.conn.commit()
+        return dict(row)
+
+    def delete_task(self, task_id: int) -> dict | None:
+        row = self.conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        if row is None:
+            return None
+        self.conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+        self.conn.commit()
+        return dict(row)
 
     # --- Состояние ---------------------------------------------------------
     def get_state(self, key: str) -> str | None:

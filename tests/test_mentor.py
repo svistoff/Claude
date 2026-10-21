@@ -38,6 +38,8 @@ def env(monkeypatch):
 
     async def fake_complete(api_key, base_url, model, system, user, max_tokens=800):
         prompts.append(user)
+        if "организатор" in system:
+            return "🗓 План на сегодня\n⭐ Главное: #1"
         return "🎯 Фокус: тест\n✅ Задача на сегодня (2–4ч): написать 3 клиентам"
 
     monkeypatch.setattr(advisor.llm, "complete", fake_complete)
@@ -71,15 +73,15 @@ def test_stranger_is_refused(env):
 
 def test_add_goal_time_flow(env, tmp_path):
     _, db, tg, h, _ = env
-    run(h.handle(msg(f"/add Companion {tmp_path}")))
-    p = db.get_project("companion")
+    run(h.handle(msg(f"/add Shop {tmp_path}")))
+    p = db.get_project("shop")
     assert p and p["path"] == str(tmp_path) and p["time_local"] == "09:00"
 
-    run(h.handle(msg("/goal companion Бот Лиза, первый платёж в Stars")))
-    assert "Stars" in db.get_project("companion")["goal"]
+    run(h.handle(msg("/goal shop первый платёж за подписку")))
+    assert "подписку" in db.get_project("shop")["goal"]
 
-    run(h.handle(msg("/time companion 08:30 будни")))
-    p = db.get_project("companion")
+    run(h.handle(msg("/time shop 08:30 будни")))
+    p = db.get_project("shop")
     assert p["time_local"] == "08:30" and p["weekdays_only"] == 1
 
 
@@ -156,3 +158,52 @@ def test_evening_asks_only_without_report(env, monkeypatch):
     assert len(evening) == 1 and "«b»" in evening[0]
     # Вечерний вопрос не попадает в память советов.
     assert all(a["kind"] == "advice" for a in db.recent_advice("b"))
+
+
+def test_plain_message_becomes_task(env):
+    _, db, tg, h, _ = env
+    run(h.handle(msg("позвонить бухгалтеру")))
+    run(h.handle(msg("ответить клиенту")))
+    assert [t["text"] for t in db.open_tasks()] == ["позвонить бухгалтеру", "ответить клиенту"]
+    assert "#2" in tg.last
+
+
+def test_done_and_drop(env):
+    _, db, tg, h, _ = env
+    a = db.add_task("a")
+    b = db.add_task("b")
+    run(h.handle(msg(f"/done {a}")))
+    run(h.handle(msg(f"/drop #{b}")))
+    assert db.open_tasks() == []
+    run(h.handle(msg("/done 99")))
+    assert "нет" in tg.last
+
+
+def test_reply_to_advice_is_report_not_task(env):
+    _, db, tg, h, _ = env
+    db.add_project("app")
+    run(h.handle(msg("/now app")))
+    run(h.handle(msg("сделал", reply_to=tg.sent[-1][2])))
+    assert db.open_tasks() == [] and db.recent_reports("app")[0]["text"] == "сделал"
+
+
+def test_plan_uses_open_tasks(env):
+    _, db, tg, h, prompts = env
+    db.add_task("доделать оплату")
+    run(h.handle(msg("/plan")))
+    assert "Главное" in tg.last
+    assert "#1 доделать оплату" in prompts[-1]
+
+
+def test_morning_plan_and_evening_summary(env, monkeypatch):
+    cfg, db, tg, h, _ = env
+    t1 = db.add_task("задача раз")
+    db.add_task("задача два")
+    monkeypatch.setattr(scheduler, "local_now", lambda c: datetime.now().replace(hour=8, minute=30))
+    run(scheduler.tick(cfg, db, tg))
+    run(scheduler.tick(cfg, db, tg))
+    assert sum("План на сегодня" in t for _, t, _ in tg.sent) == 1
+    run(h.handle(msg(f"/done {t1}")))
+    monkeypatch.setattr(scheduler, "local_now", lambda c: datetime.now().replace(hour=20, minute=0))
+    run(scheduler.tick(cfg, db, tg))
+    assert "Сделано: задача раз" in tg.last and "#2 задача два" in tg.last

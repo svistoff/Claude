@@ -94,3 +94,43 @@ async def generate(cfg: Config, db: DB, project: dict) -> str:
     user = "Вот контекст. Выдай один шаг на сегодня в заданном формате.\n\n" + context
     return await llm.complete(cfg.llm_api_key, cfg.llm_base_url, cfg.llm_model,
                               SYSTEM_PROMPT, user)
+
+
+# --- План дня по входящим задачам ------------------------------------------
+
+PLAN_PROMPT = """\
+Ты — личный организатор рабочего дня. Тебе дают список открытых задач
+пользователя (с номерами) и его проекты с целями. Составь реалистичный план на
+сегодня: человек не успеет всё, поэтому выбирай.
+
+Правила:
+- Одна ГЛАВНАЯ задача дня — та, что сильнее всего двигает дело (деньги, клиенты,
+  запуск), а не самая лёгкая.
+- Ещё 1–3 задачи, если они быстрые или срочные.
+- Остальное явно отложи — без чувства вины.
+- Если задача размытая («разобраться с ботом») — переформулируй в первый
+  конкретный шаг.
+- Ссылайся на номера задач (#N), чтобы их можно было закрыть командой /done N.
+
+Формат:
+🗓 План на сегодня
+⭐ Главное: #N — <формулировка> (почему это важнее всего)
+• #N — <...>
+⏸ Отложить: #N, #N — <одной фразой почему>
+
+Без вступлений. По-русски. Коротко."""
+
+
+def build_plan_context(db: DB) -> str:
+    tasks = db.open_tasks()
+    parts = ["Открытые задачи:\n" + "\n".join(f"#{t['id']} {t['text']}" for t in tasks)]
+    projects = [p for p in db.list_projects() if p["enabled"]]
+    if projects:
+        parts.append("Проекты и цели:\n" + "\n".join(
+            f"- {p['name']}: {p['goal'] or 'цель не задана'}" for p in projects))
+    return "\n\n".join(parts)
+
+
+async def plan_day(cfg: Config, db: DB) -> str:
+    return await llm.complete(cfg.llm_api_key, cfg.llm_base_url, cfg.llm_model,
+                              PLAN_PROMPT, build_plan_context(db))

@@ -30,6 +30,7 @@ class Config:
     llm_base_url: str = "https://api.deepseek.com"
     llm_model: str = "deepseek-flash"
     tz_offset_hours: int = 5
+    plan_time: str = "08:30"
     default_time: str = "09:00"
     evening_time: str = "20:00"
     db_path: str = "data/mentor.db"
@@ -52,6 +53,7 @@ def load() -> Config:
         llm_base_url=os.environ.get("LLM_BASE_URL", "https://api.deepseek.com"),
         llm_model=os.environ.get("LLM_MODEL", "deepseek-flash"),
         tz_offset_hours=int(os.environ.get("TZ_OFFSET_HOURS", "5")),
+        plan_time=os.environ.get("PLAN_TIME", "08:30"),
         default_time=os.environ.get("DEFAULT_TIME", "09:00"),
         evening_time=os.environ.get("EVENING_TIME", "20:00"),
         db_path=db_path,
