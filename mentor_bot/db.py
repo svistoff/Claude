@@ -196,6 +196,16 @@ class DB:
         self.conn.commit()
         return self.get_task(task_id) if cur.rowcount else None
 
+    def append_task(self, task_id: int, extra: str) -> dict | None:
+        """Дополнить открытую задачу деталью (план и советы видят её в тексте задачи)."""
+        task = self.get_task(task_id)
+        if not task or task["done"]:
+            return None
+        text = f"{task['text']} — {extra}"[:600]
+        self.conn.execute("UPDATE tasks SET text = ? WHERE id = ?", (text, task_id))
+        self.conn.commit()
+        return self.get_task(task_id)
+
     def postpone_task(self, task_id: int, until: str) -> dict | None:
         """Отложить: скрыть из плана до даты `until` и учесть перенос."""
         cur = self.conn.execute(

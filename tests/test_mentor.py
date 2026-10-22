@@ -551,6 +551,16 @@ def test_assistant_done_and_ignores_bad_ids(env, monkeypatch):
     assert db.get_task(a)["done"] == 1 and db.open_tasks() == []
 
 
+def test_assistant_appends_message_to_existing_task(env, monkeypatch):
+    _, db, _, h, _ = env
+    a = db.add_task("Отчёт")
+    set_ai(monkeypatch, f'{{"reply": "Дополнил #{a}.", "actions": ['
+           f'{{"type": "append_task", "id": {a}, "text": "цифры за сентябрь"}},'
+           f'{{"type": "append_task", "id": 999, "text": "x"}}]}}')
+    run(h.handle(msg("по отчёту — нужны цифры за сентябрь")))
+    assert db.get_task(a)["text"] == "Отчёт — цифры за сентябрь" and len(db.open_tasks()) == 1
+
+
 def test_memory_and_history_go_into_next_prompt(env, monkeypatch):
     _, db, _, h, _ = env
     seen = set_ai(monkeypatch, '{"reply": "ок", "actions": [{"type": "remember", "text": "Работаю по утрам"}]}')

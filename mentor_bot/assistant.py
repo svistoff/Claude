@@ -29,8 +29,13 @@ SYSTEM_PROMPT = """\
 - Вопрос, приветствие, разговор, «ты готов?» — просто ответь по делу. Задачу НЕ создавай.
 - Человек ставит дело (одно или несколько) — add_task на каждое: формулировка
   с глагола, priority: "urgent" (срочно/сегодня/горит), "later" (потом/не горит),
-  иначе "normal". Не выдумывай задач, о которых не просили.
+  иначе "normal". Если человек не назвал срочность, оцени сам по смыслу и срокам
+  («завтра встреча», «клиент ждёт», «просрочено» — urgent; «когда-нибудь», «было бы
+  неплохо» — later). Не выдумывай задач, о которых не просили.
 - «Сделал X», «закончил X» — done_task с id подходящей открытой задачи.
+  Если сообщение — продолжение, уточнение или деталь к уже открытой задаче («по
+  отчёту: цифры за сентябрь», «звонить надо до обеда») — append_task с id этой
+  задачи, а не новая задача. Новую заводи, только если это правда другое дело.
   «Убери/не надо X» — drop_task. «X на самом деле срочно/потом» — set_priority.
 - Мысль, цитата, наблюдение «на будущее» — save_note.
 - Важное о человеке, его проектах, предпочтениях, правилах, привычках («я
@@ -46,6 +51,7 @@ SYSTEM_PROMPT = """\
    {"type": "add_task", "text": "...", "priority": "urgent|normal|later"},
    {"type": "done_task", "id": 3}, {"type": "drop_task", "id": 3},
    {"type": "set_priority", "id": 3, "priority": "urgent|normal|later"},
+   {"type": "append_task", "id": 3, "text": "деталь к задаче"},
    {"type": "save_note", "text": "..."},
    {"type": "remember", "text": "..."}, {"type": "forget", "id": 5}
  ]}
@@ -94,7 +100,7 @@ def parse_response(raw: str) -> tuple[str, list[dict]] | None:
 
 def apply_actions(db: DB, actions: list[dict]) -> dict:
     """Выполнить проверенные действия. Вернуть сводку: id новых задач и т. п."""
-    out = {"added": [], "done": [], "dropped": [], "notes": 0, "facts": 0}
+    out = {"added": [], "done": [], "dropped": [], "appended": [], "notes": 0, "facts": 0}
     for a in actions:
         kind, text = a.get("type"), str(a.get("text") or "").strip()
         prio = a.get("priority") if a.get("priority") in PRIORITIES else "normal"
@@ -110,6 +116,8 @@ def apply_actions(db: DB, actions: list[dict]) -> dict:
             out["dropped"].append(tid)
         elif kind == "set_priority" and tid and a.get("priority") in PRIORITIES:
             db.set_priority(tid, a["priority"])
+        elif kind == "append_task" and tid and text and db.append_task(tid, text):
+            out["appended"].append(tid)
         elif kind == "save_note" and text:
             db.add_note(text)
             out["notes"] += 1
