@@ -332,9 +332,14 @@ router.get('/report', (req, res) => {
   <div>Средний разговор<br><b>${fmtDur(s.avg_duration_sec)}</b></div>
   <div>Оценка ИИ, средняя<br><b>${s.ai_avg_probability == null ? '—' : s.ai_avg_probability + '%'}</b><br><span class="muted">разобрано ${s.ai_analyzed}</span></div>
 </div>
-<h2>По номерам</h2>
-<table><tr><th>Номер</th><th>Всего</th><th>Принято</th><th>Пропущено</th></tr>
-${s.numbers.filter(n => n.total).map(n => `<tr><td>${esc(n.name)}<br><span class="muted">${esc(n.phone)}</span></td><td>${n.total}</td><td>${n.accepted}</td><td>${n.missed}</td></tr>`).join('') || '<tr><td colspan="4">Нет звонков</td></tr>'}
+<h2>По салонам</h2>
+<table><tr><th>Салон</th><th>Входящих</th><th>Принято</th><th>Пропущено</th><th>Исходящих</th></tr>
+${s.salons.map(x => `<tr><td><b>${esc(x.salon)}</b></td><td>${x.incoming}</td><td>${x.accepted}</td><td>${x.missed}</td><td>${x.outgoing}</td></tr>`).join('')}
+</table>
+<p class="muted">Прямые звонки на номера салонов (куда переадресуются анкеты) не учитываются.</p>
+<h2>По номерам (анкетам)</h2>
+<table><tr><th>Анкета</th><th>Салон</th><th>Всего</th><th>Принято</th><th>Пропущено</th></tr>
+${s.numbers.filter(n => n.total).map(n => `<tr><td>${esc(n.name)}<br><span class="muted">${esc(n.phone)}</span></td><td>${esc(n.salon || '—')}</td><td>${n.total}</td><td>${n.accepted}</td><td>${n.missed}</td></tr>`).join('') || '<tr><td colspan="5">Нет звонков</td></tr>'}
 </table>
 <h2>Оценки ИИ (последние ${analyzed.length})</h2>
 <table><tr><th>Время</th><th>Номер</th><th>Оценка</th><th>Комментарий</th></tr>

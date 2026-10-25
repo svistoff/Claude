@@ -664,7 +664,6 @@ function fwPeriodControls(key, days) {
     <label>С <input id="fw-from" type="date" value="${r.from}"></label>
     <label>По <input id="fw-to" type="date" value="${r.to}"></label>
     <button class="primary" onclick="fwApplyRange('${key}')">Применить</button>
-    ${key === 'calls' ? `<button onclick="window.open('/api/fw/report?date_from=${r.from}&date_to=${r.to}','_blank')">Отчёт (PDF)</button>` : ''}
   </div>`;
 }
 function fwApplyRange(key) {
@@ -2015,9 +2014,33 @@ RENDERERS.reports = async function renderReports() {
         </div>
         <p class="muted" style="margin-top:8px">Откроется в новой вкладке — кнопка «Сохранить в PDF» внутри отчёта.</p>
       </div>
+      <div class="card"><h3>Fuckwell</h3>
+        <div class="row" style="flex-direction:column;align-items:stretch">
+          <select id="rep-fw-period" onchange="document.getElementById('rep-fw-dates').style.display=this.value==='custom'?'flex':'none'">
+            <option value="7">Неделя</option><option value="30">Месяц</option><option value="custom">Свои даты</option></select>
+          <div id="rep-fw-dates" class="row" style="display:none;flex-wrap:wrap;gap:8px">
+            <label>С <input id="rep-fw-from" type="date"></label><label>По <input id="rep-fw-to" type="date"></label>
+          </div>
+          <button class="primary" onclick="openFuckwellReport()">Сформировать</button>
+        </div>
+        <p class="muted" style="margin-top:8px">Звонки на анкеты, по салонам и номерам, оценки ИИ.</p>
+      </div>
     </div>
   `;
 };
+
+function openFuckwellReport() {
+  const period = document.getElementById('rep-fw-period').value;
+  let range;
+  if (period === 'custom') {
+    const from = document.getElementById('rep-fw-from').value, to = document.getElementById('rep-fw-to').value;
+    if (!from || !to) return alert('Укажите обе даты');
+    range = from <= to ? { from, to } : { from: to, to: from };
+  } else {
+    range = fwDefaultRange(Number(period));
+  }
+  window.open(`/api/fw/report?date_from=${range.from}&date_to=${range.to}`, '_blank');
+}
 
 // ================= НАСТРОЙКИ =================
 RENDERERS.settings = async function renderSettings() {
