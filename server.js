@@ -251,8 +251,16 @@ app.put('/api/ad-numbers/:id', auth.requireAdmin, (req, res) => {
     if (body.placed_at && !/^\d{4}-\d{2}-\d{2}$/.test(body.placed_at)) return res.status(400).json({ error: 'Дата в формате ГГГГ-ММ-ДД' });
     placedAt = body.placed_at || null;
   }
-  db.prepare('UPDATE ad_phone_numbers SET label=?, note=?, placed_at=? WHERE id=?')
-    .run(body.label ?? row.label, body.note ?? row.note, placedAt, row.id);
+  let phone = row.phone;
+  if (body.phone !== undefined) {
+    phone = normalizePhone(body.phone);
+    if (!phone) return res.status(400).json({ error: 'Некорректный номер' });
+    if (db.prepare('SELECT 1 FROM ad_phone_numbers WHERE phone = ? AND id != ?').get(phone, row.id)) return res.status(400).json({ error: 'Такой номер уже добавлен' });
+  }
+  const label = body.label !== undefined ? String(body.label).trim() : row.label;
+  if (!label) return res.status(400).json({ error: 'Метка не может быть пустой' });
+  db.prepare('UPDATE ad_phone_numbers SET label=?, phone=?, note=?, placed_at=? WHERE id=?')
+    .run(label, phone, body.note !== undefined ? (String(body.note).trim() || null) : row.note, placedAt, row.id);
   res.json(db.prepare('SELECT * FROM ad_phone_numbers WHERE id = ?').get(row.id));
 });
 

@@ -859,7 +859,7 @@ function fwDrawNumbers() {
         <td>${n.active ? '<span class="tag done">активен</span>' : '<span class="tag">отключён</span>'}</td>
         <td class="row" style="justify-content:flex-end">
           <button onclick="fwUpdateNumber(${n.id}, {active: ${!n.active}})">${n.active ? 'Отключить' : 'Включить'}</button>
-          <button onclick="fwEditingId=${n.id};fwDrawNumbers()">✎</button>
+          <button onclick="fwEditingId=${n.id};fwDrawNumbers()">✎ Изменить</button>
           <button class="danger" onclick="fwDeleteNumber(${n.id})">✕</button></td></tr>`).join('')
       || '<tr><td colspan="6" class="muted">Ничего не найдено</td></tr>');
 }
@@ -1905,12 +1905,37 @@ function noteOrLink(note) {
   return /^https?:\/\//i.test(trimmed) ? `<a href="${esc(trimmed)}" target="_blank" rel="noopener">ссылка</a>` : esc(trimmed);
 }
 
+let adNumbersList = [], editingAdNumberId = null;
 function renderAdNumbersRows(rows) {
+  adNumbersList = rows;
   return `<tr><th>Метка</th><th>Номер</th><th>Заметка</th><th title="С этой даты считается тренд анкеты — поменяйте, когда заменили анкету на этом номере">Размещена с</th><th></th></tr>` +
-    (rows.map(r => `<tr><td>${esc(r.label)}</td><td>${esc(r.phone)}</td><td>${noteOrLink(r.note)}</td>
+    (rows.map(r => r.id === editingAdNumberId ? `<tr>
+      <td><input id="ad-edit-label" value="${esc(r.label)}"></td>
+      <td><input id="ad-edit-phone" value="${esc(r.phone)}"></td>
+      <td><input id="ad-edit-note" value="${esc(r.note || '')}" style="min-width:180px"></td>
       <td><input type="date" value="${esc(r.placed_at || '')}" onchange="setAdPlacedAt(${r.id}, this.value)"></td>
-      <td><button class="danger" onclick="deleteAdNumber(${r.id})">Удалить</button></td></tr>`).join('')
+      <td class="row" style="justify-content:flex-end"><button class="primary" onclick="saveAdNumber(${r.id})">Сохранить</button><button onclick="editAdNumber(null)">Отмена</button></td></tr>`
+    : `<tr><td>${esc(r.label)}</td><td>${esc(r.phone)}</td><td>${noteOrLink(r.note)}</td>
+      <td><input type="date" value="${esc(r.placed_at || '')}" onchange="setAdPlacedAt(${r.id}, this.value)"></td>
+      <td class="row" style="justify-content:flex-end"><button onclick="editAdNumber(${r.id})">✎ Изменить</button><button class="danger" onclick="deleteAdNumber(${r.id})">Удалить</button></td></tr>`).join('')
     || '<tr><td colspan="5" class="muted">Номеров не добавлено</td></tr>');
+}
+function editAdNumber(id) {
+  editingAdNumberId = id;
+  document.getElementById('ad-numbers-table').innerHTML = renderAdNumbersRows(adNumbersList);
+}
+async function saveAdNumber(id) {
+  const body = {
+    label: document.getElementById('ad-edit-label').value.trim(),
+    phone: document.getElementById('ad-edit-phone').value.trim(),
+    note: document.getElementById('ad-edit-note').value.trim()
+  };
+  if (!body.label || !body.phone) return alert('Метка и номер не должны быть пустыми');
+  try {
+    await api('/ad-numbers/' + id, { method: 'PUT', body });
+    editingAdNumberId = null;
+    RENDERERS['ad-numbers']();
+  } catch (e) { alert(e.message); }
 }
 async function setAdPlacedAt(id, value) {
   try { await api('/ad-numbers/' + id, { method: 'PUT', body: { placed_at: value || null } }); }
