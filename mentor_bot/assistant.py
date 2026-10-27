@@ -8,11 +8,14 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime
 
 from . import llm
 from .config import Config
 from .db import DB
+
+log = logging.getLogger("mentor_bot.assistant")
 
 SYSTEM_PROMPT = """\
 Ты — личный ИИ-секретарь владельца: ведёшь его задачи, мысли и память, помогаешь
@@ -37,6 +40,9 @@ SYSTEM_PROMPT = """\
   отчёту: цифры за сентябрь», «звонить надо до обеда») — append_task с id этой
   задачи, а не новая задача. Новую заводи, только если это правда другое дело.
   «Убери/не надо X» — drop_task. «X на самом деле срочно/потом» — set_priority.
+- «Переделай задачу на …», «уточни задачу …» — edit_task с id и новой формулировкой
+  (не создавай новую). Если человек перечисляет несколько правок сразу — сделай все.
+- «Запиши в сделанное …», «я уже сделал …» (дела, которых нет в списке) — log_done.
 - Мысль, цитата, наблюдение «на будущее» — save_note.
 - Важное о человеке, его проектах, предпочтениях, правилах, привычках («я
   работаю по утрам», «клиент — салоны красоты») — remember: короткий
@@ -50,6 +56,8 @@ SYSTEM_PROMPT = """\
  "actions": [
    {"type": "add_task", "text": "...", "priority": "urgent|normal|later"},
    {"type": "done_task", "id": 3}, {"type": "drop_task", "id": 3},
+   {"type": "edit_task", "id": 3, "text": "новая формулировка"},
+   {"type": "log_done", "text": "что уже сделано"},
    {"type": "set_priority", "id": 3, "priority": "urgent|normal|later"},
    {"type": "append_task", "id": 3, "text": "деталь к задаче"},
    {"type": "save_note", "text": "..."},
@@ -70,7 +78,7 @@ def build_context(db: DB, now_local: datetime, text: str) -> str:
                  if facts else "О человеке пока ничего не запомнено.")
     tasks = db.open_tasks()
     parts.append("Открытые задачи:\n" + "\n".join(
-        f"#{t['id']} {MARK[t['priority']]} {t['text']}" for t in tasks[:40])
+        f"#{t['id']} {MARK[t['priority']]} {t['text'][:300]}" for t in tasks[:40])
         if tasks else "Открытых задач нет.")
     chat = db.recent_chat(12)
     if chat:
@@ -100,7 +108,7 @@ def parse_response(raw: str) -> tuple[str, list[dict]] | None:
 
 def apply_actions(db: DB, actions: list[dict]) -> dict:
     """Выполнить проверенные действия. Вернуть сводку: id новых задач и т. п."""
-    out = {"added": [], "done": [], "dropped": [], "appended": [], "notes": 0, "facts": 0}
+    out = {"added": [], "done": [], "dropped": [], "edited": [], "appended": [], "notes": 0, "facts": 0}
     for a in actions:
         kind, text = a.get("type"), str(a.get("text") or "").strip()
         prio = a.get("priority") if a.get("priority") in PRIORITIES else "normal"
@@ -114,6 +122,10 @@ def apply_actions(db: DB, actions: list[dict]) -> dict:
             out["done"].append(tid)
         elif kind == "drop_task" and tid and db.delete_task(tid):
             out["dropped"].append(tid)
+        elif kind == "edit_task" and tid and text and db.edit_task(tid, text):
+            out["edited"].append(tid)
+        elif kind == "log_done" and text:
+            out["done"].append(db.add_done_task(text))
         elif kind == "set_priority" and tid and a.get("priority") in PRIORITIES:
             db.set_priority(tid, a["priority"])
         elif kind == "append_task" and tid and text and db.append_task(tid, text):
@@ -132,9 +144,10 @@ def apply_actions(db: DB, actions: list[dict]) -> dict:
 async def respond(cfg: Config, db: DB, now_local: datetime, text: str) -> tuple[str, dict] | None:
     """Обработать сообщение. None — модель ответила не по формату (решает вызывающий)."""
     raw = await llm.complete(cfg.llm_api_key, cfg.llm_base_url, cfg.llm_model, SYSTEM_PROMPT,
-                             build_context(db, now_local, text), max_tokens=900)
+                             build_context(db, now_local, text), max_tokens=1800, json_mode=True)
     parsed = parse_response(raw)
     if parsed is None:
+        log.warning("ответ ИИ не по формату: %r", raw[:500])
         return None
     reply, actions = parsed
     db.add_chat("user", text)

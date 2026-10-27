@@ -11,6 +11,12 @@ from .db import DB
 from .llm import LLMError
 
 
+def _short(text: str, limit: int = 90) -> str:
+    """Одна строка: длинные задачи и переносы строк не ломают сообщение."""
+    text = " ".join(text.split())
+    return text if len(text) <= limit else text[:limit - 1].rstrip() + "…"
+
+
 def local_now(cfg: Config) -> datetime:
     return datetime.now(timezone.utc) + timedelta(hours=cfg.tz_offset_hours)
 
@@ -108,8 +114,12 @@ async def tick(cfg: Config, db: DB, tg) -> None:
         if done or left:
             lines = ["🌙 Итог дня"]
             if done:
-                lines.append("✅ Сделано: " + "; ".join(t["text"] for t in done))
+                lines.append("\n✅ Сделано:")
+                lines += [f"• {_short(t['text'])}" for t in done]
             if left:
-                lines.append("📋 Открыто: " + "; ".join(f"#{t['id']} {t['text']}" for t in left[:10]))
-                lines.append("Закрой сделанное: /done номер. Остальное завтра утром разложу снова.")
+                lines.append(f"\n📋 Открыто ({len(left)}):")
+                lines += [f"#{t['id']} {_short(t['text'])}" for t in left[:10]]
+                if len(left) > 10:
+                    lines.append(f"…и ещё {len(left) - 10} · /tasks")
+                lines.append("\nЗакрой сделанное: /done номер. Остальное завтра утром разложу снова.")
             await tg.send(cfg.owner_chat_id, "\n".join(lines))

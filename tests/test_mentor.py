@@ -49,7 +49,7 @@ def env(monkeypatch):
     tg = FakeTG()
     prompts: list[str] = []
 
-    async def fake_complete(api_key, base_url, model, system, user, max_tokens=800):
+    async def fake_complete(api_key, base_url, model, system, user, max_tokens=800, **kw):
         prompts.append(user)
         if "организатор" in system:
             return "🗓 План на сегодня\n⭐ Главное: #1"
@@ -219,7 +219,7 @@ def test_morning_plan_and_evening_summary(env, monkeypatch):
     run(h.handle(msg(f"/done {t1}")))
     monkeypatch.setattr(scheduler, "local_now", lambda c: datetime.now().replace(hour=20, minute=0))
     run(scheduler.tick(cfg, db, tg))
-    assert "Сделано: задача раз" in tg.last and "#2 задача два" in tg.last
+    assert "• задача раз" in tg.last and "#2 задача два" in tg.last
 
 
 # --- Срочность, порция на день, кнопки ---------------------------------------
@@ -342,7 +342,7 @@ def stt_env(env, monkeypatch):
     async def fake_stt(api_key, base_url, model, audio, **kw):
         return said["text"]
 
-    async def fake_complete(api_key, base_url, model, system, user, max_tokens=800):
+    async def fake_complete(api_key, base_url, model, system, user, max_tokens=800, **kw):
         if "ИИ-секретарь" in system:
             return ('```json\n{"reply": "Записал две задачи", "actions": ['
                     '{"type": "add_task", "text": "Позвонить бухгалтеру", "priority": "urgent"},'
@@ -513,7 +513,7 @@ def set_ai(monkeypatch, answer):
     """Подменить ИИ; answer — строка или функция(user_prompt) -> строка. Возвращает список промптов."""
     seen: list[str] = []
 
-    async def fake(api_key, base_url, model, system, user, max_tokens=800):
+    async def fake(api_key, base_url, model, system, user, max_tokens=800, **kw):
         seen.append(user)
         return answer(user) if callable(answer) else answer
 
@@ -602,3 +602,26 @@ def test_memory_commands(env):
     assert "Клиент — салоны" in tg.last
     run(h.handle(msg(f"/forget {fid}")))
     assert db.list_facts() == []
+
+
+def test_assistant_edits_task_and_logs_done(env, monkeypatch):
+    _, db, tg, h, _ = env
+    a = db.add_task("отправить предложение в Альфа-банк")
+    b = db.add_task("ролик")
+    set_ai(monkeypatch, f'{{"reply": "Готово", "actions": ['
+           f'{{"type": "drop_task", "id": {b}}},'
+           f'{{"type": "edit_task", "id": {a}, "text": "Отправить предложение в другие банки"}},'
+           f'{{"type": "log_done", "text": "Обсудил конкурс с Ульяной"}}]}}')
+    run(h.handle(msg("про ролик забудь; переделай первую задачу; конкурс обсудил")))
+    assert [t["text"] for t in db.open_tasks()] == ["Отправить предложение в другие банки"]
+    assert [t["text"] for t in db.done_tasks_since("2000-01-01")] == ["Обсудил конкурс с Ульяной"]
+
+
+def test_evening_summary_is_one_task_per_line_and_short(env):
+    cfg, db, tg, _, _ = env
+    db.add_task("очень длинная задача " * 30)
+    now = scheduler.local_now(cfg)
+    cfg.evening_time = now.strftime("%H:%M")
+    run(scheduler.tick(cfg, db, tg))
+    text = tg.last
+    assert "📋 Открыто (1):" in text and len(text) < 300 and "…" in text

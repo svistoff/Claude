@@ -214,6 +214,20 @@ class DB:
         self.conn.commit()
         return self.get_task(task_id) if cur.rowcount else None
 
+    def edit_task(self, task_id: int, text: str) -> bool:
+        cur = self.conn.execute("UPDATE tasks SET text = ? WHERE id = ? AND done = 0", (text, task_id))
+        self.conn.commit()
+        return cur.rowcount > 0
+
+    def add_done_task(self, text: str) -> int:
+        """Записать уже выполненное дело (попадёт в вечерний итог)."""
+        now = _now()
+        cur = self.conn.execute(
+            "INSERT INTO tasks (text, done, created_at, done_at) VALUES (?, 1, ?, ?)",
+            (text, now, now))
+        self.conn.commit()
+        return cur.lastrowid
+
     def mark_shown(self, task_ids: list[int], day: str) -> None:
         self.conn.executemany("UPDATE tasks SET last_shown = ? WHERE id = ?",
                               [(day, i) for i in task_ids])

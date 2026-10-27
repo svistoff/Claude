@@ -11,7 +11,7 @@ from .db import DB
 from . import assistant, github, stt
 from . import tasks as tasks_mod
 from .llm import LLMError
-from .scheduler import local_now, send_advice, send_plan
+from .scheduler import _short, local_now, send_advice, send_plan
 
 MAX_VOICE_SECONDS = 300
 NAME_RE = re.compile(r"^[\w-]{1,40}$")
@@ -295,7 +295,7 @@ class Handler:
         order = {"urgent": 0, "normal": 1, "later": 2}
         tasks.sort(key=lambda t: (order[t["priority"]], t["id"]))
         await self.reply(chat_id, "📋 Открытые задачи:\n" +
-                         "\n".join(f"{marks[t['priority']]} #{t['id']} {t['text']}" for t in tasks) +
+                         "\n".join(f"{marks[t['priority']]} #{t['id']} {_short(t['text'], 160)}" for t in tasks) +
                          "\n\nСделал — /done номер. План дня — /plan")
 
     async def cmd_priority(self, chat_id: int, args: list[str], prio: str) -> None:
