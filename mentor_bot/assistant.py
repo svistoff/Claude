@@ -144,7 +144,7 @@ def apply_actions(db: DB, actions: list[dict]) -> dict:
 async def respond(cfg: Config, db: DB, now_local: datetime, text: str) -> tuple[str, dict] | None:
     """Обработать сообщение. None — модель ответила не по формату (решает вызывающий)."""
     raw = await llm.complete(cfg.llm_api_key, cfg.llm_base_url, cfg.llm_model, SYSTEM_PROMPT,
-                             build_context(db, now_local, text), max_tokens=1800, json_mode=True)
+                             build_context(db, now_local, text), max_tokens=4000, json_mode=True)
     parsed = parse_response(raw)
     if parsed is None:
         log.warning("ответ ИИ не по формату: %r", raw[:500])

@@ -625,3 +625,50 @@ def test_evening_summary_is_one_task_per_line_and_short(env):
     run(scheduler.tick(cfg, db, tg))
     text = tg.last
     assert "📋 Открыто (1):" in text and len(text) < 300 and "…" in text
+
+
+def _fake_httpx(monkeypatch, replies):
+    """Подменяет httpx.AsyncClient: отдаёт ответы по очереди, запоминает max_tokens."""
+    from mentor_bot import llm as llm_mod
+    seen = []
+
+    class Resp:
+        status_code = 200
+
+        def __init__(self, data):
+            self._data = data
+            self.text = str(data)
+
+        def json(self):
+            return self._data
+
+    class Client:
+        def __init__(self, *a, **kw):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def post(self, url, json, headers):
+            seen.append(json["max_tokens"])
+            content, finish = replies[len(seen) - 1]
+            return Resp({"choices": [{"message": {"content": content}, "finish_reason": finish}]})
+
+    monkeypatch.setattr(llm_mod.httpx, "AsyncClient", Client)
+    return llm_mod, seen
+
+
+def test_llm_retries_when_reasoning_eats_token_limit(monkeypatch):
+    llm_mod, seen = _fake_httpx(monkeypatch, [("", "length"), ("План готов", "stop")])
+    out = asyncio.run(llm_mod.complete("k", "http://x", "m", "s", "u"))
+    assert out == "План готов"
+    assert seen == [llm_mod.DEFAULT_MAX_TOKENS, llm_mod.RETRY_MAX_TOKENS]
+
+
+def test_llm_empty_after_retry_is_explained(monkeypatch):
+    llm_mod, _ = _fake_httpx(monkeypatch, [("", "length"), ("", "length")])
+    with pytest.raises(llm_mod.LLMError, match="лимит токенов"):
+        asyncio.run(llm_mod.complete("k", "http://x", "m", "s", "u"))
