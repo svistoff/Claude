@@ -20,9 +20,14 @@ RETRY_MAX_TOKENS = 8000
 async def complete(api_key: str, base_url: str, model: str, system: str, user: str,
                    max_tokens: int = DEFAULT_MAX_TOKENS, json_mode: bool = False) -> str:
     content, finish = await _request(api_key, base_url, model, system, user, max_tokens, json_mode)
-    if not content and finish == "length" and max_tokens < RETRY_MAX_TOKENS:
-        content, finish = await _request(api_key, base_url, model, system, user,
-                                         RETRY_MAX_TOKENS, json_mode)
+    # Обрыв по длине — и пустой ответ, и недописанный: повторяем с большим запасом.
+    if finish == "length" and max_tokens < RETRY_MAX_TOKENS:
+        retry, retry_finish = await _request(api_key, base_url, model, system, user,
+                                             RETRY_MAX_TOKENS, json_mode)
+        if retry or not content:
+            content, finish = retry, retry_finish
+    if content and finish == "length" and not json_mode:
+        return content + "…\n\n(ответ обрезан по лимиту длины)"
     if not content and finish == "length":
         raise LLMError("модель упёрлась в лимит токенов, не дописав ответ "
                        "(похоже на рассуждающую модель — смени LLM_MODEL или повтори позже)")

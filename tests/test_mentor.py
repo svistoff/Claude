@@ -672,3 +672,17 @@ def test_llm_empty_after_retry_is_explained(monkeypatch):
     llm_mod, _ = _fake_httpx(monkeypatch, [("", "length"), ("", "length")])
     with pytest.raises(llm_mod.LLMError, match="лимит токенов"):
         asyncio.run(llm_mod.complete("k", "http://x", "m", "s", "u"))
+
+
+def test_llm_retries_truncated_answer(monkeypatch):
+    llm_mod, seen = _fake_httpx(monkeypatch, [("🗓 План на сегодня\n⭐ Главное: #2 — р", "length"),
+                                              ("🗓 План на сегодня\n⭐ Главное: #2", "stop")])
+    out = asyncio.run(llm_mod.complete("k", "http://x", "m", "s", "u"))
+    assert out == "🗓 План на сегодня\n⭐ Главное: #2"
+    assert len(seen) == 2
+
+
+def test_llm_marks_answer_still_truncated(monkeypatch):
+    llm_mod, _ = _fake_httpx(monkeypatch, [("начало", "length"), ("начало подлиннее", "length")])
+    out = asyncio.run(llm_mod.complete("k", "http://x", "m", "s", "u"))
+    assert out.startswith("начало подлиннее…") and "обрезан" in out
