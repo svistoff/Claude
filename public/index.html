@@ -323,9 +323,12 @@ async function loadDashboardStats() {
   const { stats } = await api('/dashboard/salon-stats?' + dashboardQuery());
   const total = key => stats.reduce((sum, s) => sum + s[key], 0);
   document.getElementById('dash-chart').innerHTML = renderSalonStatsChart(stats)
-    + (stats.length ? `<div style="margin-top:10px"><b>Итого по сети:</b> звонков <b>${total('calls')}</b>,
-        пропущено <b style="color:var(--danger)">${total('missed')}</b>,
-        перезвонили <b style="color:var(--ok)">${total('called_back')}</b></div>` : '');
+    + (stats.length ? `<div style="margin-top:10px"><b>Итого по сети:</b> входящих <b>${total('calls')}</b>,
+        приняли сразу <b>${total('answered')}</b>,
+        пропущено <b style="color:var(--danger)">${total('missed')}</b>, из них перезвонили <b style="color:var(--ok)">${total('called_back')}</b>
+        → <b>поговорили с гостями: ${total('answered') + total('called_back')}</b>,
+        не дозвонились: <b style="color:var(--danger)">${total('missed') - total('called_back')}</b></div>
+        <p class="muted" style="margin:6px 0 0">Считаются только входящие звонки гостей, каждый звонок отдельно. «Перезвонили» — часть пропущенных, которым потом перезвонили.</p>` : '');
 }
 
 // За один день график по дням не показываем — это одна точка,
@@ -372,7 +375,7 @@ function renderSalonStatsChart(stats) {
       ${groups}
     </svg>
     <div class="row" style="gap:16px;margin-top:8px;font-size:12px">
-      <span><span style="display:inline-block;width:10px;height:10px;background:var(--accent);border-radius:2px;margin-right:4px"></span>Звонки</span>
+      <span><span style="display:inline-block;width:10px;height:10px;background:var(--accent);border-radius:2px;margin-right:4px"></span>Входящие</span>
       <span><span style="display:inline-block;width:10px;height:10px;background:var(--danger);border-radius:2px;margin-right:4px"></span>Пропущено</span>
       <span><span style="display:inline-block;width:10px;height:10px;background:var(--ok);border-radius:2px;margin-right:4px"></span>Перезвонили</span>
     </div>`;
@@ -411,7 +414,7 @@ function renderCallsTimeseriesChart(days) {
       ${labels}
     </svg>
     <div class="row" style="gap:16px;margin-top:8px;font-size:12px">
-      <span><span style="display:inline-block;width:10px;height:10px;background:var(--accent);border-radius:2px;margin-right:4px"></span>Звонки</span>
+      <span><span style="display:inline-block;width:10px;height:10px;background:var(--accent);border-radius:2px;margin-right:4px"></span>Входящие</span>
       <span><span style="display:inline-block;width:10px;height:10px;background:var(--danger);border-radius:2px;margin-right:4px"></span>Пропущено</span>
       <span><span style="display:inline-block;width:10px;height:10px;background:var(--ok);border-radius:2px;margin-right:4px"></span>Перезвонили</span>
     </div>`;
@@ -1671,12 +1674,15 @@ RENDERERS['ad-numbers'] = async function renderAdNumbers() {
       <h3>Пул номеров</h3>
       <p class="muted">Все ваши номера из рекламы/анкет/соцсетей со своей меткой (например,
       «Анкета Алиса», «Телеграм-аккаунт») и произвольной заметкой (например, ссылка на анкету).
-      На то, к какому салону относится звонок, это не влияет — только для отчётов.</p>
+      <b>Салон</b> — куда ведёт номер: звонки на него будут записываться в этот салон, даже если
+      UIS дальше переадресует их на общую SIM или сотрудника. Для общих номеров с голосовым меню
+      (несколько салонов на одном номере) оставьте «не указан» — там салон определяется по пункту меню.</p>
       <table id="ad-numbers-table">${renderAdNumbersRows(numbers)}</table>
       <div class="row" style="margin-top:8px;flex-wrap:wrap">
         <input id="new-ad-phone" placeholder="Номер">
         <input id="new-ad-label" placeholder="Метка, например «Анкета Алиса»">
         <input id="new-ad-note" placeholder="Заметка/ссылка (необязательно)" style="min-width:220px">
+        ${adSalonSelect('new-ad-salon', null)}
         <button class="primary" onclick="addAdNumber()">+ Добавить</button>
       </div>
     </div>
@@ -1905,19 +1911,37 @@ function noteOrLink(note) {
 }
 
 let adNumbersList = [], editingAdNumberId = null;
+function adSalonSelect(id, salonId, onchange) {
+  return `<select id="${id}" ${onchange ? `onchange="${onchange}"` : ''}><option value="">салон не указан</option>
+    ${SALONS.map(s => `<option value="${s.id}" ${s.id === salonId ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select>`;
+}
+async function setAdSalon(id, value) {
+  const row = adNumbersList.find(r => r.id === id);
+  const salon = SALONS.find(s => String(s.id) === value);
+  if (value && !confirm(`Звонки на ${row.phone} будут записываться в «${salon.name}», включая уже накопленные. Продолжить?`)) {
+    document.getElementById('ad-salon-' + id).value = row.salon_id ?? '';
+    return;
+  }
+  try {
+    await api('/ad-numbers/' + id, { method: 'PUT', body: { salon_id: value || null } });
+    row.salon_id = value ? Number(value) : null;
+  } catch (e) { alert(e.message); }
+}
 function renderAdNumbersRows(rows) {
   adNumbersList = rows;
-  return `<tr><th>Метка</th><th>Номер</th><th>Заметка</th><th title="С этой даты считается тренд анкеты — поменяйте, когда заменили анкету на этом номере">Размещена с</th><th></th></tr>` +
+  return `<tr><th>Метка</th><th>Номер</th><th>Заметка</th><th>Салон</th><th title="С этой даты считается тренд анкеты — поменяйте, когда заменили анкету на этом номере">Размещена с</th><th></th></tr>` +
     (rows.map(r => r.id === editingAdNumberId ? `<tr>
       <td><input id="ad-edit-label" value="${esc(r.label)}"></td>
       <td><input id="ad-edit-phone" value="${esc(r.phone)}"></td>
       <td><input id="ad-edit-note" value="${esc(r.note || '')}" style="min-width:180px"></td>
+      <td>${adSalonSelect('ad-salon-' + r.id, r.salon_id, `setAdSalon(${r.id}, this.value)`)}</td>
       <td><input type="date" value="${esc(r.placed_at || '')}" onchange="setAdPlacedAt(${r.id}, this.value)"></td>
       <td class="row" style="justify-content:flex-end"><button class="primary" onclick="saveAdNumber(${r.id})">Сохранить</button><button onclick="editAdNumber(null)">Отмена</button></td></tr>`
     : `<tr><td>${esc(r.label)}</td><td>${esc(r.phone)}</td><td>${noteOrLink(r.note)}</td>
+      <td>${adSalonSelect('ad-salon-' + r.id, r.salon_id, `setAdSalon(${r.id}, this.value)`)}</td>
       <td><input type="date" value="${esc(r.placed_at || '')}" onchange="setAdPlacedAt(${r.id}, this.value)"></td>
       <td class="row" style="justify-content:flex-end"><button onclick="editAdNumber(${r.id})">✎ Изменить</button><button class="danger" onclick="deleteAdNumber(${r.id})">Удалить</button></td></tr>`).join('')
-    || '<tr><td colspan="5" class="muted">Номеров не добавлено</td></tr>');
+    || '<tr><td colspan="6" class="muted">Номеров не добавлено</td></tr>');
 }
 function editAdNumber(id) {
   editingAdNumberId = id;
@@ -1946,7 +1970,7 @@ async function addAdNumber() {
   const note = document.getElementById('new-ad-note').value.trim();
   if (!phone || !label) return alert('Укажите номер и метку');
   try {
-    await api('/ad-numbers', { method: 'POST', body: { phone, label, note } });
+    await api('/ad-numbers', { method: 'POST', body: { phone, label, note, salon_id: document.getElementById('new-ad-salon').value || null } });
     RENDERERS['ad-numbers']();
   } catch (e) { alert(e.message); }
 }

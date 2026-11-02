@@ -468,6 +468,14 @@ if (!fwNumberColumns.includes('salon')) {
   `);
 }
 
+// salon_id — в какой салон ведёт номер из пула (анкета/реклама). Если задан,
+// звонок на этот номер записывается в салон по номеру, а не по метке
+// сотрудника UIS: несколько салонов могут принимать звонки одной SIM/сотрудником.
+const adNumberColumns2 = db.prepare("PRAGMA table_info(ad_phone_numbers)").all().map(c => c.name);
+if (!adNumberColumns2.includes('salon_id')) {
+  db.exec(`ALTER TABLE ad_phone_numbers ADD COLUMN salon_id INTEGER REFERENCES salons(id) ON DELETE SET NULL;`);
+}
+
 // первичный владелец, если пользователей ещё нет
 const usersCount = db.prepare('SELECT COUNT(*) AS c FROM users').get().c;
 if (usersCount === 0) {

@@ -124,6 +124,15 @@ function getExcludedCallerNumberSet() {
 // несколько разных меток (разные источники трафика называют его по-разному,
 // например "Чайковского (Жара) (amoCRM)" и просто "Жара"), поэтому это
 // отдельная таблица salon_uis_labels, а не одно поле салона.
+// номер из пула анкет/рекламы -> салон, если в Настройках указано, куда он ведёт
+function getAdNumberSalonMap() {
+  const rows = db.prepare(`
+    SELECT an.phone, an.salon_id FROM ad_phone_numbers an
+    JOIN salons s ON s.id = an.salon_id WHERE s.active = 1
+  `).all();
+  return new Map(rows.map(r => [normalizePhone(r.phone), r.salon_id]));
+}
+
 function getActionNameSalonMap() {
   const map = new Map();
   const rows = db.prepare(`
@@ -194,5 +203,5 @@ function canAccessSalon(user, salonId) {
 module.exports = {
   normalizePhone, findOrCreateClient, getEffectiveChecklist, getAnketaChecklist, getSalonPhoneMap,
   getSharedIvrNumberSet, getExcludedNumberSet, getExcludedCallerNumberSet, getAdPhoneNumberSet,
-  getActionNameSalonMap, adminForUser, canAccessSalon, getForwardingRules, forwardTargetFor, reapplyForwarding
+  getActionNameSalonMap, getAdNumberSalonMap, adminForUser, canAccessSalon, getForwardingRules, forwardTargetFor, reapplyForwarding
 };

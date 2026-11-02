@@ -12,7 +12,7 @@
 const fetch = require('node-fetch');
 const { SocksProxyAgent } = require('socks-proxy-agent');
 const db = require('./db');
-const { normalizePhone, findOrCreateClient, getSalonPhoneMap, getSharedIvrNumberSet, getExcludedNumberSet, getExcludedCallerNumberSet, getActionNameSalonMap, getForwardingRules, forwardTargetFor } = require('./lib');
+const { normalizePhone, findOrCreateClient, getSalonPhoneMap, getSharedIvrNumberSet, getExcludedNumberSet, getExcludedCallerNumberSet, getActionNameSalonMap, getAdNumberSalonMap, getForwardingRules, forwardTargetFor } = require('./lib');
 
 // Прямые исходящие соединения к UIS с этого сервера ловят DPI-блокировку
 // (TCP-соединение и TLS Client Hello уходят, дальше — тишина до таймаута;
@@ -179,6 +179,7 @@ async function resolveSalonByLegs(call, actionNameMap, salonsById) {
 async function ingestCalls(sinceStr, tillStr) {
   const salonsById = new Map(db.prepare('SELECT * FROM salons WHERE active = 1').all().map(s => [s.id, s]));
   const phoneMap = getSalonPhoneMap();
+  const adSalonMap = getAdNumberSalonMap();
   const sharedIvrNumbers = getSharedIvrNumberSet();
   const excludedNumbers = getExcludedNumberSet();
   const excludedCallerNumbers = getExcludedCallerNumberSet();
@@ -206,7 +207,7 @@ async function ingestCalls(sinceStr, tillStr) {
     // даже не логируя как "непривязанные" (не наши данные)
     if (candidate && excludedNumbers.has(candidate)) continue;
 
-    let salon = candidate ? salonsById.get(phoneMap.get(candidate)) : null;
+    let salon = candidate ? salonsById.get(phoneMap.get(candidate) ?? adSalonMap.get(candidate)) : null;
     const numberDesc = c.virtual_phone_number || c.communication_number;
 
     // Метка employees — бесплатная (уже пришла в этом же запросе) и полезна

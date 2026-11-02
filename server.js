@@ -226,16 +226,35 @@ app.delete('/api/excluded-caller-numbers/:id', auth.requireAdmin, (req, res) => 
 // Пул номеров из рекламы/анкет с произвольной меткой — только для отчёта
 // "сколько звонков дала каждая анкета", к резолюции салона отношения не имеет.
 app.get('/api/ad-numbers', auth.requireAdmin, (req, res) => {
-  res.json(db.prepare('SELECT * FROM ad_phone_numbers ORDER BY label, phone').all());
+  res.json(db.prepare(`
+    SELECT an.*, s.name AS salon_name FROM ad_phone_numbers an
+    LEFT JOIN salons s ON s.id = an.salon_id ORDER BY an.label, an.phone
+  `).all());
 });
+
+// номеру из пула указали салон — уже накопленные звонки на этот номер
+// переносятся туда же (с учётом правил переадресации)
+function assignAdNumberCalls(phone, salonId) {
+  db.prepare('UPDATE calls SET salon_id = ?, forwarded_from_salon_id = NULL WHERE dialed_number = ?').run(salonId, phone);
+  reapplyForwarding('2000-01-01 00:00:00');
+}
+function validSalonId(value) {
+  if (value === null || value === '' || value === undefined) return null;
+  const id = Number(value);
+  return db.prepare('SELECT 1 FROM salons WHERE id = ?').get(id) ? id : undefined;
+}
 
 app.post('/api/ad-numbers', auth.requireAdmin, (req, res) => {
   const { phone, label, note } = req.body || {};
   if (!phone || !label) return res.status(400).json({ error: 'Укажите номер и метку (название анкеты)' });
   const norm = normalizePhone(phone);
   if (!norm) return res.status(400).json({ error: 'Некорректный номер' });
+  const salonId = validSalonId(req.body.salon_id);
+  if (salonId === undefined) return res.status(400).json({ error: 'Салон не найден' });
+  if (db.prepare('SELECT 1 FROM ad_phone_numbers WHERE phone = ?').get(norm)) return res.status(400).json({ error: 'Такой номер уже добавлен' });
   try {
-    const info = db.prepare('INSERT INTO ad_phone_numbers (phone, label, note) VALUES (?, ?, ?)').run(norm, label.trim(), note || null);
+    const info = db.prepare('INSERT INTO ad_phone_numbers (phone, label, note, salon_id) VALUES (?, ?, ?, ?)').run(norm, label.trim(), note || null, salonId);
+    if (salonId) assignAdNumberCalls(norm, salonId);
     res.json(db.prepare('SELECT * FROM ad_phone_numbers WHERE id = ?').get(info.lastInsertRowid));
   } catch (e) {
     res.status(400).json({ error: 'Такой номер уже добавлен' });
@@ -259,8 +278,14 @@ app.put('/api/ad-numbers/:id', auth.requireAdmin, (req, res) => {
   }
   const label = body.label !== undefined ? String(body.label).trim() : row.label;
   if (!label) return res.status(400).json({ error: 'Метка не может быть пустой' });
-  db.prepare('UPDATE ad_phone_numbers SET label=?, phone=?, note=?, placed_at=? WHERE id=?')
-    .run(label, phone, body.note !== undefined ? (String(body.note).trim() || null) : row.note, placedAt, row.id);
+  let salonId = row.salon_id;
+  if ('salon_id' in body) {
+    salonId = validSalonId(body.salon_id);
+    if (salonId === undefined) return res.status(400).json({ error: 'Салон не найден' });
+  }
+  db.prepare('UPDATE ad_phone_numbers SET label=?, phone=?, note=?, placed_at=?, salon_id=? WHERE id=?')
+    .run(label, phone, body.note !== undefined ? (String(body.note).trim() || null) : row.note, placedAt, salonId, row.id);
+  if (salonId && (salonId !== row.salon_id || phone !== row.phone)) assignAdNumberCalls(phone, salonId);
   res.json(db.prepare('SELECT * FROM ad_phone_numbers WHERE id = ?').get(row.id));
 });
 
@@ -703,10 +728,12 @@ app.get('/api/dashboard/salon-stats', auth.requireAdmin, (req, res) => {
   const { period, from, till } = dashboardRange(req.query, 'today');
   const salons = db.prepare('SELECT * FROM salons WHERE active = 1').all();
   const stats = salons.map(s => {
-    const calls = db.prepare(`SELECT COUNT(*) AS c FROM calls WHERE salon_id=? AND started_at>=? AND started_at<=?`).get(s.id, from, till).c;
+    // только входящие звонки гостей — исходящие (в т.ч. перезвоны) сюда не входят
+    const calls = db.prepare(`SELECT COUNT(*) AS c FROM calls WHERE salon_id=? AND direction='in' AND started_at>=? AND started_at<=?`).get(s.id, from, till).c;
+    const answered = db.prepare(`SELECT COUNT(*) AS c FROM calls WHERE salon_id=? AND direction='in' AND is_answered=1 AND started_at>=? AND started_at<=?`).get(s.id, from, till).c;
     const missed = db.prepare(`SELECT COUNT(*) AS c FROM calls WHERE salon_id=? AND direction='in' AND is_answered=0 AND started_at>=? AND started_at<=?`).get(s.id, from, till).c;
     const calledBack = db.prepare(`SELECT COUNT(*) AS c FROM calls WHERE salon_id=? AND direction='in' AND is_answered=0 AND callback_status IN ('on_time','late') AND started_at>=? AND started_at<=?`).get(s.id, from, till).c;
-    return { salon_id: s.id, salon_name: s.name, calls, missed, called_back: calledBack };
+    return { salon_id: s.id, salon_name: s.name, calls, answered, missed, called_back: calledBack };
   });
   res.json({ period, from, till, stats });
 });
@@ -731,7 +758,7 @@ app.get('/api/dashboard/calls-timeseries', auth.requireAdmin, (req, res) => {
   const { period, from, till } = dashboardRange(req.query, 'week');
   const rows = db.prepare(`
     SELECT substr(started_at,1,10) AS day,
-      COUNT(*) AS calls,
+      SUM(CASE WHEN direction='in' THEN 1 ELSE 0 END) AS calls,
       SUM(CASE WHEN direction='in' AND is_answered=0 THEN 1 ELSE 0 END) AS missed,
       SUM(CASE WHEN direction='in' AND is_answered=0 AND callback_status IN ('on_time','late') THEN 1 ELSE 0 END) AS called_back
     FROM calls WHERE started_at >= ? AND started_at <= ?

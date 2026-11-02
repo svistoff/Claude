@@ -20,7 +20,7 @@ const db = require('./db');
 const {
   normalizePhone, findOrCreateClient, getSalonPhoneMap,
   getExcludedNumberSet, getExcludedCallerNumberSet, getActionNameSalonMap,
-  getForwardingRules, forwardTargetFor
+  getForwardingRules, forwardTargetFor, getAdNumberSalonMap
 } = require('./lib');
 
 function parseCsv(text) {
@@ -99,6 +99,7 @@ function importUisCsv(text, { dryRun = false } = {}) {
 
   const salonsById = new Map(db.prepare('SELECT * FROM salons WHERE active = 1').all().map(s => [s.id, s]));
   const phoneMap = getSalonPhoneMap();
+  const adSalonMap = getAdNumberSalonMap();
   const excludedNumbers = getExcludedNumberSet();
   const excludedCallerNumbers = getExcludedCallerNumberSet();
   const actionNameMap = getActionNameSalonMap();
@@ -126,7 +127,7 @@ function importUisCsv(text, { dryRun = false } = {}) {
     const candidate = normalizePhone(virtualNumber);
     if (candidate && excludedNumbers.has(candidate)) { excluded++; return; }
 
-    let salon = candidate ? salonsById.get(phoneMap.get(candidate)) : null;
+    let salon = candidate ? salonsById.get(phoneMap.get(candidate) ?? adSalonMap.get(candidate)) : null;
 
     // Бесплатная метка "Сотрудники разговора" — берём ПЕРВУЮ из списка, если
     // их несколько (звонок пытались раскидать по нескольким салонам сразу и
