@@ -216,6 +216,16 @@ async function renderSalonReport(salonId, period) {
   const none = db.prepare(`SELECT COUNT(*) AS c FROM calls WHERE salon_id=? AND direction='in' AND is_answered=0 AND callback_status='none' AND started_at >= ?`).get(salonId, since).c;
   const bookings = calls.filter(c => c.outcome === 'booking').length;
   const conversion = calls.length ? Math.round((bookings / calls.length) * 100) : 0;
+  const incoming = calls.filter(c => c.direction === 'in');
+  const sourceRow = (label, list) => {
+    const miss = list.filter(c => !c.is_answered).length;
+    const book = list.filter(c => c.outcome === 'booking').length;
+    return `<tr><td>${label}</td><td>${list.length}</td><td>${list.length - miss}</td><td>${miss}</td><td>${book}</td></tr>`;
+  };
+  const sourceTable = `<table><tr><th>Откуда</th><th>Входящих</th><th>Принято</th><th>Пропущено</th><th>Записей</th></tr>
+    ${sourceRow('Напрямую (номера салона, SIM, меню)', incoming.filter(c => !c.is_ad_call))}
+    ${sourceRow('С анкет (номера из пула)', incoming.filter(c => c.is_ad_call))}
+    ${sourceRow('<b>Всего</b>', incoming)}</table>`;
 
   // администратор больше не привязан к объекту — считаем тех, кто реально
   // принимал звонки этого объекта за период (по calls, а не по admins.salon_id);
@@ -239,6 +249,7 @@ async function renderSalonReport(salonId, period) {
       ['Перезвонили вовремя', onTime], ['Перезвонили позже', late], ['Не перезвонили', none],
       ['Конверсия в запись', conversion + '%']
     ])}
+    <h2>Откуда входящие звонки</h2>${sourceTable}
     <h2>Администраторы, принимавшие звонки</h2>
     <table><tr><th>Имя</th><th>Звонков</th><th>Средний % чек-листа</th></tr>${adminRows || '<tr><td colspan="3">Нет данных</td></tr>'}</table>
     <h2>Проблемные пункты чек-листа</h2>${funnelTable(funnel)}

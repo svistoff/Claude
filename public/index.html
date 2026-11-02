@@ -328,7 +328,15 @@ async function loadDashboardStats() {
         пропущено <b style="color:var(--danger)">${total('missed')}</b>, из них перезвонили <b style="color:var(--ok)">${total('called_back')}</b>
         → <b>поговорили с гостями: ${total('answered') + total('called_back')}</b>,
         не дозвонились: <b style="color:var(--danger)">${total('missed') - total('called_back')}</b></div>
-        <p class="muted" style="margin:6px 0 0">Считаются только входящие звонки гостей, каждый звонок отдельно. «Перезвонили» — часть пропущенных, которым потом перезвонили.</p>` : '');
+        <p class="muted" style="margin:6px 0 0">Считаются только входящие звонки гостей, каждый звонок отдельно. «Перезвонили» — часть пропущенных, которым потом перезвонили.</p>
+        <h4 style="margin:16px 0 6px">Откуда входящие</h4>
+        <div style="overflow-x:auto"><table><tr><th>Салон</th><th>Входящих</th><th>Напрямую</th><th>С анкет</th><th>Пропущено напрямую</th><th>Пропущено с анкет</th></tr>
+          ${stats.map(s => `<tr><td>${esc(s.salon_name)}</td><td><b>${s.calls}</b></td><td>${s.calls - s.from_ads}</td><td>${s.from_ads}</td>
+            <td style="color:var(--danger)">${(s.missed - s.from_ads_missed) || ''}</td><td style="color:var(--danger)">${s.from_ads_missed || ''}</td></tr>`).join('')}
+          <tr style="font-weight:700;border-top:2px solid var(--border)"><td>Итого</td><td>${total('calls')}</td><td>${total('calls') - total('from_ads')}</td><td>${total('from_ads')}</td>
+            <td>${(total('missed') - total('from_ads_missed')) || ''}</td><td>${total('from_ads_missed') || ''}</td></tr>
+        </table></div>
+        <p class="muted" style="margin:6px 0 0">«С анкет» — звонки на номера из Настройки → «Номера и анкеты», «Напрямую» — на номера салона, SIM и общие меню.</p>` : '');
 }
 
 // За один день график по дням не показываем — это одна точка,

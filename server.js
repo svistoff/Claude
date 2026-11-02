@@ -733,7 +733,14 @@ app.get('/api/dashboard/salon-stats', auth.requireAdmin, (req, res) => {
     const answered = db.prepare(`SELECT COUNT(*) AS c FROM calls WHERE salon_id=? AND direction='in' AND is_answered=1 AND started_at>=? AND started_at<=?`).get(s.id, from, till).c;
     const missed = db.prepare(`SELECT COUNT(*) AS c FROM calls WHERE salon_id=? AND direction='in' AND is_answered=0 AND started_at>=? AND started_at<=?`).get(s.id, from, till).c;
     const calledBack = db.prepare(`SELECT COUNT(*) AS c FROM calls WHERE salon_id=? AND direction='in' AND is_answered=0 AND callback_status IN ('on_time','late') AND started_at>=? AND started_at<=?`).get(s.id, from, till).c;
-    return { salon_id: s.id, salon_name: s.name, calls, answered, missed, called_back: calledBack };
+    // откуда входящие: на номер из пула анкет/рекламы или напрямую на номера салона
+    const fromAds = db.prepare(`
+      SELECT COUNT(*) AS c, SUM(CASE WHEN is_answered=0 THEN 1 ELSE 0 END) AS missed FROM calls c
+      WHERE salon_id=? AND direction='in' AND started_at>=? AND started_at<=?
+        AND EXISTS (SELECT 1 FROM ad_phone_numbers an WHERE an.phone = c.dialed_number)
+    `).get(s.id, from, till);
+    return { salon_id: s.id, salon_name: s.name, calls, answered, missed, called_back: calledBack,
+      from_ads: fromAds.c, from_ads_missed: fromAds.missed || 0 };
   });
   res.json({ period, from, till, stats });
 });
