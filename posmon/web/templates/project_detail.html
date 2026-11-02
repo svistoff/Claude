@@ -9,7 +9,10 @@
     <a href="?mode=seo&profile={{ chart_profile_id }}&days={{ days }}" class="{{ 'on' if mode=='seo' }}">SEO · органика</a>
     <a href="?mode=battle&profile={{ chart_profile_id }}&days={{ days }}" class="{{ 'on' if mode=='battle' }}">Боевая · с рекламой</a>
   </div>
-  <a class="btn-outline" href="/projects/{{ project.id }}/report?mode={{ mode }}&profile={{ chart_profile_id }}" target="_blank">📄 PDF-отчёт</a>
+  <span>
+    <a class="btn-outline" href="/projects/{{ project.id }}/report.pdf?mode={{ mode }}{% if chart_profile_id %}&profile={{ chart_profile_id }}{% endif %}">📄 Скачать PDF</a>
+    <a class="muted small" href="/projects/{{ project.id }}/report?mode={{ mode }}{% if chart_profile_id %}&profile={{ chart_profile_id }}{% endif %}" target="_blank" style="margin-left:8px">просмотр</a>
+  </span>
 </div>
 
 {% if user.role == 'Admin' %}

@@ -5,6 +5,7 @@ import asyncio
 import logging
 
 from fastapi import APIRouter, Depends, Form, Request
+from fastapi.responses import PlainTextResponse, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,6 +17,7 @@ from ...services.analytics import avg_position_series, latest_positions, site_me
 from ...services.runner import run_project_batch
 from ..charts import SERIES_COLORS, ChartOptions, Series, line_chart
 from ..deps import current_user, is_admin, redirect, render
+from ..pdf import html_to_pdf
 
 logger = logging.getLogger("posmon.web")
 router = APIRouter()
@@ -173,22 +175,12 @@ async def project_detail(
     )
 
 
-# ── PDF-отчёт (печатная страница) ───────────────────────────────────────────
-@router.get("/projects/{project_id}/report")
-async def project_report(
-    project_id: int,
-    request: Request,
-    mode: str = RunMode.SEO.value,
-    profile: int | None = None,
-    user: User | None = Depends(current_user),
-    session: AsyncSession = Depends(get_session),
-):
-    if user is None:
-        return redirect("/login")
-    project = await _get_project(session, project_id)
-    if project is None:
-        return redirect("/projects")
-
+# ── Отчёт: HTML-страница и PDF-файл ─────────────────────────────────────────
+async def _report_context(
+    session: AsyncSession, project: Project, mode: str, profile: int | None, settings
+) -> dict:
+    """Данные отчёта по проекту (общие для HTML и PDF)."""
+    project_id = project.id
     sites = (await session.execute(
         select(Site).where(Site.project_id == project_id, Site.active.is_(True)).order_by(Site.name)
     )).scalars().all()
@@ -201,7 +193,6 @@ async def project_report(
 
     profile_id = profile or (profiles[0].id if profiles else None)
     profile_obj = next((p for p in profiles if p.id == profile_id), None)
-
     latest = await latest_positions(session, project_id, mode)
 
     # Сводка по каждому сайту
@@ -221,15 +212,69 @@ async def project_report(
 
     from datetime import datetime
     from zoneinfo import ZoneInfo
-    settings = request.app.state.settings
     try:
-        now = datetime.now(ZoneInfo(settings.timezone)).strftime("%d.%m.%Y %H:%M")
+        now_dt = datetime.now(ZoneInfo(settings.timezone))
     except Exception:  # noqa: BLE001
-        now = datetime.now().strftime("%d.%m.%Y %H:%M")
+        now_dt = datetime.now()
 
-    return render(
-        request, "report.html", user=user, project=project, sites=sites,
-        profile=profile_obj, mode=mode, site_reports=site_reports, rows=rows, now=now,
+    query = f"mode={mode}" + (f"&profile={profile_id}" if profile_id else "")
+    return {
+        "project": project, "sites": sites, "profile": profile_obj, "mode": mode,
+        "site_reports": site_reports, "rows": rows,
+        "now": now_dt.strftime("%d.%m.%Y %H:%M"), "today": now_dt.strftime("%Y-%m-%d"),
+        "pdf_url": f"/projects/{project_id}/report.pdf?{query}",
+    }
+
+
+@router.get("/projects/{project_id}/report")
+async def project_report(
+    project_id: int,
+    request: Request,
+    mode: str = RunMode.SEO.value,
+    profile: int | None = None,
+    user: User | None = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    if user is None:
+        return redirect("/login")
+    project = await _get_project(session, project_id)
+    if project is None:
+        return redirect("/projects")
+    ctx = await _report_context(session, project, mode, profile, request.app.state.settings)
+    return render(request, "report.html", user=user, **ctx)
+
+
+@router.get("/projects/{project_id}/report.pdf")
+async def project_report_pdf(
+    project_id: int,
+    request: Request,
+    mode: str = RunMode.SEO.value,
+    profile: int | None = None,
+    user: User | None = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Готовый PDF-файл на скачивание (генерируется на сервере)."""
+    if user is None:
+        return redirect("/login")
+    project = await _get_project(session, project_id)
+    if project is None:
+        return redirect("/projects")
+    settings = request.app.state.settings
+    ctx = await _report_context(session, project, mode, profile, settings)
+    html = request.app.state.templates.get_template("report.html").render(
+        request=request, user=user, settings=settings, for_pdf=True, **ctx
+    )
+    try:
+        pdf_bytes = await html_to_pdf(html)
+    except Exception as exc:  # noqa: BLE001 — нет Chromium и т.п.
+        logger.exception("Не удалось сформировать PDF проекта %s", project_id)
+        return PlainTextResponse(f"Не удалось сформировать PDF: {exc}", status_code=503)
+
+    filename = f"posmon-report-{project_id}-{ctx['today']}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 

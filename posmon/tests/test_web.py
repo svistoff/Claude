@@ -137,7 +137,18 @@ async def test_report_page_renders(client):
     r = await client.get("/projects/1/report?mode=seo")
     assert r.status_code == 200
     assert "Отчёт по позициям" in r.text
-    assert "Сохранить в PDF" in r.text
+    assert "Скачать PDF" in r.text and "report.pdf" in r.text
+
+
+async def test_report_pdf_download(client):
+    await _login(client)
+    await client.post("/projects", data={"name": "Отчёт", "depth": "50", "description": ""})
+    await client.post("/projects/1/profiles", data={"name": "Desktop", "device": "desktop", "source": "api", "region": "Екатеринбург"})
+    r = await client.get("/projects/1/report.pdf?mode=seo")
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/pdf"
+    assert "attachment" in r.headers["content-disposition"]
+    assert r.content[:4] == b"%PDF"
 
 
 async def test_run_now_redirects(client):

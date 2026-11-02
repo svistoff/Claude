@@ -44,7 +44,12 @@
         Сформирован: <b>{{ now }}</b>
       </div>
     </div>
-    <button class="print-btn no-print" onclick="window.print()">📄 Сохранить в PDF</button>
+    {% if not for_pdf %}
+    <div class="no-print" style="text-align:right">
+      <a class="print-btn btn-outline" href="{{ pdf_url }}">📄 Скачать PDF</a><br>
+      <a href="#" onclick="window.print(); return false;" class="muted small">или распечатать</a>
+    </div>
+    {% endif %}
   </div>
 
   <h2>Сводка по сайтам</h2>
