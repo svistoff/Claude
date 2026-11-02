@@ -140,3 +140,24 @@ git pull
 .venv/bin/pip install -r posmon/requirements.txt
 supervisorctl restart posmon-web posmon-scheduler
 ```
+
+---
+
+## Если не работает DNS домена (авария Beget) — временный адрес
+
+Сайт и nginx живы, но `stat.xmassage.vip` не открывается. Открываем posmon по
+адресу **https://stat-77-110-125-73.sslip.io** (sslip.io сам указывает на IP из
+имени, DNS домена не нужен). Логин/пароль те же.
+
+```bash
+cd /root/posmon && git pull
+cp deploy/nginx/stat-temp.sslip.conf /etc/nginx/sites-available/stat-temp.conf
+ln -sf /etc/nginx/sites-available/stat-temp.conf /etc/nginx/sites-enabled/stat-temp.conf
+nginx -t && systemctl reload nginx
+certbot --nginx -d stat-77-110-125-73.sslip.io --non-interactive --redirect
+```
+
+Убрать, когда DNS починится (необязательно):
+```bash
+rm /etc/nginx/sites-enabled/stat-temp.conf && nginx -t && systemctl reload nginx
+```
