@@ -1,6 +1,6 @@
 # Установка posmon на VPS (stat.xmassage.vip)
 
-Всё выполняется на сервере под `root` (`ssh root@77.110.125.73`).
+Всё выполняется на сервере под `root` (`ssh root@45.146.90.128`).
 Боты на этом VPS живут в `/root/<имя>` и запускаются через Supervisor.
 
 ---
@@ -146,7 +146,7 @@ supervisorctl restart posmon-web posmon-scheduler
 ## Если не работает DNS домена (авария Beget) — временный адрес
 
 Сайт и nginx живы, но `stat.xmassage.vip` не открывается. Открываем posmon по
-адресу **https://stat-77-110-125-73.sslip.io** (sslip.io сам указывает на IP из
+адресу **https://stat-45-146-90-128.sslip.io** (sslip.io сам указывает на IP из
 имени, DNS домена не нужен). Логин/пароль те же.
 
 ```bash
@@ -154,7 +154,7 @@ cd /root/posmon && git pull
 cp deploy/nginx/stat-temp.sslip.conf /etc/nginx/sites-available/stat-temp.conf
 ln -sf /etc/nginx/sites-available/stat-temp.conf /etc/nginx/sites-enabled/stat-temp.conf
 nginx -t && systemctl reload nginx
-certbot --nginx -d stat-77-110-125-73.sslip.io --non-interactive --redirect
+certbot --nginx -d stat-45-146-90-128.sslip.io --non-interactive --redirect
 ```
 
 Убрать, когда DNS починится (необязательно):
