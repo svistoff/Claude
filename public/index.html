@@ -350,6 +350,7 @@ async function loadDashboardTimeseries() {
 // на каждый объект — 3 столбца (звонки/пропущено/перезвонили) фиксированных
 // цветов (синий/красный/зелёный — уже используются в интерфейсе как
 // акцент/опасность/успех, поэтому семантически понятны и не требуют легенды-сюрприза).
+const AD_COLOR = '#8b5cf6';
 function renderSalonStatsChart(stats) {
   if (stats.length === 0) return '<p class="muted">Нет активных объектов</p>';
   const maxVal = Math.max(1, ...stats.flatMap(s => [s.calls, s.missed, s.called_back]));
@@ -371,6 +372,17 @@ function renderSalonStatsChart(stats) {
       const h = scale(val);
       const x = gx + j * (barW + barGap);
       const y = chartH - h;
+      if (m.key === 'calls') {
+        // входящие одним столбиком: снизу — напрямую в салон, сверху — с анкет
+        const ads = s.from_ads || 0, direct = val - ads;
+        const hDirect = scale(direct), hAds = h - hDirect;
+        const inside = (v, top, height) => height >= 14
+          ? `<text x="${x + barW/2}" y="${top + height/2 + 4}" text-anchor="middle" font-size="10" fill="#fff">${v}</text>` : '';
+        return `<rect x="${x}" y="${chartH - hDirect}" width="${barW}" height="${hDirect}" fill="var(--accent)"></rect>
+          ${hAds ? `<rect x="${x}" y="${y}" width="${barW}" height="${hAds}" fill="${AD_COLOR}"></rect>` : ''}
+          ${direct && ads ? inside(direct, chartH - hDirect, hDirect) + inside(ads, y, hAds) : ''}
+          <text x="${x + barW/2}" y="${y - 4}" text-anchor="middle" font-size="11" fill="currentColor">${val}</text>`;
+      }
       return `<rect x="${x}" y="${y}" width="${barW}" height="${h}" rx="4" fill="${m.color}"></rect>
         <text x="${x + barW/2}" y="${y - 4}" text-anchor="middle" font-size="11" fill="currentColor">${val}</text>`;
     }).join('');
@@ -382,8 +394,9 @@ function renderSalonStatsChart(stats) {
       <line x1="0" y1="${chartH}" x2="${width}" y2="${chartH}" stroke="var(--border)" stroke-width="1"></line>
       ${groups}
     </svg>
-    <div class="row" style="gap:16px;margin-top:8px;font-size:12px">
-      <span><span style="display:inline-block;width:10px;height:10px;background:var(--accent);border-radius:2px;margin-right:4px"></span>Входящие</span>
+    <div class="row" style="gap:16px;margin-top:8px;font-size:12px;flex-wrap:wrap">
+      <span><span style="display:inline-block;width:10px;height:10px;background:var(--accent);border-radius:2px;margin-right:4px"></span>Входящие напрямую в салон</span>
+      <span><span style="display:inline-block;width:10px;height:10px;background:${AD_COLOR};border-radius:2px;margin-right:4px"></span>Входящие с анкет</span>
       <span><span style="display:inline-block;width:10px;height:10px;background:var(--danger);border-radius:2px;margin-right:4px"></span>Пропущено</span>
       <span><span style="display:inline-block;width:10px;height:10px;background:var(--ok);border-radius:2px;margin-right:4px"></span>Перезвонили</span>
     </div>`;
