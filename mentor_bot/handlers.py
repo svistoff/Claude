@@ -361,8 +361,14 @@ class Handler:
                 await self.reply(chat_id, f"{prefix}⚠ Сейчас не могу ответить ({why}). Повтори чуть позже.")
                 return
             prio, clean = tasks_mod.parse_priority(text)
+            dup = next((t for t in self.db.open_tasks() if t["text"] == clean), None)
+            if dup:  # повторная отправка того же текста — не плодим дубли
+                await self.reply(chat_id, f"{prefix}📥 ИИ недоступен ({why}). Это уже записано как "
+                                 f"задача #{dup['id']} — разберу, когда ИИ вернётся.")
+                return
             tid = self.db.add_task(clean, prio)
-            await self.reply(chat_id, f"{prefix}📥 ИИ недоступен ({why}), записал как задачу #{tid}.")
+            await self.reply(chat_id, f"{prefix}📥 ИИ недоступен ({why}), пока записал как "
+                             f"задачу #{tid}. Разберу позже: /plan.")
             return
         reply, summary = result
         one = summary["added"] if len(summary["added"]) == 1 and not summary["done"] else []

@@ -686,3 +686,52 @@ def test_llm_marks_answer_still_truncated(monkeypatch):
     llm_mod, _ = _fake_httpx(monkeypatch, [("начало", "length"), ("начало подлиннее", "length")])
     out = asyncio.run(llm_mod.complete("k", "http://x", "m", "s", "u"))
     assert out.startswith("начало подлиннее…") and "обрезан" in out
+
+
+def test_llm_retries_on_503_then_succeeds(monkeypatch):
+    import httpx
+    from mentor_bot import llm
+    calls = []
+
+    async def fake_post(self, url, **kw):
+        calls.append(1)
+        if len(calls) < 3:
+            return httpx.Response(503, text="busy")
+        return httpx.Response(200, json={"choices": [{"message": {"content": "ok"},
+                                                      "finish_reason": "stop"}]})
+
+    async def no_sleep(_):
+        pass
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
+    monkeypatch.setattr(llm.asyncio, "sleep", no_sleep)
+    assert run(llm.complete("k", "http://x", "m", "s", "u")) == "ok" and len(calls) == 3
+
+
+def test_llm_gives_short_error_after_retries(monkeypatch):
+    import httpx
+    from mentor_bot import llm
+
+    async def always_503(self, url, **kw):
+        return httpx.Response(503, text='{"error": {"message": "Service is too busy"}}')
+
+    async def no_sleep(_):
+        pass
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", always_503)
+    monkeypatch.setattr(llm.asyncio, "sleep", no_sleep)
+    with pytest.raises(llm.LLMError, match="перегружен"):
+        run(llm.complete("k", "http://x", "m", "s", "u"))
+
+
+def test_resending_same_text_while_ai_down_makes_no_duplicate(env, monkeypatch):
+    from mentor_bot.llm import LLMError
+    _, db, tg, h, _ = env
+
+    async def down(*a, **kw):
+        raise LLMError("сервис ИИ перегружен (API 503)")
+
+    monkeypatch.setattr(advisor.llm, "complete", down)
+    run(h.handle(msg("написать статьи для журнала")))
+    run(h.handle(msg("написать статьи для журнала")))
+    assert len(db.open_tasks()) == 1 and "уже записано" in tg.last

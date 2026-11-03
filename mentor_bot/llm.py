@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import httpx
 
 
@@ -15,6 +17,11 @@ class LLMError(Exception):
 # по умолчанию щедрый, а при обрыве по длине делаем один повтор с большим запасом.
 DEFAULT_MAX_TOKENS = 3000
 RETRY_MAX_TOKENS = 8000
+
+# Провайдер иногда отвечает «перегружен» (503) или упирается в лимит запросов (429):
+# это временно, поэтому повторяем с нарастающей паузой, прежде чем сдаться.
+TRANSIENT = {429, 500, 502, 503, 504}
+RETRY_DELAYS = (3, 8, 20)
 
 
 async def complete(api_key: str, base_url: str, model: str, system: str, user: str,
@@ -50,14 +57,24 @@ async def _request(api_key: str, base_url: str, model: str, system: str, user: s
     if json_mode:
         payload["response_format"] = {"type": "json_object"}
     headers = {"Authorization": f"Bearer {api_key}"}
-    try:
-        async with httpx.AsyncClient(timeout=180) as client:
-            r = await client.post(url, json=payload, headers=headers)
-            if r.status_code == 400 and json_mode:  # провайдер не знает response_format
-                payload.pop("response_format")
+    r = None
+    async with httpx.AsyncClient(timeout=180) as client:
+        for attempt in range(len(RETRY_DELAYS) + 1):
+            try:
                 r = await client.post(url, json=payload, headers=headers)
-    except httpx.HTTPError as exc:
-        raise LLMError(f"сетевая ошибка: {exc}") from exc
+                if r.status_code == 400 and json_mode:  # провайдер не знает response_format
+                    payload.pop("response_format")
+                    r = await client.post(url, json=payload, headers=headers)
+            except httpx.HTTPError as exc:
+                if attempt == len(RETRY_DELAYS):
+                    raise LLMError(f"сетевая ошибка: {exc}") from exc
+            else:
+                if r.status_code not in TRANSIENT:
+                    break
+                if attempt == len(RETRY_DELAYS):
+                    raise LLMError(f"сервис ИИ перегружен (API {r.status_code}), "
+                                   "повтори через пару минут")
+            await asyncio.sleep(RETRY_DELAYS[attempt])
     if r.status_code != 200:
         raise LLMError(f"API {r.status_code}: {r.text[:300]}")
     data = r.json()
