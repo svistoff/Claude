@@ -337,6 +337,13 @@ async def vk_oauth_start() -> RedirectResponse:
             "redirect_uri": config.vk_oauth_redirect_uri,
             "scope": VK_SCOPES,
             "response_type": "code",
+            # Без этого VK может переиспользовать старое, более узкое
+            # согласие пользователя (форма разрешения доступов показывается
+            # только "если пользователь зашёл в сервис впервые" — см. доки
+            # VK ID) и не включить в токен права, которые VK одобрил для
+            # приложения только что. consent заставляет форму показаться
+            # заново при каждом проходе /start.
+            "prompt": "consent",
             "state": state,
             "code_challenge": code_challenge,
             "code_challenge_method": "S256",
