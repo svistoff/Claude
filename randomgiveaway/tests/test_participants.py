@@ -67,6 +67,19 @@ def test_require_mention_filter():
     assert preview.participants_after_rules == 1
 
 
+def test_require_mention_filter_catches_real_vk_tag():
+    """VK вставляет настоящую отметку друга (через автокомплит) не как
+    "@имя", а как служебную разметку [id<id>|Имя] — без этого случая
+    require_mention был бы бесполезен для VK-розыгрышей."""
+    comments = [
+        make_comment("a", "1", text="пригласи друга [id12345|Иван Иванов] и участвуй"),
+        make_comment("b", "2", text="без отметки"),
+    ]
+    settings = GiveawaySettings(require_mention=True)
+    preview = build_participants(comments, settings, post_author_user_id=None)
+    assert preview.participants_after_rules == 1
+
+
 def test_excludes_post_author():
     comments = [make_comment("author", "1"), make_comment("user", "2")]
     settings = GiveawaySettings(exclude_post_author=True)

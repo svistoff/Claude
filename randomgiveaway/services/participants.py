@@ -7,7 +7,10 @@ from dataclasses import dataclass
 from randomgiveaway.adapters.base import RawComment
 from randomgiveaway.database.models import GiveawaySettings, Participant
 
-MENTION_RE = re.compile(r"@[A-Za-z0-9_.]{2,}")
+MENTION_RE = re.compile(
+    r"@[A-Za-z0-9_.]{2,}"  # Instagram/обычный текст: @username
+    r"|\[(?:id|club)\d+\|[^\]]+\]"  # VK: настоящая отметка через автокомплит — [id12345|Имя], не просто "@имя"
+)
 
 
 @dataclass
