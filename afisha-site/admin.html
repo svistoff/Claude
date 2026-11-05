@@ -55,6 +55,12 @@
   .head-row h2{font-family:var(--display);font-weight:700;font-size:22px;margin:0;}
 
   .list{display:flex;flex-direction:column;gap:10px;}
+  .ev-tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px;}
+  .ev-tools .search{flex:1 1 260px;min-width:0;padding:10px 14px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--ink);font:inherit;}
+  .ev-tools .search:focus{outline:none;border-color:var(--ink);}
+  .ev-tools .seg{margin:0;flex:0 1 auto;}
+  .ev-tools .seg button{flex:0 0 auto;padding:7px 12px;white-space:nowrap;}
+  .ev-count{color:var(--muted);font-size:13px;margin:-4px 0 10px;}
   .row{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px;display:flex;align-items:center;gap:14px;box-shadow:var(--shadow);}
   .row .thumb{width:74px;height:52px;border-radius:8px;object-fit:cover;background:var(--surface-2);flex:0 0 auto;}
   .row .grow{flex:1;min-width:0;}
@@ -99,6 +105,7 @@
     .head-row h2{font-size:19px;}
     .head-row .btn{padding:10px 16px;font-size:14px;}
 
+    .ev-tools .seg{width:100%;overflow-x:auto;}
     .row{flex-direction:column;align-items:flex-start;gap:8px;padding:12px;}
     .row .thumb{width:88px;height:62px;}
     .row .grow{width:100%;}
@@ -152,7 +159,7 @@
       key:'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhibWRwcW5zZXl3cGh3Z3hzbmxnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3MjE1NzYsImV4cCI6MjA5NTI5NzU3Nn0.wLuTKZ-uhCQ69iEm6gyJrsgaP0NgVL-PBad3kJD7uHU'
     };
     const $=id=>document.getElementById(id);
-    let client, S={tab:'events',categories:[],venues:[],events:[],banners:[],subs:[]};
+    let client, S={evQuery:'',evFilter:'all',tab:'events',categories:[],venues:[],events:[],banners:[],subs:[]};
 
     // ---------- утилиты ----------
     const MONTHS=['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
@@ -250,8 +257,26 @@
     }
 
     // ================= СОБЫТИЯ =================
-    function renderEvents(){
-      const rows=S.events.map(ev=>`<div class="row">
+    // поиск: без учёта регистра и ё/е — по названию, исполнителю, площадке, категории, описанию, адресу страницы и дате
+    const norm=t=>String(t||'').toLowerCase().replace(/ё/g,'е');
+    const todayIso=()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
+    const EV_FILTERS=[['all','Все'],['upcoming','Предстоящие'],['past','Прошедшие'],['published','Опубликованные'],['draft','Черновики']];
+    function filteredEvents(){
+      const words=norm(S.evQuery).split(/\s+/).filter(Boolean), today=todayIso();
+      return S.events.filter(ev=>{
+        const end=ev.ends_on||ev.starts_on||'';
+        if(S.evFilter==='published'&&ev.status!=='published')return false;
+        if(S.evFilter==='draft'&&ev.status==='published')return false;
+        if(S.evFilter==='upcoming'&&end&&end<today)return false;
+        if(S.evFilter==='past'&&!(end&&end<today))return false;
+        if(!words.length)return true;
+        const hay=norm([ev.title,ev.performer,venName(ev.venue_id),catName(ev.category_id),ev.short_description,ev.slug,ev.price,schedText(ev)].join(' '));
+        return words.every(w=>hay.includes(w));
+      });
+    }
+    function eventRows(){
+      const list=filteredEvents();
+      const rows=list.map(ev=>`<div class="row">
         <img class="thumb" src="${esc(proxify(ev.cover_image_url)||'')}" onerror="this.style.visibility='hidden'">
         <div class="grow">
           <b>${esc(ev.title)}</b>
@@ -263,9 +288,19 @@
           <button class="btn danger sm" data-del-ev="${ev.id}">Удалить</button>
         </div>
       </div>`).join('');
-      return `<div class="head-row"><h2>События</h2><button class="btn accent" data-new-ev>+ Добавить событие</button></div>
-        <div class="list">${rows||'<div class="empty">Событий пока нет. Нажмите «Добавить событие».</div>'}</div>`;
+      const filtered=S.evQuery.trim()||S.evFilter!=='all';
+      const count=filtered?`<div class="ev-count">Найдено: ${list.length} из ${S.events.length}</div>`:'';
+      const empty=!S.events.length?'Событий пока нет. Нажмите «Добавить событие».':'Ничего не найдено — измените запрос или фильтр.';
+      return count+`<div class="list">${rows||`<div class="empty">${empty}</div>`}</div>`;
     }
+    function renderEvents(){
+      const seg=EV_FILTERS.map(([k,t])=>`<button type="button" data-ev-filter="${k}" class="${S.evFilter===k?'on':''}">${t}</button>`).join('');
+      return `<div class="head-row"><h2>События</h2><button class="btn accent" data-new-ev>+ Добавить событие</button></div>
+        <div class="ev-tools"><input class="search" id="evSearch" type="search" placeholder="Поиск: название, артист, площадка, дата…" value="${esc(S.evQuery)}" autocomplete="off"><div class="seg">${seg}</div></div>
+        <div id="evList">${eventRows()}</div>`;
+    }
+    // перерисовываем только список, чтобы поле поиска не теряло фокус
+    function refreshEventList(){const box=$('evList');if(!box)return;box.innerHTML=eventRows();wire();}
 
     function eventForm(ev){
       ev=ev||{schedule_type:'single',status:'draft'};
@@ -559,6 +594,8 @@
       $('view').querySelector('[data-new-cat]') && ($('view').querySelector('[data-new-cat]').onclick=()=>catForm());
       $('view').querySelector('[data-new-ban]') && ($('view').querySelector('[data-new-ban]').onclick=()=>bannerForm());
       on('data-edit-ev',id=>eventForm(S.events.find(x=>x.id===id)));
+      const sb=$('evSearch'); if(sb&&!sb.dataset.wired){sb.dataset.wired='1';sb.oninput=()=>{S.evQuery=sb.value;refreshEventList();};}
+      document.querySelectorAll('[data-ev-filter]').forEach(b=>b.onclick=()=>{S.evFilter=b.dataset.evFilter;document.querySelectorAll('[data-ev-filter]').forEach(x=>x.classList.toggle('on',x===b));refreshEventList();});
       on('data-del-ev',delEvent);
       on('data-edit-ven',id=>venueForm(S.venues.find(x=>x.id===id)));
       on('data-del-ven',delVenue);
