@@ -84,16 +84,55 @@ function uisLocalStringFor(instantMs, offsetHours) {
   return toUisDateString(new Date(instantMs + offsetHours * 3600000));
 }
 
+const BASE_CALL_FIELDS = [
+  'id', 'start_time', 'direction', 'is_lost', 'talk_duration',
+  'contact_phone_number', 'virtual_phone_number', 'communication_number', 'call_records', 'employees'
+];
+// данные динамического коллтрекинга (сайт, источник, кампания, UTM, поисковый
+// запрос, страница входа, посетитель) — приходят в том же get.calls_report
+const TRACKING_FIELDS = [
+  'site_domain_name', 'campaign_name', 'source', 'channel',
+  'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
+  'search_query', 'search_engine', 'referrer', 'referrer_domain', 'entrance_page',
+  'visitor_id', 'visitor_type', 'visits_count', 'visitor_device'
+];
+// поля, которые UIS отверг для этого аккаунта, — больше не запрашиваем
+const rejectedTrackingFields = new Set();
+let trackingDisabledUntil = 0;
+
 async function fetchAllCalls(sinceStr, tillStr) {
-  const result = await uisRequest('get.calls_report', {
-    date_from: sinceStr,
-    date_till: tillStr,
-    fields: [
-      'id', 'start_time', 'direction', 'is_lost', 'talk_duration',
-      'contact_phone_number', 'virtual_phone_number', 'communication_number', 'call_records', 'employees'
-    ]
-  });
+  const request = fields => uisRequest('get.calls_report', { date_from: sinceStr, date_till: tillStr, fields });
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const tracking = Date.now() < trackingDisabledUntil ? [] : TRACKING_FIELDS.filter(f => !rejectedTrackingFields.has(f));
+    try {
+      const result = await request([...BASE_CALL_FIELDS, ...tracking]);
+      return (result && result.data) || [];
+    } catch (err) {
+      if (!tracking.length || !/UIS API error/.test(err.message)) throw err;
+      // неизвестное поле не должно ломать загрузку звонков: убираем его и повторяем
+      const named = tracking.filter(f => err.message.includes(f));
+      if (named.length) named.forEach(f => rejectedTrackingFields.add(f));
+      else trackingDisabledUntil = Date.now() + 6 * 3600 * 1000;
+      console.warn(`[telephony] UIS не принял поля коллтрекинга (${named.join(', ') || 'все — пауза 6 ч'}): ${err.message}`);
+    }
+  }
+  const result = await request(BASE_CALL_FIELDS);
   return (result && result.data) || [];
+}
+
+const TRACKING_KEYS = TRACKING_FIELDS.filter(f => f !== 'site_domain_name');
+function normalizeDomain(raw) {
+  return String(raw || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/[/?#].*$/, '');
+}
+function extractTracking(c) {
+  const data = {};
+  for (const k of TRACKING_KEYS) {
+    const v = c[k];
+    if (v !== null && v !== undefined && v !== '' && !(Array.isArray(v) && !v.length)) data[k] = v;
+  }
+  const site = normalizeDomain(c.site_domain_name);
+  if (!site && !Object.keys(data).length) return null;
+  return { site: site || null, json: JSON.stringify(data) };
 }
 
 // call_records от UIS — это не прямая ссылка, а хэш-идентификатор записи
@@ -294,7 +333,15 @@ async function backfill(sinceStr, tillStr) {
 
 function saveCall(salon, c) {
   const uisCallId = String(c.id);
-  if (db.prepare('SELECT id FROM calls WHERE uis_call_id = ?').get(uisCallId)) return;
+  const tracking = extractTracking(c);
+  const existing = db.prepare('SELECT id, tracking FROM calls WHERE uis_call_id = ?').get(uisCallId);
+  if (existing) {
+    // повторная загрузка (backfill) дописывает данные коллтрекинга старым звонкам
+    if (tracking && !existing.tracking) {
+      db.prepare('UPDATE calls SET tracking_site = ?, tracking = ? WHERE id = ?').run(tracking.site, tracking.json, existing.id);
+    }
+    return;
+  }
 
   const direction = c.direction === 'out' ? 'out' : 'in';
   const isLost = c.is_lost === true || c.is_lost === 1 || c.is_lost === '1';
@@ -311,12 +358,13 @@ function saveCall(salon, c) {
   const forwardTo = direction === 'in' ? forwardTargetFor(getForwardingRules(), salon.id, startedAt) : null;
 
   const info = db.prepare(`
-    INSERT INTO calls (salon_id, forwarded_from_salon_id, client_id, uis_call_id, direction, caller_phone, dialed_number, started_at, duration_sec, is_answered, recording_url, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO calls (salon_id, forwarded_from_salon_id, client_id, uis_call_id, direction, caller_phone, dialed_number, started_at, duration_sec, is_answered, recording_url, status, tracking_site, tracking)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     forwardTo ?? salon.id, forwardTo ? salon.id : null, clientId, uisCallId, direction, callerPhone, dialedNumber,
     startedAt, Number(c.talk_duration) || 0,
-    isAnswered ? 1 : 0, extractRecordUrl(c), status
+    isAnswered ? 1 : 0, extractRecordUrl(c), status,
+    tracking ? tracking.site : null, tracking ? tracking.json : null
   );
   const callId = info.lastInsertRowid;
 
@@ -396,4 +444,4 @@ function startPolling() {
   tick();
 }
 
-module.exports = { startPolling, pollOnce, backfill, relinkCallbacks };
+module.exports = { startPolling, pollOnce, backfill, relinkCallbacks, normalizeDomain };

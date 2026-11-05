@@ -476,6 +476,29 @@ if (!adNumberColumns2.includes('salon_id')) {
   db.exec(`ALTER TABLE ad_phone_numbers ADD COLUMN salon_id INTEGER REFERENCES salons(id) ON DELETE SET NULL;`);
 }
 
+// ===== Коллтрекинг (динамический, UIS) =====
+// tracking_site — домен сайта, с которого позвонили (нормализованный, без www);
+// tracking — JSON с источником, кампанией, UTM, поисковым запросом, страницей
+// входа и данными посетителя из get.calls_report
+const callColumns4 = db.prepare("PRAGMA table_info(calls)").all().map(c => c.name);
+if (!callColumns4.includes('tracking_site')) {
+  db.exec(`
+    ALTER TABLE calls ADD COLUMN tracking_site TEXT;
+    ALTER TABLE calls ADD COLUMN tracking TEXT;
+    CREATE INDEX IF NOT EXISTS idx_calls_tracking_site ON calls(tracking_site);
+  `);
+}
+db.exec(`
+CREATE TABLE IF NOT EXISTS tracking_sites (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  domain TEXT NOT NULL UNIQUE,     -- нормализованный домен: example.ru
+  name TEXT,
+  salon_id INTEGER REFERENCES salons(id) ON DELETE SET NULL,
+  note TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+`);
+
 // первичный владелец, если пользователей ещё нет
 const usersCount = db.prepare('SELECT COUNT(*) AS c FROM users').get().c;
 if (usersCount === 0) {

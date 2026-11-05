@@ -123,6 +123,13 @@ async function api(path, opts) {
   return json;
 }
 
+// контейнер для модальных окон — есть не на каждой странице, создаём при необходимости
+function modalRoot() {
+  let el = document.getElementById('modal-root');
+  if (!el) { el = document.createElement('div'); el.id = 'modal-root'; document.getElementById('main').appendChild(el); }
+  return el;
+}
+
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 
 // тепловая шкала для Quality Score: красный (0%, реально неправильные ответы) ->
@@ -174,7 +181,7 @@ async function logout() { await api('/logout', { method: 'POST' }); location.rel
 
 const OWNER_NAV = [
   ['dashboard', 'Дашборд'], ['calls', 'Звонки'], ['admins', 'Администраторы'], ['anketi', 'Анкеты'],
-  ['clients', 'Клиенты'], ['reports', 'Отчёты'], ['fuckwell', 'Fuckwell'], ['settings', 'Настройки']
+  ['calltracking', 'Коллтрекинг'], ['clients', 'Клиенты'], ['reports', 'Отчёты'], ['fuckwell', 'Fuckwell'], ['settings', 'Настройки']
 ];
 const STAFF_NAV = [['guest', 'Гости']];
 // Салоны/Чек-листы физически убраны из главного меню и живут как вкладки
@@ -184,7 +191,7 @@ const STAFF_NAV = [['guest', 'Гости']];
 const SETTINGS_GROUP = ['settings', 'salons', 'checklist', 'ad-numbers'];
 const MOBILE_NAV = [
   ['dashboard', 'Дашборд', '📊'], ['calls', 'Звонки', '📞'], ['anketi', 'Анкеты', '📋'],
-  ['clients', 'Клиенты', '👥'], ['reports', 'Отчёты', '📈'], ['fuckwell', 'Fuckwell', '🔥'], ['settings', 'Настройки', '⚙️']
+  ['calltracking', 'Коллтрекинг', '🎯'], ['reports', 'Отчёты', '📈'], ['fuckwell', 'Fuckwell', '🔥'], ['settings', 'Настройки', '⚙️']
 ];
 
 async function boot() {
@@ -592,7 +599,7 @@ async function openCall(id) {
   const adminOptions = ADMINS
     .map(a => `<option value="${a.id}" ${a.id===c.matched_admin_id?'selected':''}>${esc(a.name)}</option>`).join('');
 
-  document.getElementById('modal-root').innerHTML = `
+  modalRoot().innerHTML = `
     <div class="modal-bg" onclick="if(event.target===this)this.remove()">
       <div class="modal">
         <div class="row between">
@@ -602,6 +609,7 @@ async function openCall(id) {
         <p class="muted">Длительность: ${c.duration_sec}с · Направление: ${c.direction==='in'?'входящий':'исходящий'} · Клиент: ${esc(c.client_name || c.caller_phone || '—')}</p>
         <p class="muted">Набранный номер: ${esc(c.dialed_number || '—')} · Тип объекта / чек-лист: ${c.is_ad_call ? 'анкета (рекламный номер)' : (c.salon_type==='sauna'?'сауна':'салон')}</p>
         ${scenarioLine ? `<p class="muted">Сценарий: ${scenarioLine}</p>` : ''}
+        ${trackingBlock(c.tracking, c.tracking_site)}
         ${c.recording_url ? `<audio controls preload="none" src="${esc(c.recording_url)}" style="width:100%;margin:8px 0"></audio>` : ''}
 
         <div class="row">
@@ -1051,6 +1059,172 @@ async function fwImport() {
   } catch (e) { alert(e.message); }
 }
 
+// ================= КОЛЛТРЕКИНГ (динамический, UIS) =================
+const TRACKING_LABELS = {
+  source: 'Источник', channel: 'Канал', campaign_name: 'Кампания', search_engine: 'Поисковик', search_query: 'Поисковый запрос',
+  utm_source: 'utm_source', utm_medium: 'utm_medium', utm_campaign: 'utm_campaign', utm_term: 'utm_term', utm_content: 'utm_content',
+  referrer: 'Пришёл с', entrance_page: 'Страница входа', visitor_type: 'Посетитель', visits_count: 'Визитов до звонка', visitor_device: 'Устройство'
+};
+function trackingBlock(raw, site) {
+  let t = raw;
+  if (typeof raw === 'string') { try { t = JSON.parse(raw); } catch { t = null; } }
+  if (!t || !Object.keys(t).length) return '';
+  const rows = Object.entries(TRACKING_LABELS).filter(([k]) => t[k] != null && t[k] !== '')
+    .map(([k, label]) => {
+      const v = String(t[k]);
+      const val = /^https?:\/\//i.test(v) ? `<a href="${esc(v)}" target="_blank" rel="noopener">${esc(v.length > 70 ? v.slice(0, 70) + '…' : v)}</a>` : esc(v);
+      return `<tr><td class="muted" style="width:170px">${label}</td><td style="word-break:break-all">${val}</td></tr>`;
+    }).join('');
+  return `<div style="background:#f5f7fb;border-radius:10px;padding:10px 14px;margin:8px 0">
+    <b>🎯 Коллтрекинг${site ? ` · ${esc(site)}` : ''}</b><table style="margin-top:6px">${rows}</table></div>`;
+}
+
+let ctTab = 'overview', ctPeriod = 'week', ctCustom = null, ctSite = '';
+function ctQuery() {
+  const base = ctCustom ? `date_from=${ctCustom.from}&date_till=${ctCustom.till}` : `period=${ctPeriod}`;
+  return base + (ctSite ? `&site=${encodeURIComponent(ctSite)}` : '');
+}
+
+RENDERERS.calltracking = async function renderCalltracking() {
+  const sites = await api('/tracking/sites');
+  const main = document.getElementById('main');
+  const tabs = [['overview', '📊 Обзор'], ['calls', '📞 Звонки'], ['sites', '🌐 Сайты']];
+  main.innerHTML = `
+    <h2>Коллтрекинг</h2>
+    <div class="row" style="margin-bottom:12px;flex-wrap:wrap;gap:6px">
+      ${tabs.map(([k, l]) => `<button class="${ctTab === k ? 'primary' : ''}" onclick="ctTab='${k}';RENDERERS.calltracking()">${l}</button>`).join('')}
+    </div>
+    ${ctTab !== 'sites' ? `<div class="card">
+      <div class="row" style="flex-wrap:wrap;gap:8px">
+        ${Object.entries(PERIOD_LABELS).map(([k, l]) => `<button class="${!ctCustom && ctPeriod === k ? 'primary' : ''}" onclick="ctPeriod='${k}';ctCustom=null;RENDERERS.calltracking()">${l}</button>`).join('')}
+        <label>С <input id="ct-from" type="date" value="${ctCustom ? ctCustom.from : ''}"></label>
+        <label>По <input id="ct-till" type="date" value="${ctCustom ? ctCustom.till : ''}"></label>
+        <button class="${ctCustom ? 'primary' : ''}" onclick="ctApplyRange()">Показать за период</button>
+        <select onchange="ctSite=this.value;RENDERERS.calltracking()"><option value="">Все сайты</option>
+          ${sites.map(s => `<option value="${esc(s.domain)}" ${ctSite === s.domain ? 'selected' : ''}>${esc(s.name || s.domain)}</option>`).join('')}</select>
+      </div></div>` : ''}
+    <div id="ct-content">Загрузка…</div>`;
+  const el = document.getElementById('ct-content');
+  try {
+    if (ctTab === 'sites') ctRenderSites(el, sites);
+    else if (!sites.length) el.innerHTML = `<div class="card"><p>Сайтов пока нет. Добавьте свои сайты на вкладке <a href="#" onclick="ctTab='sites';RENDERERS.calltracking();return false">«🌐 Сайты»</a> — после этого здесь появится статистика звонков с них.</p></div>`;
+    else if (ctTab === 'calls') await ctRenderCalls(el);
+    else await ctRenderOverview(el);
+  } catch (e) { el.innerHTML = `<div class="card"><p class="muted">Ошибка: ${esc(e.message)}</p></div>`; }
+};
+function ctApplyRange() {
+  const from = document.getElementById('ct-from').value, till = document.getElementById('ct-till').value;
+  if (!from || !till) return alert('Укажите обе даты');
+  ctCustom = from <= till ? { from, till } : { from: till, till: from };
+  RENDERERS.calltracking();
+}
+
+function ctMetricsCells(r) {
+  const n = v => v || 0;
+  const conv = n(r.analyzed) ? Math.round(n(r.bookings) / n(r.analyzed) * 100) + '%' : '—';
+  return `<td style="text-align:center"><b>${n(r.calls)}</b></td><td style="text-align:center">${n(r.answered)}</td>
+    <td style="text-align:center;color:var(--danger)">${n(r.missed) || ''}</td><td style="text-align:center;color:var(--ok)">${n(r.called_back) || ''}</td>
+    <td style="text-align:center">${n(r.bookings) || ''}</td><td style="text-align:center">${conv}</td>`;
+}
+const CT_HEAD = '<th>Звонков</th><th>Принято</th><th>Пропущено</th><th>Перезвонили</th><th>Записей</th><th>Конверсия</th>';
+function ctGroupCard(title, hint, rows) {
+  return `<div class="card"><h3 style="margin-top:0">${title}</h3>${hint ? `<p class="muted" style="margin-top:0">${hint}</p>` : ''}
+    <div style="overflow-x:auto"><table><tr><th></th>${CT_HEAD}</tr>
+    ${paginatedRows(rows.map(r => `<tr><td style="word-break:break-word;max-width:360px">${esc(r.label)}</td>${ctMetricsCells(r)}</tr>`), 10) || '<tr><td colspan="7" class="muted">Нет данных</td></tr>'}
+    </table></div></div>`;
+}
+
+async function ctRenderOverview(el) {
+  const d = await api('/tracking/overview?' + ctQuery());
+  const t = d.totals;
+  const kpi = (label, v, color) => `<div class="card" style="margin:0"><div class="muted">${label}</div><div style="font-size:26px;font-weight:700;${color ? 'color:' + color : ''}">${v || 0}</div></div>`;
+  el.innerHTML = `
+    <div class="grid3" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));margin-bottom:16px">
+      ${kpi('Звонков с сайтов', t.calls)}${kpi('Принято', t.answered, 'var(--ok)')}${kpi('Пропущено', t.missed, 'var(--danger)')}
+      ${kpi('Перезвонили', t.called_back)}${kpi('Записей (по ИИ)', t.bookings)}
+    </div>
+    <div class="card"><h3 style="margin-top:0">По сайтам</h3>
+      <div style="overflow-x:auto"><table><tr><th>Сайт</th><th>Салон</th>${CT_HEAD}</tr>
+      ${d.sites.map(s => `<tr><td><b>${esc(s.name || s.domain)}</b><div class="muted" style="font-size:11px">${esc(s.domain)}</div></td><td>${esc(s.salon_name || '—')}</td>${ctMetricsCells(s)}</tr>`).join('')}
+      </table></div>
+      <p class="muted">Записи и конверсия — по разговорам, которые разобрал ИИ (конверсия = записей / разобранных звонков).</p>
+    </div>
+    ${ctGroupCard('По источникам', 'Источник и канал трафика по данным UIS.', d.sources)}
+    ${ctGroupCard('По рекламным кампаниям', 'Кампания UIS или utm_campaign.', d.campaigns)}
+    ${ctGroupCard('По UTM-меткам', 'utm_source / utm_medium.', d.utm)}
+    ${ctGroupCard('По поисковым запросам', 'Что гость искал перед звонком (если поисковик передал запрос) или utm_term.', d.queries)}
+    ${ctGroupCard('По страницам входа', 'На какую страницу сайта гость попал первой.', d.pages)}
+    ${ctGroupCard('Новые и повторные посетители', '', d.visitors)}
+    ${d.unknown_sites.length ? `<div class="card"><h3 style="margin-top:0">Сайты, которых нет в списке</h3>
+      <p class="muted" style="margin-top:0">С этих доменов за период были звонки, но в статистику они не входят, пока сайт не добавлен.</p>
+      <table>${d.unknown_sites.map(u => `<tr><td>${esc(u.domain)}</td><td>${u.calls} звонков</td>
+        <td style="text-align:right"><button onclick="ctQuickAddSite('${esc(u.domain)}')">+ Добавить</button></td></tr>`).join('')}</table></div>` : ''}`;
+}
+async function ctQuickAddSite(domain) {
+  try { await api('/tracking/sites', { method: 'POST', body: { domain } }); RENDERERS.calltracking(); } catch (e) { alert(e.message); }
+}
+
+async function ctRenderCalls(el) {
+  const calls = await api('/tracking/calls?' + ctQuery());
+  const badge = { on_time: '🟢 перезвонили', late: '🟡 перезвонили позже', none: '🔴 не перезвонили' };
+  const rows = calls.map(c => {
+    const t = c.tracking || {};
+    const src = [t.source, t.channel].filter(Boolean).join(' / ') || '—';
+    const camp = t.campaign_name || t.utm_campaign || '';
+    const query = t.search_query || t.utm_term || '';
+    return `<tr style="cursor:pointer" onclick="openCall(${c.id})">
+      <td>${esc(c.started_at)}</td><td>${esc(c.tracking_site)}<div class="muted" style="font-size:11px">${esc(c.salon_name)}</div></td>
+      <td>${esc(c.caller_phone || '—')}${c.client_name ? `<div class="muted" style="font-size:11px">${esc(c.client_name)}</div>` : ''}</td>
+      <td>${esc(src)}${camp ? `<div class="muted" style="font-size:11px">${esc(camp)}</div>` : ''}</td>
+      <td style="max-width:220px;word-break:break-word">${esc(query) || '<span class="muted">—</span>'}</td>
+      <td>${c.is_answered ? 'принят' : (badge[c.callback_status] || '<span style="color:var(--danger)">пропущен</span>')}${c.outcome === 'booking' ? '<div style="color:var(--ok);font-size:12px">запись</div>' : ''}</td></tr>`;
+  });
+  el.innerHTML = `<div class="card"><h3 style="margin-top:0">Звонки с сайтов (${calls.length})</h3>
+    <div style="overflow-x:auto"><table><tr><th>Время</th><th>Сайт</th><th>Клиент</th><th>Источник</th><th>Запрос</th><th>Итог</th></tr>
+    ${paginatedRows(rows, 30) || '<tr><td colspan="6" class="muted">Звонков нет</td></tr>'}</table></div>
+    <p class="muted">Нажмите на звонок — откроется карточка с записью разговора и всеми данными коллтрекинга.</p></div>`;
+}
+
+let ctEditingSiteId = null;
+function ctRenderSites(el, sites) {
+  const salonOpts = id => `<option value="">салон не указан</option>${SALONS.map(s => `<option value="${s.id}" ${s.id === id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}`;
+  el.innerHTML = `<div class="card">
+    <h3 style="margin-top:0">Сайты с коллтрекингом</h3>
+    <p class="muted" style="margin-top:0">Добавьте сайты, на которых стоит динамический коллтрекинг UIS. Статистика раздела строится по звонкам с этих сайтов.
+      Домен указывайте без https:// и www, например <b>example.ru</b>. Если звонки пришли с сайта не из списка, он появится внизу «Обзора» с кнопкой «+ Добавить».</p>
+    <div style="overflow-x:auto"><table><tr><th>Домен</th><th>Название</th><th>Салон</th><th>Заметка</th><th></th></tr>
+    ${sites.map(s => s.id === ctEditingSiteId ? `<tr>
+        <td><input id="cte-domain" value="${esc(s.domain)}"></td><td><input id="cte-name" value="${esc(s.name || '')}"></td>
+        <td><select id="cte-salon">${salonOpts(s.salon_id)}</select></td><td><input id="cte-note" value="${esc(s.note || '')}"></td>
+        <td class="row" style="justify-content:flex-end"><button class="primary" onclick="ctSaveSite(${s.id})">Сохранить</button><button onclick="ctEditingSiteId=null;RENDERERS.calltracking()">Отмена</button></td></tr>`
+      : `<tr><td><b>${esc(s.domain)}</b></td><td>${esc(s.name || '—')}</td><td>${esc(s.salon_name || '—')}</td><td>${noteOrLink(s.note)}</td>
+        <td class="row" style="justify-content:flex-end"><button onclick="ctEditingSiteId=${s.id};RENDERERS.calltracking()">✎ Изменить</button>
+          <button class="danger" onclick="ctDeleteSite(${s.id})">Удалить</button></td></tr>`).join('')
+      || '<tr><td colspan="5" class="muted">Сайтов пока нет</td></tr>'}
+    </table></div>
+    <div class="row" style="margin-top:10px;flex-wrap:wrap;gap:8px">
+      <input id="ctn-domain" placeholder="Домен, например example.ru"><input id="ctn-name" placeholder="Название (необязательно)">
+      <select id="ctn-salon">${salonOpts(null)}</select><input id="ctn-note" placeholder="Заметка (необязательно)">
+      <button class="primary" onclick="ctAddSite()">+ Добавить сайт</button>
+    </div>
+    <p class="muted">Салон у сайта — только подпись для отчётов: к какому салону относится звонок, по-прежнему определяется по номеру.</p>
+  </div>`;
+}
+async function ctAddSite() {
+  const body = { domain: document.getElementById('ctn-domain').value, name: document.getElementById('ctn-name').value,
+    salon_id: document.getElementById('ctn-salon').value || null, note: document.getElementById('ctn-note').value };
+  try { await api('/tracking/sites', { method: 'POST', body }); RENDERERS.calltracking(); } catch (e) { alert(e.message); }
+}
+async function ctSaveSite(id) {
+  const body = { domain: document.getElementById('cte-domain').value, name: document.getElementById('cte-name').value,
+    salon_id: document.getElementById('cte-salon').value || null, note: document.getElementById('cte-note').value };
+  try { await api('/tracking/sites/' + id, { method: 'PUT', body }); ctEditingSiteId = null; RENDERERS.calltracking(); } catch (e) { alert(e.message); }
+}
+async function ctDeleteSite(id) {
+  if (!confirm('Удалить сайт из списка? Звонки сохранятся, просто перестанут попадать в статистику раздела.')) return;
+  await api('/tracking/sites/' + id, { method: 'DELETE' }); RENDERERS.calltracking();
+}
+
 // ================= КЛИЕНТЫ =================
 RENDERERS.clients = async function renderClients() {
   const main = document.getElementById('main');
@@ -1078,7 +1252,7 @@ async function searchClients() {
 
 async function openClient(id) {
   const c = await api('/clients/' + id);
-  document.getElementById('modal-root').innerHTML = `
+  modalRoot().innerHTML = `
     <div class="modal-bg" onclick="if(event.target===this)this.remove()">
       <div class="modal">
         <div class="row between"><h3>${esc(c.name || c.phone)}</h3><button onclick="document.querySelector('.modal-bg').remove()">✕</button></div>
@@ -1206,7 +1380,7 @@ async function openAdminProfile(id) {
     <td>✅${f.pass} ⚠️${f.partial} ❌${f.fail}${f.na ? ` ➖${f.na}` : ''}${f.uncertain ? ` ❓${f.uncertain}` : ''}</td>
   </tr>`);
 
-  document.getElementById('modal-root').innerHTML = `
+  modalRoot().innerHTML = `
     <div class="modal-bg" onclick="if(event.target===this)this.remove()">
       <div class="modal" style="max-width:900px">
         <div class="row between">
@@ -1242,7 +1416,7 @@ async function openAdminProfile(id) {
 function showMergeAdminForm(id) {
   const a = ADMINS.find(x => x.id === id);
   const others = ADMINS.filter(x => x.id !== id);
-  document.getElementById('modal-root').innerHTML = `
+  modalRoot().innerHTML = `
     <div class="modal-bg" onclick="if(event.target===this)this.remove()">
       <div class="modal">
         <h3>Объединить «${esc(a.name)}» с...</h3>
@@ -1268,7 +1442,7 @@ async function mergeAdmin(id) {
 }
 
 function showAdminForm() {
-  document.getElementById('modal-root').innerHTML = `
+  modalRoot().innerHTML = `
     <div class="modal-bg" onclick="if(event.target===this)this.remove()">
       <div class="modal">
         <h3>Новый администратор</h3>
@@ -1291,7 +1465,7 @@ async function saveNewAdmin() {
 
 function editAdmin(id) {
   const a = ADMINS.find(x => x.id === id);
-  document.getElementById('modal-root').innerHTML = `
+  modalRoot().innerHTML = `
     <div class="modal-bg" onclick="if(event.target===this)this.remove()">
       <div class="modal">
         <h3>Изменить администратора</h3>
@@ -1324,7 +1498,7 @@ async function saveAdminEdit(id) {
 
 function manageLogin(id) {
   const a = ADMINS.find(x => x.id === id);
-  document.getElementById('modal-root').innerHTML = `
+  modalRoot().innerHTML = `
     <div class="modal-bg" onclick="if(event.target===this)this.remove()">
       <div class="modal">
         <h3>Доступ к странице «Гости» — ${esc(a.name)}</h3>
@@ -1379,7 +1553,7 @@ RENDERERS.salons = async function renderSalons() {
 
 function showSalonForm(id) {
   const s = id ? SALONS.find(x => x.id === id) : null;
-  document.getElementById('modal-root').innerHTML = `
+  modalRoot().innerHTML = `
     <div class="modal-bg" onclick="if(event.target===this)this.remove()">
       <div class="modal">
         <h3>${s ? 'Изменить объект' : 'Новый объект'}</h3>
@@ -1426,7 +1600,7 @@ async function toggleChecklistMode(id, mode) {
 async function manageSalonPhones(salonId) {
   const salon = SALONS.find(s => s.id === salonId);
   const phones = await api(`/salons/${salonId}/phones`);
-  document.getElementById('modal-root').innerHTML = `
+  modalRoot().innerHTML = `
     <div class="modal-bg" onclick="if(event.target===this)this.remove()">
       <div class="modal">
         <h3>Номера объекта «${esc(salon.name)}»</h3>
@@ -1471,7 +1645,7 @@ async function deleteSalonPhone(salonId, phoneId) {
 async function manageSalonLabels(salonId) {
   const salon = SALONS.find(s => s.id === salonId);
   const labels = await api(`/salons/${salonId}/labels`);
-  document.getElementById('modal-root').innerHTML = `
+  modalRoot().innerHTML = `
     <div class="modal-bg" onclick="if(event.target===this)this.remove()">
       <div class="modal">
         <h3>Метки UIS для «${esc(salon.name)}»</h3>
@@ -1517,7 +1691,7 @@ async function manageSalonForwarding(salonId) {
   const salon = SALONS.find(s => s.id === salonId);
   const rules = await api(`/salons/${salonId}/forwarding`);
   const targets = SALONS.filter(s => s.active && s.id !== salonId);
-  document.getElementById('modal-root').innerHTML = `
+  modalRoot().innerHTML = `
     <div class="modal-bg" onclick="if(event.target===this)this.remove()">
       <div class="modal">
         <h3>Переадресация «${esc(salon.name)}»</h3>
@@ -1649,12 +1823,12 @@ function checklistItemFormHtml(item) {
     </div>`;
 }
 function showChecklistItemForm(item) {
-  document.getElementById('modal-root').innerHTML = checklistItemFormHtml(item);
+  modalRoot().innerHTML = checklistItemFormHtml(item);
 }
 function editChecklistItem(id) {
   const item = CHECKLIST_ITEMS.find(i => i.id === id);
   if (!item) return;
-  document.getElementById('modal-root').innerHTML = checklistItemFormHtml(item);
+  modalRoot().innerHTML = checklistItemFormHtml(item);
 }
 async function saveChecklistItem(id, template, salonId) {
   const body = {
