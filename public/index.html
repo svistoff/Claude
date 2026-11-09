@@ -229,6 +229,7 @@ function navigate(route) {
     const r = a.dataset.route;
     a.classList.toggle('active', r === route || (r === 'settings' && SETTINGS_GROUP.includes(route)));
   });
+  if (route === 'reports') reportsView = 'list';
   (RENDERERS[route] || RENDERERS[ME.role === 'admin' ? 'dashboard' : 'guest'])();
 }
 
@@ -2194,19 +2195,19 @@ function renderAdReportChart(rows) {
 }
 
 // ================= ОТЧЁТЫ =================
-let reportsTab = 'dynamics';
+// «Отчёт для шефа» открывается из своей карточки среди остальных отчётов
+let reportsView = 'list';
 RENDERERS.reports = async function renderReports() {
   const main = document.getElementById('main');
-  const tabs = `<h2>Отчёты</h2>
-    <div class="row" style="margin-bottom:12px;flex-wrap:wrap;gap:6px">
-      <button class="${reportsTab === 'dynamics' ? 'primary' : ''}" onclick="reportsTab='dynamics';RENDERERS.reports()">📈 Отчёт для шефа</button>
-      <button class="${reportsTab === 'print' ? 'primary' : ''}" onclick="reportsTab='print';RENDERERS.reports()">🖨 Печатные отчёты</button>
-    </div>`;
-  if (reportsTab === 'dynamics') {
-    main.innerHTML = tabs + '<div id="dyn-content">Загрузка…</div>';
+  if (reportsView === 'chief') {
+    main.innerHTML = `<div class="row" style="gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+        <button onclick="reportsView='list';RENDERERS.reports()">← Все отчёты</button>
+        <h2 style="margin:0">Отчёт для шефа</h2>
+      </div><div id="dyn-content">Загрузка…</div>`;
     return renderDynamics(document.getElementById('dyn-content'));
   }
-  main.innerHTML = tabs + `
+  main.innerHTML = `
+    <h2>Отчёты</h2>
     <div class="grid2">
       <div class="card"><h3>По объекту</h3>
         <div class="row" style="flex-direction:column;align-items:stretch">
@@ -2252,6 +2253,10 @@ RENDERERS.reports = async function renderReports() {
           <button class="primary" onclick="openFuckwellReport()">Сформировать</button>
         </div>
         <p class="muted" style="margin-top:8px">Звонки на анкеты, по салонам и номерам, оценки ИИ.</p>
+      </div>
+      <div class="card"><h3>📈 Отчёт для шефа</h3>
+        <p class="muted" style="margin-top:0">Звонки с платных анкет по салонам — по неделям и месяцам, расход на анкеты и цена звонка.</p>
+        <button class="primary" onclick="reportsView='chief';RENDERERS.reports()">Открыть</button>
       </div>
     </div>
   `;
