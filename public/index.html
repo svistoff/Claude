@@ -2329,6 +2329,7 @@ async function renderDynamics(el) {
         <label>По <input id="dyn-till" type="date" value="${dynCustom ? dynCustom.till : ''}"></label>
         <button class="${dynCustom ? 'primary' : ''}" onclick="applyDynRange()">Показать</button>
         ${dynCustom ? '<button onclick="dynCustom=null;RENDERERS.reports()">Сбросить даты</button>' : ''}
+        <button onclick="window.open('/api/dynamics/print?${q}&selected=${selP.key}', '_blank')">🖨 Сохранить в PDF</button>
       </div>
       <p class="muted" style="margin-bottom:0">Звонки с платных анкет · ${fmtDate(d.from)} — ${fmtDate(d.till)} · ${dynGranularity === 'week' ? 'недели с понедельника по воскресенье' : 'по календарным месяцам'}${dynCustom ? '' : ` · последние ${n} ${dynGranularity === 'week' ? ruPlural(n, 'неделя', 'недели', 'недель') : ruPlural(n, 'месяц', 'месяца', 'месяцев')}`}</p>
     </div>
