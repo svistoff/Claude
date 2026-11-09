@@ -1,6 +1,6 @@
-// Отчёт «Динамика» (/api/dynamics, только владелец): входящие звонки по
-// салонам по неделям (пн–вс) или месяцам — всего и из них с анкет — плюс
-// вручную внесённый недельный расход на анкеты и цена звонка.
+// «Отчёт для шефа» (/api/dynamics, только владелец): входящие звонки
+// с анкетных (платных) номеров по салонам по неделям (пн–вс) или месяцам,
+// плюс вручную внесённый общий недельный расход на анкеты и цена звонка.
 
 const express = require('express');
 const db = require('./db');
@@ -77,14 +77,14 @@ router.get('/', (req, res) => {
   const index = new Map(periods.map((p, i) => [p.key, i]));
   const bucket = day => index.get(granularity === 'month' ? monthOf(day) : mondayOf(day));
 
-  // только входящие звонки гостей; «с анкет» — на номера из пула анкет/рекламы
+  // только входящие звонки на номера из пула анкет (Настройки -> «Номера и анкеты»)
   const calls = db.prepare(`
-    SELECT c.salon_id, substr(c.started_at, 1, 10) AS day,
-      EXISTS (SELECT 1 FROM ad_phone_numbers an WHERE an.phone = c.dialed_number) AS is_ad
+    SELECT c.salon_id, substr(c.started_at, 1, 10) AS day
     FROM calls c WHERE c.direction = 'in' AND c.started_at >= ? AND c.started_at <= ?
+      AND EXISTS (SELECT 1 FROM ad_phone_numbers an WHERE an.phone = c.dialed_number)
   `).all(from + ' 00:00:00', till + ' 23:59:59');
 
-  const empty = () => periods.map(() => ({ total: 0, ads: 0 }));
+  const empty = () => periods.map(() => ({ total: 0 }));
   const bySalon = new Map();
   const totals = empty();
   for (const c of calls) {
@@ -93,10 +93,9 @@ router.get('/', (req, res) => {
     if (!bySalon.has(c.salon_id)) bySalon.set(c.salon_id, empty());
     const cell = bySalon.get(c.salon_id)[i];
     cell.total++; totals[i].total++;
-    if (c.is_ad) { cell.ads++; totals[i].ads++; }
   }
-  const salons = db.prepare('SELECT id, name, active FROM salons ORDER BY name').all()
-    .filter(s => s.active || bySalon.has(s.id))
+  const salons = db.prepare('SELECT id, name FROM salons ORDER BY name').all()
+    .filter(s => bySalon.has(s.id))
     .map(s => ({ id: s.id, name: s.name, cells: bySalon.get(s.id) || empty() }));
 
   // расход вносится по неделям; в помесячном режиме неделя относится к месяцу своего понедельника
