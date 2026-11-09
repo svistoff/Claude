@@ -2199,7 +2199,7 @@ RENDERERS.reports = async function renderReports() {
   const main = document.getElementById('main');
   const tabs = `<h2>Отчёты</h2>
     <div class="row" style="margin-bottom:12px;flex-wrap:wrap;gap:6px">
-      <button class="${reportsTab === 'dynamics' ? 'primary' : ''}" onclick="reportsTab='dynamics';RENDERERS.reports()">📈 Динамика</button>
+      <button class="${reportsTab === 'dynamics' ? 'primary' : ''}" onclick="reportsTab='dynamics';RENDERERS.reports()">📈 Отчёт для шефа</button>
       <button class="${reportsTab === 'print' ? 'primary' : ''}" onclick="reportsTab='print';RENDERERS.reports()">🖨 Печатные отчёты</button>
     </div>`;
   if (reportsTab === 'dynamics') {
