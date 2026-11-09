@@ -2194,10 +2194,19 @@ function renderAdReportChart(rows) {
 }
 
 // ================= ОТЧЁТЫ =================
+let reportsTab = 'dynamics';
 RENDERERS.reports = async function renderReports() {
   const main = document.getElementById('main');
-  main.innerHTML = `
-    <h2>Отчёты</h2>
+  const tabs = `<h2>Отчёты</h2>
+    <div class="row" style="margin-bottom:12px;flex-wrap:wrap;gap:6px">
+      <button class="${reportsTab === 'dynamics' ? 'primary' : ''}" onclick="reportsTab='dynamics';RENDERERS.reports()">📈 Динамика</button>
+      <button class="${reportsTab === 'print' ? 'primary' : ''}" onclick="reportsTab='print';RENDERERS.reports()">🖨 Печатные отчёты</button>
+    </div>`;
+  if (reportsTab === 'dynamics') {
+    main.innerHTML = tabs + '<div id="dyn-content">Загрузка…</div>';
+    return renderDynamics(document.getElementById('dyn-content'));
+  }
+  main.innerHTML = tabs + `
     <div class="grid2">
       <div class="card"><h3>По объекту</h3>
         <div class="row" style="flex-direction:column;align-items:stretch">
@@ -2247,6 +2256,111 @@ RENDERERS.reports = async function renderReports() {
     </div>
   `;
 };
+
+// ---------- Динамика: звонки по салонам по неделям/месяцам + недельный расход ----------
+let dynGranularity = 'week', dynCustom = null;
+function ruPlural(n, one, few, many) {
+  const m10 = n % 10, m100 = n % 100;
+  return m10 === 1 && m100 !== 11 ? one : m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14) ? few : many;
+}
+function dynMoney(v) { return v == null ? '' : Math.round(v).toLocaleString('ru-RU'); }
+function dynChange(cur, prev) {
+  if (!prev) return '';
+  const p = Math.round((cur - prev) / prev * 100);
+  if (!p) return '<span class="muted" style="font-size:11px">0%</span>';
+  return `<span style="font-size:11px;color:${p > 0 ? 'var(--ok)' : 'var(--danger)'}">${p > 0 ? '▲' : '▼'}${Math.abs(p)}%</span>`;
+}
+
+async function renderDynamics(el) {
+  const q = `granularity=${dynGranularity}` + (dynCustom ? `&date_from=${dynCustom.from}&date_till=${dynCustom.till}` : '');
+  let d;
+  try { d = await api('/dynamics?' + q); } catch (e) { el.innerHTML = `<div class="card"><p class="muted">Ошибка: ${esc(e.message)}</p></div>`; return; }
+  const n = d.periods.length;
+  const sticky = 'position:sticky;left:0;background:var(--card,#fff);z-index:1';
+  const head = `<tr><th style="${sticky}">Салон</th>${d.periods.map(p => `<th style="text-align:center;white-space:nowrap">${esc(p.label)}${p.full ? '' : '<div class="muted" style="font-size:10px">неполн.</div>'}</th>`).join('')}</tr>`;
+  // у неполного периода (текущая неделя/месяц) изменение к прошлому не показываем — он ещё идёт
+  const prevOf = (arr, i) => i && d.periods[i].full ? arr[i - 1] : null;
+  const cell = (c, prev) => `<td style="text-align:center"><b>${c.total || '·'}</b>${c.ads ? `<div style="font-size:11px;color:${AD_COLOR}">${c.ads} с анкет</div>` : ''}${prev ? '<div>' + dynChange(c.total, prev.total) + '</div>' : ''}</td>`;
+  const salonRows = d.salons.map(s => `<tr><td style="${sticky}"><b>${esc(s.name)}</b></td>${s.cells.map((c, i) => cell(c, prevOf(s.cells, i))).join('')}</tr>`).join('');
+  const totalRow = `<tr style="border-top:2px solid var(--border)"><td style="${sticky}"><b>Всего звонков</b></td>${d.totals.map((c, i) => cell(c, prevOf(d.totals, i))).join('')}</tr>`;
+  const spendRow = `<tr><td style="${sticky}"><b>Потрачено, ₽</b>${dynGranularity === 'week' ? '<div class="muted" style="font-size:11px">впишите сумму за неделю</div>' : ''}</td>
+    ${d.periods.map((p, i) => dynGranularity === 'week'
+      ? `<td style="text-align:center"><input inputmode="decimal" style="width:84px;text-align:right" value="${d.spend[i] == null ? '' : d.spend[i]}" placeholder="—" onchange="saveDynSpend('${p.key}', this)"></td>`
+      : `<td style="text-align:center">${dynMoney(d.spend[i]) || '—'}</td>`).join('')}</tr>`;
+  const costRow = (label, key) => `<tr><td style="${sticky}">${label}</td>${d.periods.map((p, i) => {
+    const calls = d.totals[i][key];
+    return `<td style="text-align:center">${d.spend[i] != null && calls ? dynMoney(d.spend[i] / calls) + ' ₽' : '—'}</td>`;
+  }).join('')}</tr>`;
+
+  // столбцы: всего звонков по периодам, снизу — напрямую, сверху — с анкет
+  const maxV = Math.max(1, ...d.totals.map(t => t.total));
+  const bars = d.totals.map((t, i) => {
+    const hT = Math.round(t.total / maxV * 120), hA = Math.round(t.ads / maxV * 120);
+    return `<div style="flex:1;min-width:30px;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:160px">
+      <div style="font-size:11px;font-weight:600">${t.total}</div>
+      <div style="width:70%;max-width:34px;display:flex;flex-direction:column">
+        <div style="height:${hA}px;background:${AD_COLOR};border-radius:4px 4px 0 0"></div>
+        <div style="height:${hT - hA}px;background:var(--accent);${hA ? '' : 'border-radius:4px 4px 0 0'}"></div>
+      </div>
+      <div class="muted" style="font-size:10px;white-space:nowrap;margin-top:3px">${esc(dynGranularity === 'month' ? d.periods[i].label.split(' ')[0] : d.periods[i].from.slice(8, 10) + '.' + d.periods[i].from.slice(5, 7))}</div>
+    </div>`;
+  }).join('');
+
+  const sumT = d.totals.reduce((a, t) => a + t.total, 0), sumA = d.totals.reduce((a, t) => a + t.ads, 0);
+  const sumSpend = d.spend.reduce((a, v) => a + (v || 0), 0);
+  // цена звонка — только по периодам, где расход вписан
+  const adsWithSpend = d.totals.reduce((a, t, i) => a + (d.spend[i] != null ? t.ads : 0), 0);
+  el.innerHTML = `
+    <div class="card">
+      <div class="row" style="flex-wrap:wrap;gap:8px">
+        <button class="${dynGranularity === 'week' ? 'primary' : ''}" onclick="dynGranularity='week';RENDERERS.reports()">По неделям</button>
+        <button class="${dynGranularity === 'month' ? 'primary' : ''}" onclick="dynGranularity='month';RENDERERS.reports()">По месяцам</button>
+        <label>С <input id="dyn-from" type="date" value="${dynCustom ? dynCustom.from : ''}"></label>
+        <label>По <input id="dyn-till" type="date" value="${dynCustom ? dynCustom.till : ''}"></label>
+        <button class="${dynCustom ? 'primary' : ''}" onclick="applyDynRange()">Показать</button>
+        ${dynCustom ? '<button onclick="dynCustom=null;RENDERERS.reports()">Сбросить даты</button>' : ''}
+      </div>
+      <p class="muted" style="margin-bottom:0">${fmtDate(d.from)} — ${fmtDate(d.till)} · ${dynGranularity === 'week' ? 'недели с понедельника по воскресенье' : 'по календарным месяцам'}${dynCustom ? '' : ` · последние ${n} ${dynGranularity === 'week' ? ruPlural(n, 'неделя', 'недели', 'недель') : ruPlural(n, 'месяц', 'месяца', 'месяцев')}`}</p>
+    </div>
+    <div class="grid3" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:16px">
+      <div class="card" style="margin:0"><div class="muted">Звонков за период</div><div style="font-size:26px;font-weight:700">${sumT}</div></div>
+      <div class="card" style="margin:0"><div class="muted">Из них с анкет</div><div style="font-size:26px;font-weight:700;color:${AD_COLOR}">${sumA}</div></div>
+      <div class="card" style="margin:0"><div class="muted">Потрачено</div><div style="font-size:26px;font-weight:700">${sumSpend ? dynMoney(sumSpend) + ' ₽' : '—'}</div></div>
+      <div class="card" style="margin:0"><div class="muted">Цена звонка с анкеты</div><div style="font-size:26px;font-weight:700">${sumSpend && adsWithSpend ? dynMoney(sumSpend / adsWithSpend) + ' ₽' : '—'}</div><div class="muted" style="font-size:11px">по ${dynGranularity === 'week' ? 'неделям' : 'месяцам'} с вписанным расходом</div></div>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">Звонки ${dynGranularity === 'week' ? 'по неделям' : 'по месяцам'}</h3>
+      <div class="dyn-scroll" style="display:flex;gap:4px;overflow-x:auto;padding-bottom:4px">${bars}</div>
+      <div class="row" style="gap:16px;margin-top:8px;font-size:12px;flex-wrap:wrap">
+        <span><span style="display:inline-block;width:10px;height:10px;background:var(--accent);border-radius:2px;margin-right:4px"></span>напрямую в салон</span>
+        <span><span style="display:inline-block;width:10px;height:10px;background:${AD_COLOR};border-radius:2px;margin-right:4px"></span>с анкет</span>
+      </div>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">По салонам</h3>
+      <div class="dyn-scroll" style="overflow-x:auto"><table style="min-width:${180 + n * 92}px">
+        ${head}${salonRows}${totalRow}${spendRow}
+        ${costRow('Цена звонка с анкеты', 'ads')}${costRow('Цена любого звонка', 'total')}
+      </table></div>
+      <p class="muted">Входящие звонки гостей; под числом — сколько из них с анкет и изменение к прошлому ${dynGranularity === 'week' ? 'неделе' : 'месяцу'}.
+        ${dynGranularity === 'week' ? 'Расход вписывается по неделям и сохраняется сразу.' : 'Расход за месяц — сумма недель, понедельник которых приходится на этот месяц. Вписывать расходы — в режиме «По неделям».'}</p>
+    </div>`;
+  // самые свежие периоды справа — сразу показываем их
+  el.querySelectorAll('.dyn-scroll').forEach(box => { box.scrollLeft = box.scrollWidth; });
+}
+function applyDynRange() {
+  const from = document.getElementById('dyn-from').value, till = document.getElementById('dyn-till').value;
+  if (!from || !till) return alert('Укажите обе даты');
+  dynCustom = from <= till ? { from, till } : { from: till, till: from };
+  RENDERERS.reports();
+}
+async function saveDynSpend(weekStart, input) {
+  try {
+    await api('/dynamics/spend/' + weekStart, { method: 'PUT', body: { amount: input.value.trim() || null } });
+    input.style.outline = '2px solid var(--ok)';
+    setTimeout(() => RENDERERS.reports(), 400);
+  } catch (e) { alert(e.message); input.style.outline = '2px solid var(--danger)'; }
+}
 
 function openFuckwellReport() {
   const period = document.getElementById('rep-fw-period').value;

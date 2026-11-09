@@ -29,6 +29,7 @@ app.post('/api/megafon', express.urlencoded({ extended: false }), require('./fuc
 app.use('/api', auth.requireAuth);
 app.use('/api/fw', auth.requireAdmin, require('./fuckwell/routes'));
 app.use('/api/tracking', auth.requireAdmin, require('./calltracking'));
+app.use('/api/dynamics', auth.requireAdmin, require('./dynamics'));
 
 function formatCall(c) {
   return { ...c, checklist_results: c.checklist_results ? JSON.parse(c.checklist_results) : null };
