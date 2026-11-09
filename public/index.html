@@ -2263,7 +2263,7 @@ RENDERERS.reports = async function renderReports() {
 };
 
 // ---------- Динамика: звонки по салонам по неделям/месяцам + недельный расход ----------
-let dynGranularity = 'week', dynCustom = null;
+let dynGranularity = 'week', dynCustom = null, dynSelected = null;
 function ruPlural(n, one, few, many) {
   const m10 = n % 10, m100 = n % 100;
   return m10 === 1 && m100 !== 11 ? one : m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14) ? few : many;
@@ -2292,7 +2292,14 @@ async function renderDynamics(el) {
   const sticky = 'position:sticky;left:0;background:var(--card,#fff);z-index:1';
   // у неполного периода (текущая неделя/месяц) изменение к прошлому не показываем — он ещё идёт
   const prevOf = (arr, i) => i && d.periods[i].full ? arr[i - 1] : null;
-  const head = `<tr><th style="${sticky}">Салон</th>${d.periods.map(p => `<th style="text-align:center;white-space:nowrap">${esc(p.label)}${p.full ? '' : '<div class="muted" style="font-size:10px">неполн.</div>'}</th>`).join('')}</tr>`;
+  // итоги вверху — за одну выбранную неделю/месяц; по умолчанию последний завершённый
+  let sel = d.periods.findIndex(p => p.key === dynSelected);
+  if (sel === -1) {
+    sel = d.periods.length - 1;
+    while (sel > 0 && !d.periods[sel].full) sel--;
+  }
+  const selStyle = 'background:var(--accent-soft,#eef3ff)';
+  const head = `<tr><th style="${sticky}">Салон</th>${d.periods.map((p, i) => `<th style="text-align:center;white-space:nowrap;cursor:pointer;${i === sel ? selStyle : ''}" onclick="selectDynPeriod('${p.key}')">${esc(p.label)}${p.full ? '' : '<div class="muted" style="font-size:10px">неполн.</div>'}</th>`).join('')}</tr>`;
   const cell = (c, prev) => `<td style="text-align:center"><b>${c.total || '·'}</b>${prev ? '<div>' + dynChange(c.total, prev.total) + '</div>' : ''}</td>`;
   const salonRows = d.salons.map(s => `<tr><td style="${sticky}"><b>${esc(s.name)}</b></td>${s.cells.map((c, i) => cell(c, prevOf(s.cells, i))).join('')}</tr>`).join('');
   const totalRow = `<tr style="border-top:2px solid var(--border)"><td style="${sticky}"><b>Всего с анкет</b></td>${d.totals.map((c, i) => cell(c, prevOf(d.totals, i))).join('')}</tr>`;
@@ -2304,16 +2311,14 @@ async function renderDynamics(el) {
     `<td style="text-align:center">${d.spend[i] != null && d.totals[i].total ? dynMoney(d.spend[i] / d.totals[i].total) + ' ₽' : '—'}</td>`).join('')}</tr>`;
 
   const maxV = Math.max(1, ...d.totals.map(t => t.total));
-  const bars = d.totals.map((t, i) => `<div style="flex:1;min-width:52px;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:160px">
+  const bars = d.totals.map((t, i) => `<div onclick="selectDynPeriod('${d.periods[i].key}')" title="Показать итоги за этот период" style="flex:1;min-width:52px;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:160px;cursor:pointer;border-radius:6px;${i === sel ? selStyle : ''}">
       <div style="font-size:11px;font-weight:600">${t.total}</div>
-      <div style="width:70%;max-width:34px;height:${Math.round(t.total / maxV * 120)}px;background:${AD_COLOR};border-radius:4px 4px 0 0"></div>
+      <div style="width:70%;max-width:34px;height:${Math.round(t.total / maxV * 120)}px;background:${AD_COLOR};border-radius:4px 4px 0 0;opacity:${i === sel ? 1 : .55}"></div>
       <div class="muted" style="font-size:10px;white-space:nowrap;margin-top:3px">${esc(dynGranularity === 'month' ? d.periods[i].label.split(' ')[0] : weekShort(d.periods[i]))}</div>
     </div>`).join('');
 
-  const sumCalls = d.totals.reduce((a, t) => a + t.total, 0);
-  const sumSpend = d.spend.reduce((a, v) => a + (v || 0), 0);
-  // цена звонка — только по периодам, где расход вписан
-  const callsWithSpend = d.totals.reduce((a, t, i) => a + (d.spend[i] != null ? t.total : 0), 0);
+  const selP = d.periods[sel], selCalls = d.totals[sel].total, selSpend = d.spend[sel];
+  const selName = dynGranularity === 'week' ? `Неделя ${weekShort(selP)}` : selP.label;
   const kpi = (label, value, hint) => `<div class="card" style="margin:0"><div class="muted">${label}</div><div style="font-size:26px;font-weight:700">${value}</div>${hint ? `<div class="muted" style="font-size:11px">${hint}</div>` : ''}</div>`;
   el.innerHTML = `
     <div class="card">
@@ -2328,10 +2333,11 @@ async function renderDynamics(el) {
       <p class="muted" style="margin-bottom:0">Звонки с платных анкет · ${fmtDate(d.from)} — ${fmtDate(d.till)} · ${dynGranularity === 'week' ? 'недели с понедельника по воскресенье' : 'по календарным месяцам'}${dynCustom ? '' : ` · последние ${n} ${dynGranularity === 'week' ? ruPlural(n, 'неделя', 'недели', 'недель') : ruPlural(n, 'месяц', 'месяца', 'месяцев')}`}</p>
     </div>
     <div class="grid3" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:16px">
-      ${kpi('Звонков с анкет', sumCalls)}
-      ${kpi('Потрачено на анкеты', sumSpend ? dynMoney(sumSpend) + ' ₽' : '—')}
-      ${kpi('Цена звонка с анкеты', sumSpend && callsWithSpend ? dynMoney(sumSpend / callsWithSpend) + ' ₽' : '—', `по ${dynGranularity === 'week' ? 'неделям' : 'месяцам'} с вписанным расходом`)}
+      ${kpi('Звонков с анкет', selCalls, selName + (selP.full ? '' : ' · ещё идёт'))}
+      ${kpi('Потрачено на анкеты', selSpend != null ? dynMoney(selSpend) + ' ₽' : '—', selSpend != null ? selName : 'сумма ещё не вписана')}
+      ${kpi('Цена звонка с анкеты', selSpend != null && selCalls ? dynMoney(selSpend / selCalls) + ' ₽' : '—', selName)}
     </div>
+    <p class="muted" style="margin:-6px 0 14px">Итоги — за ${dynGranularity === 'week' ? 'выбранную неделю' : 'выбранный месяц'}. Нажмите на столбик графика или на ${dynGranularity === 'week' ? 'неделю' : 'месяц'} в таблице, чтобы посмотреть другой.</p>
     <div class="card">
       <h3 style="margin-top:0">Звонки с анкет ${dynGranularity === 'week' ? 'по неделям' : 'по месяцам'}</h3>
       <div class="dyn-scroll" style="display:flex;gap:4px;overflow-x:auto;padding-bottom:4px">${bars}</div>
@@ -2347,6 +2353,7 @@ async function renderDynamics(el) {
   // самые свежие периоды справа — сразу показываем их
   el.querySelectorAll('.dyn-scroll').forEach(box => { box.scrollLeft = box.scrollWidth; });
 }
+function selectDynPeriod(key) { dynSelected = key; RENDERERS.reports(); }
 function applyDynRange() {
   const from = document.getElementById('dyn-from').value, till = document.getElementById('dyn-till').value;
   if (!from || !till) return alert('Укажите обе даты');
