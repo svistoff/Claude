@@ -2271,6 +2271,13 @@ function dynChange(cur, prev) {
   return `<span style="font-size:11px;color:${p > 0 ? 'var(--ok)' : 'var(--danger)'}">${p > 0 ? '▲' : '▼'}${Math.abs(p)}%</span>`;
 }
 
+// подпись недели под столбиком: "02–08.11" или "27.10–02.11" через месяц
+function weekShort(p) {
+  const [f, t] = [p.from, p.till];
+  return f.slice(5, 7) === t.slice(5, 7)
+    ? `${f.slice(8, 10)}–${t.slice(8, 10)}.${t.slice(5, 7)}`
+    : `${f.slice(8, 10)}.${f.slice(5, 7)}–${t.slice(8, 10)}.${t.slice(5, 7)}`;
+}
 async function renderDynamics(el) {
   const q = `granularity=${dynGranularity}` + (dynCustom ? `&date_from=${dynCustom.from}&date_till=${dynCustom.till}` : '');
   let d;
@@ -2292,10 +2299,10 @@ async function renderDynamics(el) {
     `<td style="text-align:center">${d.spend[i] != null && d.totals[i].total ? dynMoney(d.spend[i] / d.totals[i].total) + ' ₽' : '—'}</td>`).join('')}</tr>`;
 
   const maxV = Math.max(1, ...d.totals.map(t => t.total));
-  const bars = d.totals.map((t, i) => `<div style="flex:1;min-width:30px;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:160px">
+  const bars = d.totals.map((t, i) => `<div style="flex:1;min-width:52px;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:160px">
       <div style="font-size:11px;font-weight:600">${t.total}</div>
       <div style="width:70%;max-width:34px;height:${Math.round(t.total / maxV * 120)}px;background:${AD_COLOR};border-radius:4px 4px 0 0"></div>
-      <div class="muted" style="font-size:10px;white-space:nowrap;margin-top:3px">${esc(dynGranularity === 'month' ? d.periods[i].label.split(' ')[0] : d.periods[i].from.slice(8, 10) + '.' + d.periods[i].from.slice(5, 7))}</div>
+      <div class="muted" style="font-size:10px;white-space:nowrap;margin-top:3px">${esc(dynGranularity === 'month' ? d.periods[i].label.split(' ')[0] : weekShort(d.periods[i]))}</div>
     </div>`).join('');
 
   const sumCalls = d.totals.reduce((a, t) => a + t.total, 0);
