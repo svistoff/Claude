@@ -10,7 +10,7 @@ from typing import Any
 from aiogram import Bot
 
 from bot.config import config
-from bot.services import ai, media, supabase_client, video_storage
+from bot.services import ai, media, poster, supabase_client, video_storage
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +112,22 @@ async def process_submission(bot: Bot, user_id: int, parts: list[dict[str, Any]]
     media_parts = []
     if cover_url:
         media_parts.append("фото ✓")
+    elif video and not media.is_video_too_large(video["file_size"]):
+        # афиши нет, но есть видео — собираем фирменную афишу из удачного кадра
+        try:
+            when = _human_when(fields) if real_event_date else ""  # «сегодня»-заглушку на афишу не пишем
+            data = await poster.poster_from_video(
+                bot, video["file_id"], title=fields["title"], when=when, venue=fields.get("venue_name"),
+            )
+            if data:
+                cover_url, _ = await supabase_client.upload_file(
+                    "event-posters", f"submissions/{uuid.uuid4().hex}.jpg", data, "image/jpeg",
+                )
+                media_parts.append("афиша из видео ✓")
+        except Exception:
+            logger.exception("Не удалось собрать афишу из видео")
+        if not cover_url:
+            warnings.append("афишу из видео собрать не удалось — добавь картинку вручную")
 
     video_url = None
     if video:
