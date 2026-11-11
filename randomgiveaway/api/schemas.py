@@ -5,7 +5,7 @@ from dataclasses import asdict
 
 from pydantic import BaseModel
 
-from randomgiveaway.database.models import Giveaway, GiveawaySettings
+from randomgiveaway.database.models import Giveaway, GiveawaySettings, InstagramConnectedAccount
 
 
 class GiveawaySettingsIn(BaseModel):
@@ -17,9 +17,20 @@ class GiveawaySettingsIn(BaseModel):
     excluded_users: list[str] = []
     winners_count: int = 1
     backup_winners_count: int = 0
+    instagram_tag_account_ids: list[int] = []
 
     def to_domain(self) -> GiveawaySettings:
         return GiveawaySettings(**self.model_dump())
+
+
+class InstagramConnectedAccountOut(BaseModel):
+    id: int
+    username: str | None
+    connected_at: str
+
+    @staticmethod
+    def from_domain(a: InstagramConnectedAccount) -> "InstagramConnectedAccountOut":
+        return InstagramConnectedAccountOut(id=a.id, username=a.username, connected_at=a.connected_at)
 
 
 class CreateGiveawayRequest(BaseModel):

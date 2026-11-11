@@ -1,4 +1,4 @@
-export type Source = 'instagram' | 'vk' | 'telegram' | 'import'
+export type Source = 'instagram' | 'instagram_tags' | 'vk' | 'telegram' | 'import'
 
 export interface GiveawaySettings {
   unique_user: boolean
@@ -9,6 +9,7 @@ export interface GiveawaySettings {
   excluded_users: string[]
   winners_count: number
   backup_winners_count: number
+  instagram_tag_account_ids: number[]
 }
 
 export const defaultSettings: GiveawaySettings = {
@@ -20,6 +21,7 @@ export const defaultSettings: GiveawaySettings = {
   excluded_users: [],
   winners_count: 1,
   backup_winners_count: 0,
+  instagram_tag_account_ids: [],
 }
 
 export type GiveawayStatus = 'DRAFT' | 'COMMENTS_LOADED' | 'PARTICIPANTS_READY' | 'DRAWN' | 'ERROR'
@@ -89,4 +91,10 @@ export interface PublicResult {
   result_hash: string | null
   winners: Winner[]
   backups: Winner[]
+}
+
+export interface InstagramConnectedAccount {
+  id: number
+  username: string | null
+  connected_at: string
 }

@@ -47,6 +47,13 @@ class Config:
     instagram_app_id: str | None
     instagram_app_secret: str | None
     instagram_oauth_redirect_uri: str | None
+    # Redirect URI для разового подключения ЧУЖИХ Instagram-аккаунтов по
+    # ссылке /api/instagram/connect/start (механика "отметил нас на фото",
+    # см. services/instagram_tags.py) — отдельный от instagram_oauth_redirect_uri
+    # (тот только для собственного ekb_guide), оба используют один и тот же
+    # INSTAGRAM_APP_ID/SECRET, нужно оба прописать в настройках приложения
+    # как разрешённые Redirect URI.
+    instagram_connect_redirect_uri: str | None
     # Пользовательский access-токен VK (НЕ токен сообщества — wall.getComments
     # с групповым токеном отдаёт ошибку 27 "method is unavailable with group
     # auth", проверено вживую). Получается через /api/vk/oauth/start —
@@ -93,6 +100,7 @@ def load_config() -> Config:
         instagram_app_id=os.getenv("INSTAGRAM_APP_ID") or None,
         instagram_app_secret=os.getenv("INSTAGRAM_APP_SECRET") or None,
         instagram_oauth_redirect_uri=os.getenv("INSTAGRAM_OAUTH_REDIRECT_URI") or None,
+        instagram_connect_redirect_uri=os.getenv("INSTAGRAM_CONNECT_REDIRECT_URI") or None,
         vk_access_token=os.getenv("VK_ACCESS_TOKEN") or None,
         vk_refresh_token=os.getenv("VK_REFRESH_TOKEN") or None,
         vk_device_id=os.getenv("VK_DEVICE_ID") or None,

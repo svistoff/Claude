@@ -2,6 +2,7 @@ import type {
   DrawResult,
   Giveaway,
   GiveawaySettings,
+  InstagramConnectedAccount,
   Participant,
   ParticipantsPreview,
   PublicResult,
@@ -111,4 +112,8 @@ export function getResult(id: number): Promise<DrawResult> {
 
 export function getPublicResult(publicId: string): Promise<PublicResult> {
   return request<PublicResult>(`/api/results/${publicId}`)
+}
+
+export function listInstagramConnectedAccounts(): Promise<InstagramConnectedAccount[]> {
+  return request<InstagramConnectedAccount[]>('/api/instagram/connected-accounts')
 }

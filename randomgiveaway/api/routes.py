@@ -15,6 +15,7 @@ from randomgiveaway.api.schemas import (
     CreateGiveawayRequest,
     DrawResultOut,
     GiveawayOut,
+    InstagramConnectedAccountOut,
     ParticipantOut,
     ParticipantsPreviewOut,
     PublicResultOut,
@@ -24,7 +25,9 @@ from randomgiveaway.config import ENV_PATH, config
 from randomgiveaway.database.models import Participant, Winner
 from randomgiveaway.env_file import set_env_var
 from randomgiveaway.services import giveaways as giveaway_service
+from randomgiveaway.services import instagram_accounts
 from randomgiveaway.services import instagram_oauth
+from randomgiveaway.services import instagram_tags
 from randomgiveaway.services import telegram_giveaway
 from randomgiveaway.services import vk_oauth
 
@@ -115,12 +118,18 @@ async def load_comments_live(giveaway_id: int) -> ParticipantsPreviewOut:
     randomgiveaway/adapters/*. На Этапе 1 отвечает понятным 501, пока не
     реализовано — используйте /import."""
     g = await giveaway_service.get_giveaway(giveaway_id)
-    factory = _LIVE_ADAPTERS.get(g.source)
-    if factory is None:
-        raise HTTPException(status_code=400, detail=f"Источник «{g.source}» не поддерживает загрузку по ссылке")
 
-    adapter = factory()
-    comments = await adapter.fetch_comments(g.post_url)
+    if g.source == "instagram_tags":
+        comments = await instagram_tags.compute_tagged_participants(giveaway_id)
+    else:
+        factory = _LIVE_ADAPTERS.get(g.source)
+        if factory is None:
+            raise HTTPException(
+                status_code=400, detail=f"Источник «{g.source}» не поддерживает загрузку по ссылке"
+            )
+        adapter = factory()
+        comments = await adapter.fetch_comments(g.post_url)
+
     preview = await giveaway_service.load_comments(giveaway_id, comments)
     return ParticipantsPreviewOut(
         total_comments=preview.total_comments,
@@ -300,6 +309,92 @@ async def instagram_oauth_callback(
         "<p>И настройте автопродление по cron — см. randomgiveaway/README.md "
         "(scripts/refresh_instagram_token.py), иначе токен молча истечёт через ~60 дней.</p>"
     )
+
+
+# --- Instagram: подключение ЧУЖИХ аккаунтов для розыгрыша по отметкам ---
+# (см. services/instagram_tags.py и README.md, «Розыгрыш по отметкам в
+# Instagram»). В отличие от /instagram/oauth/start выше (разовая привязка
+# СОБСТВЕННОГО ekb_guide, под require_admin) — эта ссылка специально
+# публичная: её не администратор проходит сам, а рассылает партнёрам,
+# чтобы каждый из них разово разрешил нашему приложению видеть, кто отметил
+# ИХ аккаунт. Это не дыра в безопасности — партнёр явно соглашается на
+# стандартном экране согласия Meta, разрешение всегда можно отозвать в
+# настройках своего Instagram-аккаунта.
+
+_pending_connect_states: set[str] = set()
+
+
+@router.get("/instagram/connect/start")
+async def instagram_connect_start() -> RedirectResponse:
+    if not (config.instagram_app_id and config.instagram_connect_redirect_uri):
+        raise HTTPException(
+            status_code=400,
+            detail="INSTAGRAM_APP_ID / INSTAGRAM_CONNECT_REDIRECT_URI не заданы в .env",
+        )
+    state = secrets.token_urlsafe(24)
+    _pending_connect_states.add(state)
+    url = (
+        "https://www.instagram.com/oauth/authorize"
+        f"?client_id={config.instagram_app_id}"
+        f"&redirect_uri={config.instagram_connect_redirect_uri}"
+        f"&response_type=code&scope={INSTAGRAM_SCOPES}"
+        f"&state={state}"
+    )
+    return RedirectResponse(url)
+
+
+@router.get("/instagram/connect/callback")
+async def instagram_connect_callback(
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+    error_description: str | None = None,
+) -> HTMLResponse:
+    if error:
+        return HTMLResponse(
+            f"<h1>Instagram отказал в авторизации</h1><p>{error}: {error_description}</p>",
+            status_code=400,
+        )
+    if not state or state not in _pending_connect_states:
+        raise HTTPException(
+            status_code=400,
+            detail="Неизвестный или уже использованный state — начните заново с /api/instagram/connect/start",
+        )
+    _pending_connect_states.discard(state)
+    if not code:
+        raise HTTPException(status_code=400, detail="Instagram не вернул code")
+    if not (config.instagram_app_id and config.instagram_app_secret and config.instagram_connect_redirect_uri):
+        raise HTTPException(
+            status_code=500,
+            detail="INSTAGRAM_APP_ID / INSTAGRAM_APP_SECRET / INSTAGRAM_CONNECT_REDIRECT_URI не заданы в .env",
+        )
+
+    try:
+        token, _expires_in = await instagram_oauth.exchange_code_for_long_lived_token(
+            code,
+            config.instagram_app_id,
+            config.instagram_app_secret,
+            config.instagram_connect_redirect_uri,
+        )
+        profile = await instagram_oauth.fetch_profile(token)
+    except instagram_oauth.InstagramOAuthError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    await instagram_accounts.upsert_account(profile["id"], profile.get("username"), token)
+    return HTMLResponse(
+        f"<h1>Готово!</h1><p>Аккаунт @{profile.get('username', '')} подключён к Random.ЕКБ ГИД. "
+        "Можете закрыть эту страницу.</p>"
+    )
+
+
+@router.get(
+    "/instagram/connected-accounts",
+    response_model=list[InstagramConnectedAccountOut],
+    dependencies=[Depends(require_admin)],
+)
+async def list_instagram_connected_accounts() -> list[InstagramConnectedAccountOut]:
+    accounts = await instagram_accounts.list_accounts()
+    return [InstagramConnectedAccountOut.from_domain(a) for a in accounts]
 
 
 # --- VK OAuth: разовая привязка пользовательского токена ---

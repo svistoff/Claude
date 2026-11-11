@@ -193,6 +193,75 @@ def test_instagram_oauth_full_flow_with_valid_state(monkeypatch, tmp_path):
         assert replay_resp.status_code == 400
 
 
+def test_instagram_connect_start_does_not_require_admin_token(monkeypatch):
+    """В отличие от /instagram/oauth/start (разовая привязка ekb_guide),
+    /instagram/connect/start специально публичная — её рассылают партнёрам."""
+    import dataclasses
+
+    from randomgiveaway.api import routes as routes_module
+
+    monkeypatch.setattr(
+        routes_module,
+        "config",
+        dataclasses.replace(
+            routes_module.config,
+            admin_token="secret-token",
+            instagram_app_id="app-id",
+            instagram_connect_redirect_uri="https://random.ekb-guide.ru/api/instagram/connect/callback",
+        ),
+    )
+    with TestClient(app, follow_redirects=False) as client:
+        resp = client.get("/api/instagram/connect/start")
+        assert resp.status_code == 307
+
+
+def test_instagram_connect_full_flow_registers_account(monkeypatch, tmp_path):
+    import dataclasses
+
+    from randomgiveaway.api import routes as routes_module
+    from randomgiveaway.services import instagram_oauth as oauth_module
+
+    monkeypatch.setattr(
+        routes_module,
+        "config",
+        dataclasses.replace(
+            routes_module.config,
+            instagram_app_id="app-id",
+            instagram_app_secret="app-secret",
+            instagram_connect_redirect_uri="https://random.ekb-guide.ru/api/instagram/connect/callback",
+        ),
+    )
+    monkeypatch.setattr(routes_module, "ENV_PATH", tmp_path / ".env")
+
+    async def fake_exchange(code, app_id, app_secret, redirect_uri):
+        assert code == "partner-code"
+        return "partner-token", 5183944
+
+    async def fake_profile(access_token):
+        assert access_token == "partner-token"
+        return {"id": "ig-partner-1", "username": "dacha_ekb"}
+
+    monkeypatch.setattr(oauth_module, "exchange_code_for_long_lived_token", fake_exchange)
+    monkeypatch.setattr(oauth_module, "fetch_profile", fake_profile)
+
+    with TestClient(app, follow_redirects=False) as client:
+        start_resp = client.get("/api/instagram/connect/start")
+        assert start_resp.status_code == 307
+        location = start_resp.headers["location"]
+        state = location.split("state=")[1]
+
+        callback_resp = client.get(
+            "/api/instagram/connect/callback", params={"code": "partner-code", "state": state}
+        )
+        assert callback_resp.status_code == 200, callback_resp.text
+        assert "dacha_ekb" in callback_resp.text
+
+        list_resp = client.get("/api/instagram/connected-accounts")
+        assert list_resp.status_code == 200, list_resp.text
+        usernames = {a["username"] for a in list_resp.json()}
+        assert "dacha_ekb" in usernames
+
+
 def test_vk_oauth_start_requires_admin_token():
     with TestClient(app) as client:
         resp = client.get("/api/vk/oauth/start")

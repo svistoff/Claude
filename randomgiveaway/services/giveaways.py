@@ -21,7 +21,7 @@ from randomgiveaway.database.models import (
 from randomgiveaway.services import random_engine
 from randomgiveaway.services.participants import ParticipantsPreview, build_participants
 
-VALID_SOURCES = {"instagram", "vk", "telegram", "import"}
+VALID_SOURCES = {"instagram", "instagram_tags", "vk", "telegram", "import"}
 
 
 class GiveawayError(Exception):
@@ -49,8 +49,10 @@ async def create_giveaway(
         raise GiveawayError(f"Неизвестный источник: {source}")
     # Для Telegram пост ещё не существует на момент создания розыгрыша — его
     # публикует сам сервис (services/telegram_giveaway.publish_giveaway_post),
-    # post_url заполнится этим вызовом.
-    if source != "telegram" and not post_url.strip():
+    # post_url заполнится этим вызовом. Для instagram_tags ссылки на
+    # конкретный пост вообще нет — участники ищутся по отметкам за период,
+    # см. services/instagram_tags.py.
+    if source not in ("telegram", "instagram_tags") and not post_url.strip():
         raise GiveawayError("Укажите ссылку на пост")
     if settings.winners_count < 1:
         raise GiveawayError("Количество победителей должно быть не меньше 1")

@@ -21,13 +21,20 @@ class GiveawaySettings:
     excluded_users: list[str] = field(default_factory=list)
     winners_count: int = 1
     backup_winners_count: int = 0
+    # Только для source="instagram_tags" (см. services/instagram_tags.py) —
+    # id подключённых аккаунтов (instagram_connected_accounts.id), которые
+    # все одновременно должны быть отмечены на фото, чтобы автор поста
+    # засчитался участником.
+    instagram_tag_account_ids: list[int] = field(default_factory=list)
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), ensure_ascii=False)
 
     @staticmethod
     def from_json(raw: str) -> "GiveawaySettings":
-        return GiveawaySettings(**json.loads(raw))
+        data = json.loads(raw)
+        data.setdefault("instagram_tag_account_ids", [])
+        return GiveawaySettings(**data)
 
 
 class GiveawayStatus:
@@ -139,4 +146,25 @@ class Winner:
             position=row["position"],
             is_backup=bool(row["is_backup"]),
             selected_at=row["selected_at"],
+        )
+
+
+@dataclass
+class InstagramConnectedAccount:
+    id: int | None
+    ig_user_id: str
+    username: str | None
+    access_token: str
+    connected_at: str
+    updated_at: str
+
+    @staticmethod
+    def from_row(row: aiosqlite.Row) -> "InstagramConnectedAccount":
+        return InstagramConnectedAccount(
+            id=row["id"],
+            ig_user_id=row["ig_user_id"],
+            username=row["username"],
+            access_token=row["access_token"],
+            connected_at=row["connected_at"],
+            updated_at=row["updated_at"],
         )

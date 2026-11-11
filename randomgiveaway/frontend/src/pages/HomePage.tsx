@@ -5,16 +5,25 @@ import {
   createGiveaway,
   drawGiveaway,
   importParticipants,
+  listInstagramConnectedAccounts,
   loadCommentsLive,
   previewParticipants,
   publishTelegram,
 } from '../api/client'
-import { defaultSettings, type Giveaway, type GiveawaySettings, type ParticipantsPreview, type Source } from '../api/types'
+import {
+  defaultSettings,
+  type Giveaway,
+  type GiveawaySettings,
+  type InstagramConnectedAccount,
+  type ParticipantsPreview,
+  type Source,
+} from '../api/types'
 import { AdminTokenField } from '../components/AdminTokenField'
 import { Switch } from '../components/Switch'
 
 const SOURCES: { value: Source; label: string }[] = [
   { value: 'instagram', label: 'Instagram' },
+  { value: 'instagram_tags', label: 'Instagram (отметки)' },
   { value: 'vk', label: 'VK' },
   { value: 'telegram', label: 'Telegram' },
   { value: 'import', label: 'Импорт файла' },
@@ -42,10 +51,42 @@ export function HomePage() {
   const [giveawayId, setGiveawayId] = useState<number | null>(null)
   const [preview, setPreview] = useState<ParticipantsPreview | null>(null)
   const [telegramGiveaway, setTelegramGiveaway] = useState<Giveaway | null>(null)
+  const [connectedAccounts, setConnectedAccounts] = useState<InstagramConnectedAccount[]>([])
+  const [connectLinkCopied, setConnectLinkCopied] = useState(false)
 
   function updateSettings<K extends keyof GiveawaySettings>(key: K, value: GiveawaySettings[K]) {
     setSettings((s) => ({ ...s, [key]: value }))
   }
+
+  function toggleTagAccount(accountId: number) {
+    setSettings((s) => {
+      const has = s.instagram_tag_account_ids.includes(accountId)
+      return {
+        ...s,
+        instagram_tag_account_ids: has
+          ? s.instagram_tag_account_ids.filter((id) => id !== accountId)
+          : [...s.instagram_tag_account_ids, accountId],
+      }
+    })
+  }
+
+  async function handleCopyConnectLink() {
+    const link = `${window.location.origin}/api/instagram/connect/start`
+    try {
+      await navigator.clipboard.writeText(link)
+      setConnectLinkCopied(true)
+      window.setTimeout(() => setConnectLinkCopied(false), 2000)
+    } catch {
+      window.prompt('Скопируйте ссылку и отправьте партнёру:', link)
+    }
+  }
+
+  useEffect(() => {
+    if (source !== 'instagram_tags') return
+    listInstagramConnectedAccounts()
+      .then(setConnectedAccounts)
+      .catch(() => {})
+  }, [source])
 
   // Telegram не отдаёт комментарии по ссылке (см. README, «Подключение
   // Telegram») — участники накапливаются по кнопке/рефералкам, поэтому
@@ -80,6 +121,11 @@ export function HomePage() {
     } else if (source === 'telegram') {
       if (!telegramText.trim()) {
         setError('Введите текст поста')
+        return
+      }
+    } else if (source === 'instagram_tags') {
+      if (settings.instagram_tag_account_ids.length === 0) {
+        setError('Выберите хотя бы один подключённый аккаунт, отметку которого нужно проверять')
         return
       }
     } else if (!postUrl.trim()) {
@@ -231,6 +277,35 @@ export function HomePage() {
                     )}
                   </div>
                 </>
+              ) : source === 'instagram_tags' ? (
+                <div className="field">
+                  <label>Какие аккаунты обязательно должны быть отмечены на фото</label>
+                  {connectedAccounts.length === 0 ? (
+                    <p className="field-hint">
+                      Пока нет ни одного подключённого аккаунта — отправьте ссылку ниже себе или партнёру,
+                      чтобы он разово разрешил нам видеть, кто его отметил.
+                    </p>
+                  ) : (
+                    <div className="card" style={{ padding: '8px 16px', marginBottom: 0 }}>
+                      {connectedAccounts.map((acc) => (
+                        <Switch
+                          key={acc.id}
+                          label={`@${acc.username ?? acc.id}`}
+                          checked={settings.instagram_tag_account_ids.includes(acc.id)}
+                          onChange={() => toggleTagAccount(acc.id)}
+                        />
+                      ))}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    style={{ width: 'auto', padding: '6px 0', marginTop: 12 }}
+                    onClick={handleCopyConnectLink}
+                  >
+                    {connectLinkCopied ? 'Ссылка скопирована ✓' : '🔗 Скопировать ссылку для подключения аккаунта'}
+                  </button>
+                </div>
               ) : (
                 <div className="field">
                   <label htmlFor="post-url">Ссылка на пост</label>
@@ -283,12 +358,14 @@ export function HomePage() {
                 hint={
                   source === 'telegram'
                     ? 'Иначе за каждого приглашённого друга — дополнительный шанс'
-                    : 'Иначе несколько комментариев одного человека увеличивают его шанс'
+                    : source === 'instagram_tags'
+                      ? 'Иначе несколько подходящих постов одного человека увеличивают его шанс'
+                      : 'Иначе несколько комментариев одного человека увеличивают его шанс'
                 }
                 checked={settings.unique_user}
                 onChange={(v) => updateSettings('unique_user', v)}
               />
-              {source !== 'telegram' && (
+              {source !== 'telegram' && source !== 'instagram_tags' && (
                 <>
                   <Switch
                     label="Учитывать ответы на комментарии"
@@ -308,7 +385,7 @@ export function HomePage() {
                 onChange={(v) => updateSettings('exclude_post_author', v)}
               />
 
-              {source !== 'telegram' && (
+              {source !== 'telegram' && source !== 'instagram_tags' && (
                 <div className="field" style={{ marginTop: 16 }}>
                   <label htmlFor="required-text">Учитывать только комментарии, содержащие (необязательно)</label>
                   <input
@@ -340,7 +417,9 @@ export function HomePage() {
                   : 'Загружаем…'
                 : source === 'telegram'
                   ? 'Опубликовать в Telegram'
-                  : 'Загрузить комментарии'}
+                  : source === 'instagram_tags'
+                    ? 'Найти отметки'
+                    : 'Загрузить комментарии'}
             </button>
           </>
         )}

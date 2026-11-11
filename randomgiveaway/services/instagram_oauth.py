@@ -18,6 +18,7 @@ import httpx
 SHORT_TOKEN_URL = "https://api.instagram.com/oauth/access_token"
 LONG_TOKEN_EXCHANGE_URL = "https://graph.instagram.com/access_token"
 LONG_TOKEN_REFRESH_URL = "https://graph.instagram.com/refresh_access_token"
+PROFILE_URL = "https://graph.instagram.com/v26.0/me"
 
 
 class InstagramOAuthError(Exception):
@@ -91,6 +92,21 @@ async def refresh_long_lived_token(
             raise InstagramOAuthError(f"Не удалось обновить токен: {resp.status_code} {resp.text[:300]}")
         payload = resp.json()
         return payload["access_token"], payload["expires_in"]
+    finally:
+        if owns_client:
+            await client.aclose()
+
+
+async def fetch_profile(access_token: str, client: httpx.AsyncClient | None = None) -> dict:
+    """id + username авторизовавшегося аккаунта — нужно, чтобы знать, КОГО
+    только что подключили (см. /api/instagram/connect/callback)."""
+    owns_client = client is None
+    client = client or httpx.AsyncClient(timeout=15)
+    try:
+        resp = await client.get(PROFILE_URL, params={"fields": "id,username", "access_token": access_token})
+        if resp.status_code != 200:
+            raise InstagramOAuthError(f"Не удалось получить профиль: {resp.status_code} {resp.text[:300]}")
+        return resp.json()
     finally:
         if owns_client:
             await client.aclose()

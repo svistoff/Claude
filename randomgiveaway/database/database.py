@@ -82,6 +82,22 @@ CREATE INDEX IF NOT EXISTS idx_telegram_entries_giveaway ON telegram_entries(giv
 CREATE UNIQUE INDEX IF NOT EXISTS idx_telegram_entries_unique_join
     ON telegram_entries(giveaway_id, telegram_user_id)
     WHERE kind = 'join';
+
+-- Instagram-аккаунты, разово подключившиеся по ссылке
+-- /api/instagram/connect/start (см. services/instagram_accounts.py и
+-- README.md, «Розыгрыш по отметкам в Instagram»). У каждого свой
+-- long-lived токен — используется механикой "отметил нас на фото"
+-- (services/instagram_tags.py), отдельно от собственного
+-- INSTAGRAM_ACCESS_TOKEN ekb_guide в .env (тот — для чтения своих же
+-- комментариев, старая механика).
+CREATE TABLE IF NOT EXISTS instagram_connected_accounts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ig_user_id TEXT NOT NULL UNIQUE,
+    username TEXT,
+    access_token TEXT NOT NULL,
+    connected_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
 """
 
 # giveaways создавалась до Telegram-интеграции — на уже развёрнутых базах
