@@ -18,7 +18,7 @@ from ..db import get_session
 from ..models import Profile, Project, Query, Site, User
 from ..security import verify_password
 from .deps import current_user, position_class, redirect, render
-from .routes import analytics, projects
+from .routes import analytics, export, projects
 
 WEB_DIR = Path(__file__).resolve().parent
 
@@ -93,4 +93,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(projects.router)
     app.include_router(analytics.router)
+    app.include_router(export.router)
     return app

@@ -30,6 +30,7 @@ app.use('/api', auth.requireAuth);
 app.use('/api/fw', auth.requireAdmin, require('./fuckwell/routes'));
 app.use('/api/tracking', auth.requireAdmin, require('./calltracking'));
 app.use('/api/dynamics', auth.requireAdmin, require('./dynamics'));
+app.use('/api/positions', auth.requireAdmin, require('./positions'));
 
 function formatCall(c) {
   return { ...c, checklist_results: c.checklist_results ? JSON.parse(c.checklist_results) : null };
@@ -1096,6 +1097,7 @@ app.listen(PORT, () => {
   console.log(`[server] CRM сети массажных салонов запущена на порту ${PORT}`);
   require('./telephony').startPolling();
   adTrends.startWeeklyInsights();
+  require('./positions').startSync();
   require('./fuckwell/util').syncKnownNumbers();
   require('./fuckwell/webhook').relinkAllCalls();
   const fwPending = require('./fuckwell/ai').rescanPending();

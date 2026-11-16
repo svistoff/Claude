@@ -181,7 +181,7 @@ async function logout() { await api('/logout', { method: 'POST' }); location.rel
 
 const OWNER_NAV = [
   ['dashboard', 'Дашборд'], ['calls', 'Звонки'], ['admins', 'Администраторы'], ['anketi', 'Анкеты'],
-  ['calltracking', 'Коллтрекинг'], ['clients', 'Клиенты'], ['reports', 'Отчёты'], ['fuckwell', 'Fuckwell'], ['settings', 'Настройки']
+  ['calltracking', 'Коллтрекинг'], ['positions', 'Позиции'], ['clients', 'Клиенты'], ['reports', 'Отчёты'], ['fuckwell', 'Fuckwell'], ['settings', 'Настройки']
 ];
 const STAFF_NAV = [['guest', 'Гости']];
 // Салоны/Чек-листы физически убраны из главного меню и живут как вкладки
@@ -2195,6 +2195,111 @@ function renderAdReportChart(rows) {
 }
 
 // ================= ОТЧЁТЫ =================
+// ---------- Позиции сайтов в Яндексе (данные posmon, копия в CRM) ----------
+let posProject = null, posProfile = null, posDays = 7, posCustom = null;
+const POS_PERIODS = [[7, 'Неделя'], [30, 'Месяц'], [90, '3 месяца']];
+function posQuery() {
+  const p = new URLSearchParams();
+  if (posProfile) p.set('profile', posProfile);
+  if (posCustom) { p.set('from', posCustom.from); p.set('to', posCustom.to); } else p.set('days', posDays);
+  return p.toString();
+}
+function posDelta(delta) {
+  if (delta == null || delta === 0) return '';
+  return ` <span style="font-size:11px;color:${delta > 0 ? '#2a9d5c' : '#d33'}">${delta > 0 ? '▲' : '▼'}${Math.abs(delta)}</span>`;
+}
+function posCellBg(p) { return p == null ? '' : p <= 3 ? '#c8efd6' : p <= 10 ? '#e3f6ea' : p <= 20 ? '#f4fbf6' : ''; }
+function posDateRu(d) { return d ? `${d.slice(8, 10)}.${d.slice(5, 7)}.${d.slice(0, 4)}` : '—'; }
+
+RENDERERS.positions = async function renderPositions() {
+  const main = document.getElementById('main');
+  main.innerHTML = '<h2>Позиции в Яндексе</h2><div id="pos-content">Загрузка…</div>';
+  const el = document.getElementById('pos-content');
+  const [status, projects] = await Promise.all([api('/positions/status'), api('/positions/projects')]);
+  const live = projects; // удалённые в posmon проекты остаются в CRM как архив
+  const syncLine = `<div class="row" style="gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+      <span class="muted">${status.last_ok_at ? 'Данные из posmon обновлены ' + esc(status.last_ok_at) + ' UTC' : 'Данные из posmon ещё не загружались'}
+        · проектов ${status.counts.projects}, сайтов ${status.counts.sites}, запросов ${status.counts.queries}</span>
+      <button onclick="posSync(this)">⟳ Обновить сейчас</button>
+      <a class="btn" href="${esc(status.posmon_url)}" target="_blank" rel="noopener">Открыть posmon ↗</a>
+    </div>
+    ${status.last_error ? `<div class="card" style="border-color:#d33"><b>Последняя синхронизация не удалась:</b> ${esc(status.last_error)}
+      <div class="muted">Показаны сохранённые ранее данные. Проекты, сайты и запросы хранятся в CRM, даже если posmon недоступен.</div></div>` : ''}`;
+  if (!live.length) {
+    el.innerHTML = syncLine + `<div class="card"><p>Проектов пока нет. Они появятся здесь после синхронизации с posmon (каждые 30 минут или кнопкой «Обновить сейчас»).</p></div>`;
+    return;
+  }
+  if (!live.some(p => p.id === posProject)) { posProject = live[0].id; posProfile = null; }
+  const d = await api('/positions/projects/' + posProject + '?' + posQuery());
+  posProfile = d.profile ? d.profile.id : null;
+
+  const projTabs = `<div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:10px">${live.map(p =>
+    `<button class="${p.id === posProject ? 'primary' : ''}" onclick="posProject=${p.id};posProfile=null;RENDERERS.positions()">${esc(p.name)}${p.deleted ? ' (архив)' : p.active ? '' : ' (выкл.)'}</button>`).join('')}</div>`;
+  const controls = `<div class="row" style="gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
+      ${POS_PERIODS.map(([n, l]) => `<button class="${!posCustom && posDays === n ? 'primary' : ''}" onclick="posDays=${n};posCustom=null;RENDERERS.positions()">${l}</button>`).join('')}
+      <label>С <input id="pos-from" type="date" value="${posCustom ? posCustom.from : (d.start || '')}"></label>
+      <label>По <input id="pos-to" type="date" value="${posCustom ? posCustom.to : (d.end || '')}"></label>
+      <button onclick="posApplyDates()">Показать</button>
+      ${d.profiles.length > 1 ? `<select onchange="posProfile=this.value;RENDERERS.positions()">${d.profiles.map(p =>
+        `<option value="${p.id}" ${d.profile && p.id === d.profile.id ? 'selected' : ''}>${esc(p.name)}${p.last_date ? '' : ' — нет данных'}</option>`).join('')}</select>` : ''}
+      <button onclick="window.open('/api/positions/report?project=${posProject}&'+posQuery())">📄 Отчёт / PDF</button>
+    </div>`;
+
+  if (!d.end) {
+    el.innerHTML = syncLine + projTabs + controls + `<div class="card"><p>По этому проекту ещё нет проверок позиций.</p>
+      <p class="muted">Сайтов: ${d.sites.length}, запросов: ${d.queries.length}. Проверка в posmon идёт ежедневно в 02:00.</p></div>`;
+    return;
+  }
+  const cards = d.siteStats.map(st => {
+    const ad = st.start.average != null && st.end.average != null ? Math.round((st.start.average - st.end.average) * 10) / 10 : null;
+    return `<div class="card"><h3 style="margin:0">${esc(st.site.name)}</h3><div class="muted">${esc(st.site.domain)}</div>
+      <div style="font-size:28px;font-weight:700;margin-top:6px">${st.end.average ?? '—'}${posDelta(ad)}</div>
+      <div class="muted">средняя позиция (было ${st.start.average ?? '—'})</div>
+      <div style="margin-top:8px;font-size:13px">ТОП-3: <b>${st.end.top3}</b>${posDelta(st.end.top3 - st.start.top3)} ·
+        ТОП-10: <b>${st.end.top10}</b>${posDelta(st.end.top10 - st.start.top10)} · ТОП-20: <b>${st.end.top20}</b>${posDelta(st.end.top20 - st.start.top20)}</div>
+      <div class="muted">найден по ${st.end.found} из ${st.end.total} запросов (${Math.round(st.end.coverage * 100)}%)</div></div>`;
+  }).join('');
+  const head = `<tr><th style="text-align:left">Запрос</th>${d.sites.map(s => `<th>${esc(s.name)}</th>`).join('')}</tr>`;
+  const body = d.rows.map(r => `<tr><td style="text-align:left">${esc(r.query.query)}${r.query.group_name ? `<div class="muted">${esc(r.query.group_name)}</div>` : ''}</td>
+    ${r.cells.map(c => `<td style="text-align:center;background:${posCellBg(c.end)}">${c.end ?? '<span class="muted">—</span>'}${c.entered ? ' <span style="font-size:11px;color:#2a9d5c">новый</span>' : c.left ? ' <span style="font-size:11px;color:#d33">выпал</span>' : posDelta(c.delta)}</td>`).join('')}</tr>`).join('');
+
+  el.innerHTML = syncLine + projTabs + controls + `
+    <div class="muted" style="margin-bottom:8px">Профиль «${esc(d.profile.name)}» · сравнение ${posDateRu(d.start)} → ${posDateRu(d.end)} · ▲ — сайт поднялся, ▼ — опустился, «—» — нет в ТОП-${d.project.depth || 50}</div>
+    <div class="grid3">${cards}</div>
+    ${d.chart_svg ? `<div class="card"><h3 style="margin-top:0">Средняя позиция по дням</h3><div class="muted">Чем ниже линия — тем выше сайт в выдаче</div>${d.chart_svg}</div>` : ''}
+    <div class="card"><h3 style="margin-top:0">Позиции по запросам на ${posDateRu(d.end)}</h3>
+      <div style="overflow-x:auto"><table>${head}${body || '<tr><td class="muted">Запросов нет</td></tr>'}</table></div></div>`;
+};
+function posApplyDates() {
+  const from = document.getElementById('pos-from').value, to = document.getElementById('pos-to').value;
+  if (!from || !to) return alert('Укажите обе даты');
+  posCustom = from <= to ? { from, to } : { from: to, to: from };
+  RENDERERS.positions();
+}
+async function posSync(btn) {
+  btn.disabled = true; btn.textContent = 'Обновляю…';
+  try { await api('/positions/sync', { method: 'POST' }); } catch (e) { alert('posmon недоступен: ' + e.message); }
+  RENDERERS.positions();
+}
+function openPositionsReport() {
+  const proj = document.getElementById('rep-pos-project').value, per = document.getElementById('rep-pos-period').value;
+  const p = new URLSearchParams({ project: proj });
+  if (per === 'custom') {
+    const from = document.getElementById('rep-pos-from').value, to = document.getElementById('rep-pos-to').value;
+    if (!from || !to) return alert('Укажите обе даты');
+    p.set('from', from); p.set('to', to);
+  } else p.set('days', per);
+  window.open('/api/positions/report?' + p);
+}
+async function fillPositionsReportCard() {
+  const sel = document.getElementById('rep-pos-project');
+  if (!sel) return;
+  try {
+    const projects = (await api('/positions/projects')).filter(p => !p.deleted);
+    sel.innerHTML = '<option value="all">Все проекты</option>' + projects.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
+  } catch (e) { sel.innerHTML = '<option value="all">Все проекты</option>'; }
+}
+
 // «Отчёт для шефа» открывается из своей карточки среди остальных отчётов
 let reportsView = 'list';
 RENDERERS.reports = async function renderReports() {
@@ -2254,12 +2359,25 @@ RENDERERS.reports = async function renderReports() {
         </div>
         <p class="muted" style="margin-top:8px">Звонки на анкеты, по салонам и номерам, оценки ИИ.</p>
       </div>
+      <div class="card"><h3>🔎 Позиции сайтов в Яндексе</h3>
+        <div class="row" style="flex-direction:column;align-items:stretch">
+          <select id="rep-pos-project"><option value="all">Все проекты</option></select>
+          <select id="rep-pos-period" onchange="document.getElementById('rep-pos-dates').style.display=this.value==='custom'?'flex':'none'">
+            <option value="7">Неделя</option><option value="30">Месяц</option><option value="custom">Свои даты</option></select>
+          <div id="rep-pos-dates" class="row" style="display:none;flex-wrap:wrap;gap:8px">
+            <label>С <input id="rep-pos-from" type="date"></label><label>По <input id="rep-pos-to" type="date"></label>
+          </div>
+          <button class="primary" onclick="openPositionsReport()">Сформировать</button>
+        </div>
+        <p class="muted" style="margin-top:8px">Средняя позиция, ТОП-3/10/20 и позиции по каждому запросу — по данным posmon.</p>
+      </div>
       <div class="card"><h3>📈 Отчёт для шефа</h3>
         <p class="muted" style="margin-top:0">Звонки с платных анкет по салонам — по неделям и месяцам, расход на анкеты и цена звонка.</p>
         <button class="primary" onclick="reportsView='chief';RENDERERS.reports()">Открыть</button>
       </div>
     </div>
   `;
+  fillPositionsReportCard();
 };
 
 // ---------- Динамика: звонки по салонам по неделям/месяцам + недельный расход ----------
