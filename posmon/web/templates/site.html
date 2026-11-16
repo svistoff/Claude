@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}{{ site.name }}{% endblock %}
+{% block content %}
+<p class="crumbs"><a href="/projects/{{ site.project_id }}">← к проекту</a></p>
+<h1>{{ site.name }} <small class="muted">{{ site.domain }}</small></h1>
+
+<div class="controls">
+  <span class="muted small">Профиль:</span>
+  {% for p in profiles %}
+    <a href="/sites/{{ site.id }}?profile={{ p.id }}&mode={{ mode }}" class="pill {{ 'on' if p.id == profile_id }}">{{ p.name }}</a>
+  {% endfor %}
+  <span class="sep"></span>
+  <a href="/sites/{{ site.id }}?profile={{ profile_id }}&mode=seo" class="pill {{ 'on' if mode=='seo' }}">SEO</a>
+  <a href="/sites/{{ site.id }}?profile={{ profile_id }}&mode=battle" class="pill {{ 'on' if mode=='battle' }}">боевой</a>
+</div>
+
+{% if metrics %}
+<div class="cards">
+  <div class="card"><span class="num">{{ metrics.found }}/{{ metrics.total }}</span><span class="label">Запросов в выдаче (coverage {{ (metrics.coverage*100)|round(0)|int }}%)</span></div>
+  <div class="card"><span class="num">{{ metrics.average if metrics.average is not none else '—' }}</span><span class="label">Средняя позиция</span></div>
+  <div class="card"><span class="num">{{ metrics.median if metrics.median is not none else '—' }}</span><span class="label">Медиана</span></div>
+  <div class="card"><span class="num">{{ metrics.top[3] }}</span><span class="label">ТОП-3</span></div>
+  <div class="card"><span class="num">{{ metrics.top[10] }}</span><span class="label">ТОП-10</span></div>
+  <div class="card"><span class="num">{{ metrics.top[20] }}</span><span class="label">ТОП-20</span></div>
+  <div class="card"><span class="num">{{ metrics.top[50] }}</span><span class="label">ТОП-50</span></div>
+</div>
+<p class="muted small">Средняя и медиана считаются без не найденных запросов; coverage показывает долю запросов с позицией.</p>
+
+<h2>Динамика <span class="muted small">средняя позиция по дням · выше = рост</span></h2>
+<div class="chart-wrap">{{ trend_chart | safe }}</div>
+{% else %}
+<p class="muted">Нет данных для выбранного профиля.</p>
+{% endif %}
+
+{% if hm_queries %}
+<h2>Тепловая карта <span class="muted small">запросы × даты, позиция цветом</span></h2>
+<div class="hm-legend">
+  <span><span class="sw" style="background:#1a8f2f"></span>ТОП-3</span>
+  <span><span class="sw" style="background:#56b268"></span>ТОП-10</span>
+  <span><span class="sw" style="background:#a7d9ab"></span>ТОП-20</span>
+  <span><span class="sw" style="background:#dcefd6"></span>ТОП-50</span>
+  <span><span class="sw" style="background:#eceef0"></span>&gt;50</span>
+</div>
+<div class="scroll-x">
+<table class="heatmap">
+  <thead>
+    <tr><th class="qname">Запрос</th>{% for d in hm_dates %}<th>{{ d.strftime('%d.%m') }}</th>{% endfor %}</tr>
+  </thead>
+  <tbody>
+    {% for qid, qtext in hm_queries %}
+    <tr>
+      <th class="qname" title="{{ qtext }}">{{ qtext }}</th>
+      {% for d in hm_dates %}
+        {% set p = hm_matrix.get(qid, {}).get(d) %}
+        <td class="cell {{ p|posclass }}" title="{{ qtext }} · {{ d.strftime('%d.%m.%Y') }}: {{ p if p else '>50' }}">{{ p if p else '·' }}</td>
+      {% endfor %}
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+{% endblock %}

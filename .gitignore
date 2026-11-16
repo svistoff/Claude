@@ -5,3 +5,18 @@ data/*.db-wal
 data/*.db-shm
 .env
 *.log
+
+# posmon (мониторинг позиций, Python)
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+posmon/.env
+posmon/posmon.db
+posmon/browser_profiles/
+posmon/artifacts/
+posmon/reports/
+posmon/screenshots/
+posmon.db
+posmon.db-wal
+posmon.db-shm

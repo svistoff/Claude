@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}posmon{% endblock %} — мониторинг позиций</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  {% if user %}
+  <header class="topbar">
+    <a class="brand" href="/">posmon</a>
+    <nav>
+      <a href="/">Дашборд</a>
+      <a href="/projects">Проекты</a>
+    </nav>
+    <span class="spacer"></span>
+    <span class="user">{{ user.login }} ({{ user.role }})</span>
+    <a class="logout" href="/logout">Выход</a>
+  </header>
+  {% endif %}
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

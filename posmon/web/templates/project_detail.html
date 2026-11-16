@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% block title %}{{ project.name }}{% endblock %}
+{% block content %}
+<p class="crumbs"><a href="/projects">Проекты</a> / {{ project.name }}</p>
+<h1>{{ project.name }} <small class="muted">ТОП-{{ project.depth }}</small></h1>
+
+<div class="topline">
+  <div class="segmented">
+    <a href="?mode=seo&profile={{ chart_profile_id }}&days={{ days }}" class="{{ 'on' if mode=='seo' }}">SEO · органика</a>
+    <a href="?mode=battle&profile={{ chart_profile_id }}&days={{ days }}" class="{{ 'on' if mode=='battle' }}">Боевая · с рекламой</a>
+  </div>
+  <span>
+    <a class="btn-outline" href="/projects/{{ project.id }}/report.pdf?mode={{ mode }}{% if chart_profile_id %}&profile={{ chart_profile_id }}{% endif %}">📄 Скачать PDF</a>
+    <a class="muted small" href="/projects/{{ project.id }}/report?mode={{ mode }}{% if chart_profile_id %}&profile={{ chart_profile_id }}{% endif %}" target="_blank" style="margin-left:8px">просмотр</a>
+  </span>
+</div>
+
+{% if user.role == 'Admin' %}
+<details class="editproj">
+  <summary>⚙ Настройки и запуск проверки</summary>
+
+  <div class="settings-block">
+    <h3>Обновить сейчас</h3>
+    <form method="post" action="/projects/{{ project.id }}/run" class="inline">
+      <input type="hidden" name="mode" value="seo">
+      <button type="submit" class="small-btn">Проверить — SEO</button>
+    </form>
+    <form method="post" action="/projects/{{ project.id }}/run" class="inline">
+      <input type="hidden" name="mode" value="battle">
+      <button type="submit" class="small-btn secondary">Проверить — боевой</button>
+    </form>
+    <span class="muted small">прогон в фоне, обновите страницу через минуту</span>
+  </div>
+
+  <div class="settings-block">
+    <h3>Параметры проекта</h3>
+    <form method="post" action="/projects/{{ project.id }}/edit" class="form-row">
+      <input type="text" name="name" value="{{ project.name }}" required>
+      <input type="number" name="depth" value="{{ project.depth }}" min="1" max="100" title="Глубина (ТОП-N)">
+      <input type="text" name="description" value="{{ project.description or '' }}" placeholder="Описание">
+      <button type="submit" class="small-btn">Сохранить</button>
+    </form>
+  </div>
+
+  <div class="settings-block">
+    <form method="post" action="/projects/{{ project.id }}/delete"
+          onsubmit="return confirm('Удалить проект «{{ project.name }}» и ВСЕ его данные (запросы, сайты, история)? Это необратимо.');">
+      <button type="submit" class="danger-btn small-btn">Удалить проект</button>
+    </form>
+  </div>
+</details>
+{% endif %}
+
+<h2>Динамика <span class="muted small">средняя позиция по дням · выше линия = сайт растёт</span></h2>
+<div class="controls">
+  {% if active_profiles %}<span class="muted small">Профиль:</span>{% endif %}
+  {% for p in active_profiles %}
+    <a href="?mode={{ mode }}&profile={{ p.id }}&days={{ days }}" class="pill {{ 'on' if p.id == chart_profile_id }}">{{ p.name }}</a>
+  {% endfor %}
+  <span class="sep"></span>
+  <span class="muted small">Период:</span>
+  {% for d in [7, 30, 90] %}
+    <a href="?mode={{ mode }}&profile={{ chart_profile_id }}&days={{ d }}" class="pill {{ 'on' if days == d }}">{{ d }}д</a>
+  {% endfor %}
+</div>
+<div class="chart-wrap">{{ dyn_chart | safe }}</div>
+
+<h2>Позиции <span class="muted small">{{ 'боевой режим (с рекламой)' if mode=='battle' else 'SEO (органика)' }}</span></h2>
+{% if active_profiles %}
+<div class="scroll-x">
+<table class="grid positions">
+  <thead>
+    <tr><th>Запрос</th><th>Сайт</th>{% for p in active_profiles %}<th class="num">{{ p.name }}</th>{% endfor %}</tr>
+  </thead>
+  <tbody>
+    {% for r in table_rows %}
+    <tr>
+      <td><a href="/queries/{{ r.query.id }}?site={{ r.site.id }}&mode={{ mode }}">{{ r.query.query }}</a></td>
+      <td><a href="/sites/{{ r.site.id }}?mode={{ mode }}">{{ r.site.name }}</a></td>
+      {% for c in r.cells %}
+      <td class="num cell {{ c|posclass }}">{% if c %}{{ c }}{% else %}&gt;{{ project.depth }}{% endif %}</td>
+      {% endfor %}
+    </tr>
+    {% else %}
+    <tr><td colspan="{{ active_profiles|length + 2 }}" class="muted">Пока нет данных. Добавьте запросы/сайты/профили и запустите проверку.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<p class="muted">Добавьте хотя бы один активный профиль, чтобы собирать позиции.</p>
+{% endif %}
+
+<div class="cols">
+  <section>
+    <h2>Запросы <span class="muted small">{{ queries|length }}</span></h2>
+    <ul class="chips">
+      {% for q in queries %}
+      <li class="{{ 'off' if not q.active }}">
+        {{ q.query }}{% if q.is_local %} <span class="tag">лок</span>{% endif %}
+        {% if user.role == 'Admin' %}
+        <form method="post" action="/queries/{{ q.id }}/toggle" class="inline"><button class="link">{{ '⏸' if q.active else '▶' }}</button></form>
+        <form method="post" action="/queries/{{ q.id }}/delete" class="inline"><button class="link danger">✕</button></form>
+        {% endif %}
+      </li>
+      {% else %}<li class="muted">нет запросов</li>{% endfor %}
+    </ul>
+    {% if user.role == 'Admin' %}
+    <form method="post" action="/projects/{{ project.id }}/queries" class="stack">
+      <textarea name="queries_text" rows="3" placeholder="Один запрос в строке&#10;ресторан Екатеринбург&#10;бар Екатеринбург" required></textarea>
+      <div class="form-row">
+        <input type="text" name="group_name" placeholder="Группа (необязательно)">
+        <label class="check"><input type="checkbox" name="is_local" value="true"> локальный (трекать Бизнес)</label>
+        <button type="submit">Добавить</button>
+      </div>
+    </form>
+    {% endif %}
+  </section>
+
+  <section>
+    <h2>Сайты <span class="muted small">{{ sites|length }}</span></h2>
+    <ul class="chips">
+      {% for s in sites %}
+      <li class="{{ 'off' if not s.active }}">
+        <a href="/sites/{{ s.id }}">{{ s.name }}</a> <span class="muted small">{{ s.domain }}</span>
+        {% if user.role == 'Admin' %}
+        <form method="post" action="/sites/{{ s.id }}/toggle" class="inline"><button class="link">{{ '⏸' if s.active else '▶' }}</button></form>
+        <form method="post" action="/sites/{{ s.id }}/delete" class="inline"><button class="link danger">✕</button></form>
+        {% endif %}
+      </li>
+      {% else %}<li class="muted">нет сайтов</li>{% endfor %}
+    </ul>
+    {% if user.role == 'Admin' %}
+    <form method="post" action="/projects/{{ project.id }}/sites" class="stack">
+      <div class="form-row">
+        <input type="text" name="name" placeholder="Название" required>
+        <input type="text" name="url" placeholder="https://example.ru/">
+        <select name="match_mode"><option value="domain">домен+поддомены</option><option value="exact_host">точный host</option></select>
+        <button type="submit">Добавить</button>
+      </div>
+    </form>
+    {% endif %}
+  </section>
+
+  <section>
+    <h2>Профили <span class="muted small">{{ profiles|length }}</span></h2>
+    <ul class="chips">
+      {% for p in profiles %}
+      <li class="{{ 'off' if not p.active }}">
+        {{ p.name }} <span class="muted small">{{ p.device }} · {{ p.source }}</span>
+        {% if user.role == 'Admin' %}
+        <form method="post" action="/profiles/{{ p.id }}/toggle" class="inline"><button class="link">{{ '⏸' if p.active else '▶' }}</button></form>
+        <form method="post" action="/profiles/{{ p.id }}/delete" class="inline"><button class="link danger">✕</button></form>
+        {% endif %}
+      </li>
+      {% else %}<li class="muted">нет профилей</li>{% endfor %}
+    </ul>
+    {% if user.role == 'Admin' %}
+    <form method="post" action="/projects/{{ project.id }}/profiles" class="stack">
+      <div class="form-row">
+        <input type="text" name="name" placeholder="Название (напр. Desktop)" required>
+        <select name="device"><option value="desktop">desktop</option><option value="mobile">mobile</option></select>
+        <select name="source"><option value="api">api (Search API)</option><option value="browser">browser (персонализ.)</option></select>
+        <button type="submit">Добавить</button>
+      </div>
+    </form>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

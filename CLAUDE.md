@@ -19,3 +19,15 @@
 Это касается любых операций на сервере пользователя: установка, настройка
 pm2/nginx/firewall, работа с ключами, миграции БД и т.д. — везде, где Claude
 не выполняет команды сам, а только выдаёт их пользователю на выполнение.
+
+## posmon — мониторинг позиций в Яндексе (отдельное Python-приложение)
+
+В папке `posmon/` живёт отдельное приложение (FastAPI + SQLAlchemy + Playwright),
+не связанное с Node-кодом CRM. Перед работой с ним читать `posmon/README.md`
+(статус, архитектура) и `deploy/INSTALL.md` (деплой). ТЗ: `docs/yandex-position-monitoring-tz-v2.md`.
+
+- Прод: VPS `root@45.146.90.128` (хост `magic-copper`), код в `/root/posmon`,
+  запуск через **Supervisor** (`posmon-web` на 127.0.0.1:8600, `posmon-scheduler`),
+  конфиги в `deploy/supervisor/`, nginx — `deploy/nginx/`, логи `/var/log/posmon-*.log`.
+- Домен `https://stat.xmassage.vip`; при сбое DNS — `https://stat-45-146-90-128.sslip.io`.
+- Тесты: `python -m pytest -q` из корня (конфиг `pytest.ini`, тесты в `posmon/tests`).
