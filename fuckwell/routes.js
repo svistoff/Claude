@@ -372,12 +372,13 @@ router.put('/settings', (req, res) => {
 
 // ---------- импорт данных из старой crm.fuckwell.ru (JSON, подготовленный из дампа PostgreSQL) ----------
 // Повторный импорт безопасен: существующие номера/звонки/анализы не дублируются.
-router.post('/import', upload.single('file'), (req, res) => {
-  let data;
-  try { data = JSON.parse(req.file.buffer.toString('utf8')); }
-  catch { return res.status(400).json({ error: 'Нужен JSON-файл импорта Fuckwell' }); }
-  if (!Array.isArray(data.phone_numbers) || !Array.isArray(data.calls)) return res.status(400).json({ error: 'В файле нет номеров/звонков — это не файл импорта Fuckwell' });
-
+// Импорт из старой crm.fuckwell.ru (JSON: phone_numbers, calls, ai_analyses,
+// excluded_phones, settings). Уже существующие звонки (по call_id) пропускаются,
+// поэтому повторный импорт безопасен. Используется и scripts/fw-import.js.
+function importFuckwell(data) {
+  if (!data || !Array.isArray(data.phone_numbers) || !Array.isArray(data.calls)) {
+    throw new Error('В файле нет номеров/звонков — это не файл импорта Fuckwell');
+  }
   const result = { numbers: 0, calls: 0, analyses: 0, excluded: 0, settings: 0 };
   db.transaction(() => {
     const idMap = new Map();
@@ -403,7 +404,7 @@ router.post('/import', upload.single('file'), (req, res) => {
       SELECT ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), COALESCE(?, datetime('now')) WHERE EXISTS (SELECT 1 FROM fw_calls WHERE call_id = ?)`);
     for (const a of data.ai_analyses || []) {
       result.analyses += insAnalysis.run(a.call_id, a.status, a.visit_probability, a.ai_comment,
-        a.signals ? JSON.stringify(a.signals) : null, a.model, a.error, a.analyzed_at, a.created_at || null, a.updated_at || null, a.call_id).changes;
+        a.signals == null ? null : typeof a.signals === 'string' ? a.signals : JSON.stringify(a.signals), a.model, a.error, a.analyzed_at, a.created_at || null, a.updated_at || null, a.call_id).changes;
     }
     for (const e of data.excluded_phones || []) {
       result.excluded += db.prepare('INSERT OR IGNORE INTO fw_excluded (phone, key, comment) VALUES (?, ?, ?)').run(e.phone, e.key, e.comment || null).changes;
@@ -416,7 +417,16 @@ router.post('/import', upload.single('file'), (req, res) => {
   })();
   syncKnownNumbers();
   relinkAllCalls();
-  res.json(result);
+  return result;
+}
+
+router.post('/import', upload.single('file'), (req, res) => {
+  let data;
+  try { data = JSON.parse(req.file.buffer.toString('utf8')); }
+  catch { return res.status(400).json({ error: 'Нужен JSON-файл импорта Fuckwell' }); }
+  try { res.json(importFuckwell(data)); }
+  catch (e) { res.status(400).json({ error: e.message }); }
 });
 
 module.exports = router;
+module.exports.importFuckwell = importFuckwell;
