@@ -8,7 +8,7 @@ from pathlib import Path
 
 from .config import Config
 from .db import DB
-from . import assistant, github, stt
+from . import assistant, balance, github, stt
 from . import tasks as tasks_mod
 from .llm import LLMError
 from .scheduler import _short, local_now, send_advice, send_plan
@@ -41,6 +41,8 @@ HELP = """\
 /time имя ЧЧ:ММ [будни] · /on имя · /off имя · /del имя
 /projects · /now [имя] — совет по проекту сейчас
 /report имя текст — отчёт (или просто reply на мой совет)
+
+💳 /balance — остаток на ИИ · /topup сумма — сообщить баланс OpenAI после пополнения
 
 /id — показать chat_id"""
 
@@ -128,6 +130,10 @@ class Handler:
             await self.cmd_report(chat_id, rest)
         elif cmd == "/tasks":
             await self.cmd_tasks(chat_id)
+        elif cmd == "/balance":
+            await self.cmd_balance(chat_id)
+        elif cmd == "/topup":
+            await self.cmd_topup(chat_id, args)
         elif cmd == "/memory":
             await self.cmd_memory(chat_id)
         elif cmd == "/forget":
@@ -374,6 +380,31 @@ class Handler:
         one = summary["added"] if len(summary["added"]) == 1 and not summary["done"] else []
         await self.tg.send(chat_id, prefix + reply,
                            buttons=tasks_mod.new_task_buttons(one[0]) if one else None)
+
+    async def cmd_balance(self, chat_id: int) -> None:
+        rows = await balance.collect(self.cfg, self.db)
+        if not rows:
+            await self.reply(chat_id, "Баланс не определить: DeepSeek не ответил, а для OpenAI нужен "
+                             "OPENAI_ADMIN_KEY в .env и /topup сумма.")
+            return
+        await self.reply(chat_id, "💳 Баланс ИИ:\n" + "\n".join(
+            f"{'⚠' if a < t else '✅'} {n}: {a:.2f} {c}" for n, a, c, t in rows) +
+            f"\nПредупрежу, когда останется меньше {self.cfg.balance_alert_usd:g} $.")
+
+    async def cmd_topup(self, chat_id: int, args: list[str]) -> None:
+        try:
+            amount = float(args[0].replace(",", ".").lstrip("$")) if args else -1
+        except ValueError:
+            amount = -1
+        if amount <= 0:
+            await self.reply(chat_id, "Формат: /topup 20 — сколько долларов сейчас на балансе OpenAI "
+                             "(после пополнения; смотри на platform.openai.com → Billing).")
+            return
+        balance.set_openai_topup(self.db, amount)
+        extra = "" if self.cfg.openai_admin_key else \
+            "\n⚠ OPENAI_ADMIN_KEY не задан в .env — без него расходы не считаются."
+        await self.reply(chat_id, f"Запомнил: на OpenAI {amount:g} $. Дальше сам вычитаю расходы "
+                         f"и предупрежу, когда останется меньше {self.cfg.balance_alert_usd:g} $.{extra}")
 
     async def cmd_memory(self, chat_id: int) -> None:
         facts = self.db.list_facts()

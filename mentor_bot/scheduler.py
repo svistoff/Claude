@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from . import advisor
+from . import advisor, balance
 from . import tasks as tasks_mod
 from .config import Config
 from .db import DB
@@ -71,6 +71,20 @@ async def send_plan(cfg: Config, db: DB, tg) -> str:
     return text
 
 
+async def check_balance(cfg: Config, db: DB, tg, today: str) -> None:
+    """Раз в час: если остаток ниже порога — напомнить (не чаще раза в сутки на провайдера)."""
+    for name, amount, cur, thr in await balance.collect(cfg, db):
+        key = f"balance_alert_{name}"
+        if amount >= thr:
+            db.set_state(key, "")  # пополнили — следующее падение снова предупредим
+        elif db.get_state(key) != today:
+            db.set_state(key, today)
+            await tg.send(cfg.owner_chat_id,
+                          f"💸 На балансе {name} осталось {amount:.2f} {cur} (порог {thr:.2f}). "
+                          "Пополни, чтобы бот не замолчал." +
+                          (" После пополнения: /topup сумма" if name == "OpenAI" else ""))
+
+
 async def tick(cfg: Config, db: DB, tg) -> None:
     if not cfg.owner_chat_id:
         return  # режим настройки: владельца ещё нет
@@ -78,6 +92,12 @@ async def tick(cfg: Config, db: DB, tg) -> None:
     hhmm = now.strftime("%H:%M")
     today = now.strftime("%Y-%m-%d")
     is_weekend = now.weekday() >= 5
+
+    # Баланс ИИ: проверяем раз в час.
+    hour_key = now.strftime("%Y-%m-%d %H")
+    if db.get_state("balance_hour") != hour_key:
+        db.set_state("balance_hour", hour_key)
+        await check_balance(cfg, db, tg, today)
 
     # Утро: план дня по входящим задачам.
     if hhmm == cfg.plan_time and db.get_state("plan_date") != today:

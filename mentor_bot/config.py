@@ -30,6 +30,8 @@ class Config:
     llm_base_url: str = "https://api.deepseek.com"
     llm_model: str = "deepseek-flash"
     github_token: str = ""
+    openai_admin_key: str = ""
+    balance_alert_usd: float = 1.0
     stt_api_key: str = ""
     stt_base_url: str = "https://api.groq.com/openai/v1"
     stt_model: str = "whisper-large-v3-turbo"
@@ -57,6 +59,8 @@ def load() -> Config:
         llm_base_url=os.environ.get("LLM_BASE_URL", "https://api.deepseek.com"),
         llm_model=os.environ.get("LLM_MODEL", "deepseek-flash"),
         github_token=os.environ.get("GITHUB_TOKEN", ""),
+        openai_admin_key=os.environ.get("OPENAI_ADMIN_KEY", ""),
+        balance_alert_usd=float(os.environ.get("BALANCE_ALERT_USD", "1")),
         stt_api_key=os.environ.get("STT_API_KEY", ""),
         stt_base_url=os.environ.get("STT_BASE_URL", "https://api.groq.com/openai/v1"),
         stt_model=os.environ.get("STT_MODEL", "whisper-large-v3-turbo"),

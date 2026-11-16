@@ -42,6 +42,15 @@ class FakeTG:
         return self.sent[-1][1]
 
 
+@pytest.fixture(autouse=True)
+def no_balance_network(monkeypatch):
+    """Проверка баланса ходит в сеть — в тестах по умолчанию отключена."""
+    async def none(cfg, db):
+        return []
+
+    monkeypatch.setattr("mentor_bot.balance.collect", none)
+
+
 @pytest.fixture
 def env(monkeypatch):
     cfg = Config(bot_token="t", owner_chat_id=OWNER, llm_api_key="k", tz_offset_hours=5)
@@ -735,3 +744,82 @@ def test_resending_same_text_while_ai_down_makes_no_duplicate(env, monkeypatch):
     run(h.handle(msg("написать статьи для журнала")))
     run(h.handle(msg("написать статьи для журнала")))
     assert len(db.open_tasks()) == 1 and "уже записано" in tg.last
+
+
+# --- Баланс ИИ ---------------------------------------------------------------------
+
+def test_low_balance_alert_once_a_day_and_reset(env, monkeypatch):
+    cfg, db, tg, _, _ = env
+    state = {"amount": 0.5}
+
+    async def fake_collect(cfg, db):
+        return [("DeepSeek", state["amount"], "USD", 1.0)]
+
+    monkeypatch.setattr("mentor_bot.balance.collect", fake_collect)
+    run(scheduler.check_balance(cfg, db, tg, "2026-11-16"))
+    run(scheduler.check_balance(cfg, db, tg, "2026-11-16"))
+    assert sum("осталось 0.50" in t for _, t, _ in tg.sent) == 1
+    run(scheduler.check_balance(cfg, db, tg, "2026-11-17"))  # на следующий день напомнит снова
+    assert sum("💸" in t for _, t, _ in tg.sent) == 2
+    state["amount"] = 10.0
+    run(scheduler.check_balance(cfg, db, tg, "2026-11-17"))  # пополнили — тишина и сброс
+    state["amount"] = 0.2
+    run(scheduler.check_balance(cfg, db, tg, "2026-11-17"))
+    assert sum("💸" in t for _, t, _ in tg.sent) == 3
+
+
+def test_deepseek_balance_parsing(monkeypatch):
+    import httpx
+    from mentor_bot import balance
+
+    async def fake_get(self, url, **kw):
+        return httpx.Response(200, json={"is_available": True, "balance_infos": [
+            {"currency": "USD", "total_balance": "0.84"}]})
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+    assert run(balance.deepseek_balance("k", "https://api.deepseek.com")) == (0.84, "USD")
+
+
+def test_openai_remaining_is_topup_minus_costs(monkeypatch):
+    import httpx
+    from mentor_bot import balance
+    db = DB(":memory:")
+    assert run(balance.openai_remaining("adm", db)) is None  # /topup ещё не вводили
+    balance.set_openai_topup(db, 20)
+
+    async def fake_get(self, url, **kw):
+        assert kw["headers"]["Authorization"] == "Bearer adm"
+        return httpx.Response(200, json={"has_more": False, "data": [
+            {"results": [{"amount": {"value": 1.5, "currency": "usd"}}]},
+            {"results": [{"amount": {"value": 0.25, "currency": "usd"}},
+                         {"amount": {"value": 0.25, "currency": "usd"}}]}]})
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+    assert run(balance.openai_remaining("adm", db)) == pytest.approx(18.0)
+
+
+def test_openai_costs_error_is_balance_error(monkeypatch):
+    import httpx
+    from mentor_bot import balance
+
+    async def forbidden(self, url, **kw):
+        return httpx.Response(403, text="no")
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", forbidden)
+    with pytest.raises(balance.BalanceError, match="Admin"):
+        run(balance.openai_spent_since("k", 0))
+
+
+def test_topup_and_balance_commands(env, monkeypatch):
+    cfg, db, tg, h, _ = env
+    run(h.handle(msg("/topup 25,5")))
+    assert db.get_state("openai_topup") == "25.5" and "OPENAI_ADMIN_KEY" in tg.last
+    run(h.handle(msg("/topup abc")))
+    assert "Формат" in tg.last
+
+    async def fake_collect(cfg, db):
+        return [("DeepSeek", 0.4, "USD", 1.0)]
+
+    monkeypatch.setattr("mentor_bot.balance.collect", fake_collect)
+    run(h.handle(msg("/balance")))
+    assert "⚠ DeepSeek: 0.40 USD" in tg.last
