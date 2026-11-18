@@ -30,7 +30,7 @@ async def _fire(reminder: dict, today: str) -> None:
         advice = await advisor.generate_advice(reminder.get("project"), reminder.get("goal", ""))
     except Exception as exc:  # noqa: BLE001
         advice = f"(не удалось сгенерировать совет: {exc})"
-    ok, err = await asyncio.to_thread(telegram.send_message, advice)
+    ok, err = await asyncio.to_thread(telegram.send_message, advice, True)
     repo.add_reminder_log(reminder["id"], reminder.get("project"),
                           advice if ok else f"{advice}\n\n[не отправлено: {err}]", ok)
 
@@ -49,6 +49,40 @@ async def tick() -> None:
         if r["weekdays_only"] and is_weekend:
             continue
         await _fire(r, today)
+
+    # Утро: план дня по личным задачам (если они есть).
+    if hhmm == cfg.plan_time and repo.get_setting("mentor_plan_date") != today:
+        repo.set_setting("mentor_plan_date", today)
+        if repo.open_tasks():
+            try:
+                plan = await advisor.plan_day()
+            except Exception as exc:  # noqa: BLE001
+                plan = f"⚠ Не смог составить план: {exc}"
+            await asyncio.to_thread(telegram.send_message, plan, True)
+
+    # Вечер: итог дня — что сделано, что осталось.
+    if hhmm == cfg.evening_time and repo.get_setting("mentor_evening_date") != today:
+        repo.set_setting("mentor_evening_date", today)
+        summary = evening_summary(now)
+        if summary:
+            await asyncio.to_thread(telegram.send_message, summary)
+
+
+def evening_summary(now_local: datetime) -> str:
+    offset = get_app_config().mentor.tz_offset_hours
+    day_start_utc = (now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+                     - timedelta(hours=offset)).replace(tzinfo=None)
+    done = repo.done_tasks_since(day_start_utc)
+    left = repo.open_tasks()
+    if not done and not left:
+        return ""
+    lines = ["🌙 Итог дня"]
+    if done:
+        lines.append("✅ Сделано: " + "; ".join(t["text"] for t in done))
+    if left:
+        lines.append("📋 Открыто: " + "; ".join(f"#{t['id']} {t['text']}" for t in left[:10]))
+        lines.append("Закрой сделанное: /done N. Утром снова разложу по приоритетам.")
+    return "\n".join(lines)
 
 
 async def _loop() -> None:

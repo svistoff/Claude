@@ -9,7 +9,7 @@ from sqlalchemy import select
 
 from . import get_session
 from .models import (AppSetting, Conversation, Folder, Message, Project,
-                     Reminder, ReminderLog, ToolCallLog)
+                     Reminder, ReminderLog, Task, ToolCallLog)
 
 
 # --- Папки чатов ------------------------------------------------------------
@@ -320,3 +320,55 @@ def _msg_dict(m: Message) -> dict[str, Any]:
         "tool_call_id": m.tool_call_id,
         "created_at": m.created_at.isoformat(),
     }
+
+
+# --- Личные задачи (входящие) ----------------------------------------------
+
+def _task_dict(t: Task) -> dict[str, Any]:
+    return {"id": t.id, "text": t.text, "done": t.done,
+            "created_at": t.created_at.isoformat(),
+            "done_at": t.done_at.isoformat() if t.done_at else None}
+
+
+def add_task(text: str) -> dict:
+    with get_session() as db:
+        t = Task(text=text.strip()[:2000])
+        db.add(t)
+        db.commit()
+        return _task_dict(t)
+
+
+def open_tasks() -> list[dict]:
+    with get_session() as db:
+        rows = db.execute(select(Task).where(Task.done.is_(False)).order_by(Task.id)).scalars().all()
+        return [_task_dict(t) for t in rows]
+
+
+def done_tasks_since(since) -> list[dict]:
+    with get_session() as db:
+        rows = db.execute(select(Task).where(Task.done.is_(True), Task.done_at >= since)
+                          .order_by(Task.done_at)).scalars().all()
+        return [_task_dict(t) for t in rows]
+
+
+def complete_task(task_id: int) -> dict | None:
+    from datetime import datetime, timezone
+    with get_session() as db:
+        t = db.get(Task, task_id)
+        if t is None or t.done:
+            return None
+        t.done = True
+        t.done_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        db.commit()
+        return _task_dict(t)
+
+
+def delete_task(task_id: int) -> dict | None:
+    with get_session() as db:
+        t = db.get(Task, task_id)
+        if t is None:
+            return None
+        d = _task_dict(t)
+        db.delete(t)
+        db.commit()
+        return d

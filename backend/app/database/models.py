@@ -121,6 +121,18 @@ class ReminderLog(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
 
+class Task(Base):
+    """Личная задача пользователя (входящие): из Telegram, чата или от агента."""
+
+    __tablename__ = "tasks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    text: Mapped[str] = mapped_column(Text)
+    done: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    done_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
 class ToolCallLog(Base):
     __tablename__ = "tool_calls"
 

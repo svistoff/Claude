@@ -14,6 +14,7 @@ from .api import (auth_routes, browser_routes, chat, files, git_routes,
 from .config import BACKEND_DIR
 from .database import init_db
 from .mentor import scheduler as mentor_scheduler
+from .telegram import gateway as telegram_gateway
 
 FRONTEND_DIR = BACKEND_DIR.parent / "frontend"
 
@@ -22,10 +23,12 @@ FRONTEND_DIR = BACKEND_DIR.parent / "frontend"
 async def lifespan(app: FastAPI):
     init_db()
     mentor_scheduler.start()  # фоновый планировщик напоминаний (наставник)
+    telegram_gateway.start()  # Telegram-дверь к агенту (если задан токен)
     try:
         yield
     finally:
         mentor_scheduler.stop()
+        await telegram_gateway.stop()
 
 
 app = FastAPI(title="AI Coding Agent", version="0.1.0",

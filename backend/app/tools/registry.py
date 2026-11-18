@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from . import browser, filesystem, git, github, image, terminal
+from . import browser, filesystem, git, github, image, tasks, terminal
 from .base import ToolContext, ToolResult
 
 # --- Схемы инструментов (function calling) ----------------------------------
@@ -152,6 +152,25 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "tasks",
+            "description": ("Личные задачи пользователя (входящие). action: add (записать задачу text), "
+                            "list (открытые задачи), done (отметить выполненной task_id), drop (удалить "
+                            "task_id). Используй, когда просят «запиши задачу», «что у меня в задачах», "
+                            "«я сделал #3»."),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["add", "list", "done", "drop"]},
+                    "text": {"type": "string", "description": "Текст задачи (для add)"},
+                    "task_id": {"type": "integer", "description": "Номер задачи (для done/drop)"},
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "github",
             "description": ("Операции с GitHub через API: info (remote/ветка), branches (список веток), "
                             "ci_status (статус проверок CI по HEAD), create_pr (создать Pull Request — "
@@ -235,6 +254,10 @@ def _dispatch_browser(ctx: ToolContext, a: dict) -> ToolResult:
     return browser.browser_tool(ctx, action, **kwargs)
 
 
+def _dispatch_tasks(ctx: ToolContext, a: dict) -> ToolResult:
+    return tasks.tasks_tool(ctx, a.get("action", "list"), a.get("text", ""), a.get("task_id"))
+
+
 def _dispatch_generate_image(ctx: ToolContext, a: dict) -> ToolResult:
     return image.generate_image(ctx, a["prompt"], a.get("image_size", "landscape_4_3"))
 
@@ -250,6 +273,7 @@ _DISPATCH: dict[str, Callable[[ToolContext, dict], ToolResult]] = {
     "github": _dispatch_github,
     "browser": _dispatch_browser,
     "generate_image": _dispatch_generate_image,
+    "tasks": _dispatch_tasks,
 }
 
 

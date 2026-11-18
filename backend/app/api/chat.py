@@ -13,6 +13,7 @@ from .. import auth, projects_store, uploads_store
 from ..agent.loop import run_agent
 from ..agent.prompts import SYSTEM_PROMPT
 from ..agent.runtime import registry
+from ..agent.session import persist_delta
 from ..config import get_app_config
 from ..database import repo
 from ..llm import get_provider
@@ -81,7 +82,7 @@ def chat(body: ChatBody, user: str = Depends(auth.require_csrf)) -> StreamingRes
                                            "name": ev["name"]}
                 yield _sse(ev)
         finally:
-            _persist_delta(conv_id, messages, preloaded, tool_meta)
+            persist_delta(conv_id, messages, preloaded, tool_meta)
             registry.finish(conv_id, run)
             yield _sse({"type": "end"})
 
@@ -91,29 +92,6 @@ def chat(body: ChatBody, user: str = Depends(auth.require_csrf)) -> StreamingRes
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no",
                  "Connection": "keep-alive"},
     )
-
-
-def _persist_delta(conv_id: str, messages: list[dict], preloaded: int,
-                   tool_meta: dict[str, dict]) -> None:
-    """Сохранить новые (assistant/tool) сообщения задачи в БД."""
-    for m in messages[preloaded:]:
-        role = m.get("role")
-        if role == "assistant":
-            tool_calls = m.get("tool_calls")
-            repo.add_message(conv_id, "assistant", m.get("content", ""),
-                             tool_calls=tool_calls)
-            for tc in tool_calls or []:
-                fn = tc.get("function", {})
-                meta = tool_meta.get(tc.get("id"), {})
-                try:
-                    args = json.loads(fn.get("arguments", "{}"))
-                except json.JSONDecodeError:
-                    args = {}
-                repo.log_tool_call(conv_id, fn.get("name", "?"), args,
-                                   meta.get("ok", True), meta.get("summary", ""))
-        elif role == "tool":
-            repo.add_message(conv_id, "tool", m.get("content", ""),
-                             tool_call_id=m.get("tool_call_id"))
 
 
 @router.post("/agent/stop")

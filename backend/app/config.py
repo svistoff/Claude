@@ -93,6 +93,9 @@ class MentorConfig(BaseModel):
     # Смещение часового пояса пользователя от UTC (часы). Время напоминаний
     # задаётся в этом поясе. МСК = 3, Екатеринбург = 5.
     tz_offset_hours: int = 3
+    # Утренний план дня по личным задачам и вечерний итог (локальное время).
+    plan_time: str = "08:30"
+    evening_time: str = "20:00"
 
 
 class PricingConfig(BaseModel):

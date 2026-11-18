@@ -45,7 +45,7 @@ def test_scheduler_tick_sends_due(monkeypatch):
     r = repo.create_reminder("proj", "цель", hhmm, False)
 
     sent: list[str] = []
-    monkeypatch.setattr(scheduler.telegram, "send_message", lambda text: (True, ""))
+    monkeypatch.setattr(scheduler.telegram, "send_message", lambda text, *a: (True, ""))
 
     async def fake_advice(project, goal):
         sent.append(project or "")
@@ -69,9 +69,20 @@ def test_scheduler_skips_disabled_telegram(monkeypatch):
     monkeypatch.setattr(scheduler, "get_app_config", lambda: cfg)
     monkeypatch.setattr(scheduler.telegram, "configured", lambda: False)
     calls: list[str] = []
-    monkeypatch.setattr(scheduler.telegram, "send_message", lambda text: calls.append(text) or (True, ""))
+    monkeypatch.setattr(scheduler.telegram, "send_message", lambda text, *a: calls.append(text) or (True, ""))
     hhmm = scheduler._local_now().strftime("%H:%M")
     r = repo.create_reminder("p2", "g", hhmm, False)
     asyncio.run(scheduler.tick())
     assert calls == []  # без Telegram ничего не шлём
     repo.delete_reminder(r["id"])
+
+
+def test_evening_summary_lists_done_and_open():
+    from datetime import datetime, timezone
+    for t in repo.open_tasks():
+        repo.delete_task(t["id"])
+    a = repo.add_task("сделанная")
+    repo.add_task("висящая")
+    repo.complete_task(a["id"])
+    text = scheduler.evening_summary(datetime.now(timezone.utc) + __import__("datetime").timedelta(hours=3))
+    assert "Сделано: сделанная" in text and "висящая" in text
