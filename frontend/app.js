@@ -898,7 +898,7 @@ function newChat(opts = {}) {
   state.conversationId = null; $("#chat").innerHTML = "";
   state.lastSeq = 0; state.finished = false;
   rememberCurrent(null);
-  addNote(`Новая задача в проекте «${state.project || "—"}». Опишите, что сделать.`);
+  addNote(`Новый чат · проект «${state.project || "—"}». Опишите, что сделать.`);
   // Запоминаем проект, а чат — новый. При автоматическом новом чате на старте
   // (remember: false) память не трогаем: чтобы «Продолжить последний» работал.
   if (state.project && opts.remember !== false) saveActive(null, state.project);
