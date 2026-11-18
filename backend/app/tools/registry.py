@@ -359,10 +359,21 @@ _DISPATCH: dict[str, Callable[[ToolContext, dict], ToolResult]] = {
 }
 
 
+# Инструменты, которым нужен корень проекта. В чате без проекта они вежливо
+# отказывают, вместо падения на None.
+PROJECT_TOOLS = {"read_file", "list_files", "search_files", "write_file",
+                 "edit_file", "terminal", "git", "github"}
+NO_PROJECT_MESSAGE = ("Проект не выбран — файлы, терминал и git недоступны. "
+                      "Попроси пользователя выбрать проект (кнопка «Проект» сверху) "
+                      "или ответь без доступа к коду.")
+
+
 def dispatch(ctx: ToolContext, name: str, args: dict) -> ToolResult:
     handler = _DISPATCH.get(name)
     if handler is None:
         return ToolResult(False, f"Неизвестный инструмент: {name}", summary=f"{name}: unknown")
+    if name in PROJECT_TOOLS and ctx.project_root is None:
+        return ToolResult(False, NO_PROJECT_MESSAGE, summary="Нужен проект")
     try:
         return handler(ctx, args or {})
     except KeyError as exc:

@@ -127,6 +127,8 @@ button:active, .pressable:active { transform: scale(0.97); }
 }
 .pill .chev { color: var(--muted); font-size: 11px; }
 .pill span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Проект ещё не выбран — приглашение, а не утверждение. */
+.pill.no-project { background: transparent; border-style: dashed; color: var(--muted); }
 
 /* Лента диалога */
 .chat {

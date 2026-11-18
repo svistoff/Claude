@@ -40,7 +40,10 @@ class Conversation(Base):
     __tablename__ = "conversations"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
-    project: Mapped[str] = mapped_column(String(128))
+    # Проект, к которому привязан чат. Пустая строка — «без проекта»: чат можно
+    # начать с чистого листа и выбрать проект позже. (NULL не используем: колонка
+    # уже создана как NOT NULL в существующих базах.)
+    project: Mapped[str] = mapped_column(String(128), default="")
     title: Mapped[str] = mapped_column(String(256), default="Новый чат")
     folder_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)

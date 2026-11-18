@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from .. import auth, chat_state, projects_store, uploads_store
 from ..agent.jobs import Job, jobs
 from ..agent.loop import run_agent
-from ..agent.prompts import SYSTEM_PROMPT
+from ..agent.prompts import NO_PROJECT_NOTE, SYSTEM_PROMPT
 from ..agent.runtime import registry
 from ..agent.session import persist_delta
 from ..config import get_app_config
@@ -28,7 +28,8 @@ log = logging.getLogger(__name__)
 
 
 class ChatBody(BaseModel):
-    project: str
+    # Проект необязателен: можно вести чат «с чистого листа», без привязки.
+    project: str | None = None
     message: str
     conversation_id: str | None = None
     # Приложенные файлы: [{token, name}] из /api/upload.
@@ -94,30 +95,44 @@ def _notify_if_unwatched(job: Job) -> None:
 
 @router.post("/chat")
 async def chat(body: ChatBody, user: str = Depends(auth.require_csrf)) -> StreamingResponse:
-    project_root = projects_store.project_root(body.project)
-    if project_root is None:
-        raise HTTPException(400, f"Неизвестный проект: {body.project}")
-    if not project_root.is_dir():
-        raise HTTPException(400, f"Директория проекта не найдена: {project_root}")
+    # Проект не выбран — это не ошибка: агент поговорит, а к файлам/терминалу
+    # получит доступ только после выбора проекта.
+    project = (body.project or "").strip() or None
+    project_root = projects_store.project_root(project) if project else None
+    if project is not None:
+        if project_root is None:
+            raise HTTPException(400, f"Неизвестный проект: {project}")
+        if not project_root.is_dir():
+            raise HTTPException(400, f"Директория проекта не найдена: {project_root}")
 
     config = get_app_config()
 
     # Подготовка (SQLite, чтение вложений) — в отдельном потоке, чтобы не
     # блокировать event loop: эндпоинт асинхронный ради создания фоновой задачи.
     def _prepare() -> tuple[str, list[dict[str, Any]], int]:
-        conv_id = body.conversation_id or repo.create_conversation(body.project, body.message[:60])
+        if body.conversation_id:
+            conv_id = body.conversation_id
+            meta = repo.get_conversation_meta(conv_id)
+            if meta is None:
+                conv_id = repo.create_conversation(project, body.message[:60])
+            elif project is not None and meta["project"] != project:
+                # Проект выбрали уже после начала разговора — привязываем чат.
+                repo.set_conversation_project(conv_id, project)
+        else:
+            conv_id = repo.create_conversation(project, body.message[:60])
         # Содержимое приложенных файлов добавляем к сообщению, чтобы агент их «видел».
         attach_ctx = uploads_store.build_attachments_context(body.attachments or [])
         repo.add_message(conv_id, "user", body.message + attach_ctx)
         # История для LLM (уже включает только что добавленное сообщение пользователя).
         prior = repo.get_history_for_llm(conv_id)
-        msgs: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}, *prior]
+        system = SYSTEM_PROMPT if project else SYSTEM_PROMPT + NO_PROJECT_NOTE
+        msgs: list[dict[str, Any]] = [{"role": "system", "content": system}, *prior]
         return conv_id, msgs, len(msgs)
 
     conv_id, messages, preloaded = await asyncio.to_thread(_prepare)
 
     run = registry.create(conv_id)
-    ctx = ToolContext(project_name=body.project, project_root=project_root,
+    ctx = ToolContext(project_name=project, project_root=project_root,
                       config=config, run=run)
     provider = get_provider()
     tool_meta: dict[str, dict] = {}

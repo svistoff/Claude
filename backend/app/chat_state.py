@@ -1,15 +1,14 @@
 """«Где я остановился»: какой чат открывать при входе в веб-интерфейс.
 
-Раньше выбранный чат жил только в памяти вкладки (`state.conversationId`), поэтому
-каждый вход на сайт открывал пустой чат — со стороны это выглядело как потеря
-контекста. Теперь выбор хранится в БД (`app_settings.web_active_chats`):
+Выбор хранится на сервере (`app_settings.web_active_chats`), поэтому одинаково
+работает с телефона, с компьютера и из другого браузера:
 
-- `last` — последний открытый чат (его и восстанавливаем);
-- `last_project` — последний выбранный проект (нужен, если в проекте ещё нет чата);
+- `last` — последний открытый чат (нужен для режима «продолжить последний»);
+- `last_project` — последний выбранный проект (None — проект не выбран);
 - `by_project` — последний чат каждого проекта (вернулся в проект — вернулся в чат).
 
-Хранится на сервере, а не в localStorage, чтобы одинаково работать с телефона,
-с компьютера и из другого браузера. Ссылки на удалённые чаты вычищаются при чтении.
+Чат может быть без проекта (в базе это пустая строка): такой чат в `by_project`
+не попадает. Ссылки на удалённые чаты вычищаются при чтении.
 """
 
 from __future__ import annotations
@@ -48,6 +47,13 @@ def _save(state: dict[str, Any]) -> None:
     repo.set_setting(KEY, json.dumps(state, ensure_ascii=False))
 
 
+def _project_of(meta: dict[str, Any] | None) -> str | None:
+    """Проект чата как имя или None («без проекта» хранится пустой строкой)."""
+    if not meta:
+        return None
+    return meta.get("project") or None
+
+
 def current() -> dict[str, Any]:
     """Что открыть при входе: чат, его проект и последний выбранный проект.
 
@@ -58,13 +64,13 @@ def current() -> dict[str, Any]:
     by_project: dict[str, str] = {}
     for project, conv_id in state["by_project"].items():
         meta = repo.get_conversation_meta(conv_id) if conv_id else None
-        if meta is not None and meta["project"] == project:
+        if _project_of(meta) == project:
             by_project[project] = conv_id
 
     meta = repo.get_conversation_meta(state["last"]) if state["last"] else None
-    last_project = state["last_project"] or (meta["project"] if meta else None)
+    last_project = state["last_project"] or _project_of(meta)
     conv_id = meta["id"] if meta else None
-    project = meta["project"] if meta else None
+    project = _project_of(meta)
 
     if meta is None and state["last"] and last_project and not conv_id:
         # Последний чат удалён/недоступен — ведём в чат того же проекта.
@@ -73,8 +79,9 @@ def current() -> dict[str, Any]:
         if picked is None:
             picked = repo.latest_conversation_for_project(last_project)
         if picked is not None:
-            conv_id, project = picked["id"], picked["project"]
-            by_project[project] = conv_id
+            conv_id, project = picked["id"], _project_of(picked)
+            if project:
+                by_project[project] = conv_id
 
     # Чистим устаревшие ссылки (удалённые чаты) и запоминаем нормализованное состояние.
     if (state["last"] != conv_id or state["last_project"] != last_project
@@ -90,10 +97,12 @@ def current() -> dict[str, Any]:
 
 
 def set_active(conversation_id: str | None, project: str | None = None) -> dict[str, Any]:
-    """Запомнить открытый чат (или «начал новый чат в проекте»).
+    """Запомнить открытый чат (или «начал новый чат»).
 
-    `conversation_id=None` — пользователь начал новый чат: для проекта забываем
-    прошлый чат, чтобы следующий вход тоже открывал чистый чат.
+    `conversation_id=None, project=None` — начат пустой чат без проекта: забываем
+    и прошлый чат, и прошлый проект, чтобы следующий вход тоже был чистым.
+    `conversation_id=None, project="имя"` — новый чат в проекте: чат забываем,
+    проект помним.
     """
     state = _load()
 
@@ -101,15 +110,19 @@ def set_active(conversation_id: str | None, project: str | None = None) -> dict[
         meta = repo.get_conversation_meta(conversation_id)
         if meta is None:
             return current()          # чужой/удалённый id — ничего не меняем
-        project = meta["project"]
+        chat_project = _project_of(meta)
         state["last"] = meta["id"]
-        state["last_project"] = project
-        state["by_project"][project] = meta["id"]
+        state["last_project"] = chat_project
+        if chat_project:
+            state["by_project"][chat_project] = meta["id"]
     else:
         state["last"] = None
         if project:
             state["last_project"] = project
             state["by_project"].pop(project, None)
+        else:
+            # Пустой чат без проекта — не тянем прошлый проект при следующем входе.
+            state["last_project"] = None
 
     _save(state)
     return current()

@@ -90,12 +90,24 @@ def set_setting(key: str, value: str) -> None:
         db.commit()
 
 
-def create_conversation(project: str, title: str = "Новый чат") -> str:
+def create_conversation(project: str | None, title: str = "Новый чат") -> str:
+    """Создать чат. `project=None` — чат без привязки к проекту."""
     with get_session() as db:
-        conv = Conversation(project=project, title=title)
+        conv = Conversation(project=(project or ""), title=title)
         db.add(conv)
         db.commit()
         return conv.id
+
+
+def set_conversation_project(conv_id: str, project: str | None) -> bool:
+    """Привязать чат к проекту (выбрали проект уже после начала разговора)."""
+    with get_session() as db:
+        conv = db.get(Conversation, conv_id)
+        if conv is None:
+            return False
+        conv.project = project or ""
+        db.commit()
+        return True
 
 
 def get_conversation(conv_id: str) -> dict[str, Any] | None:

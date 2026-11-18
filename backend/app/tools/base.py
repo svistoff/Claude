@@ -16,8 +16,9 @@ if TYPE_CHECKING:
 class ToolContext:
     """Контекст исполнения инструмента внутри одного запуска агента."""
 
-    project_name: str
-    project_root: Path
+    # None — чат без проекта: файлы/терминал/git недоступны (см. registry.dispatch).
+    project_name: str | None
+    project_root: Path | None
     config: AppConfig
     run: "RunState | None" = None  # для регистрации процессов / проверки stop
 

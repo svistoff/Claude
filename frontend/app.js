@@ -271,6 +271,7 @@ async function showApp() {
     mentor: new Sheet($("#sheet-mentor"), "bottom"),
   };
   await loadProjects();
+  setProject(state.project);      // «Выбрать проект» в шапке, пока ничего не выбрано
   await loadSettings();
   renderServerSettings();
   renderStartupSettings();
@@ -454,10 +455,6 @@ async function startScreen() {
   const params = new URLSearchParams(location.search);
   const act = await fetchActive();
 
-  // Проект помним всегда — даже если начинаем новый чат.
-  const project = act && (act.project || act.last_project);
-  if (project) { state.project = project; $("#project-name").textContent = project; }
-
   // «Запуск» — это открытие приложения. Обновление страницы (F5, потянуть вниз)
   // запуском НЕ считается: оно возвращает то, что было на экране.
   // Раньше запуск определялся по sessionStorage, но в установленном приложении он
@@ -475,7 +472,11 @@ async function startScreen() {
     shown = true;
   } else if (!isLaunch) {
     const onScreen = currentOnScreen();     // обновление страницы
-    if (onScreen === "") { newChat({ remember: false }); shown = true; }
+    if (onScreen === "") {
+      // Пустой чат: возвращаем выбранный проект (если он был), но не диалог.
+      if (act && act.last_project) setProject(act.last_project);
+      newChat({ remember: false }); shown = true;
+    }
     else if (onScreen && await openChat(onScreen)) shown = true;
   }
 
@@ -493,7 +494,7 @@ async function restoreActiveChat(act) {
   }
 
   const project = act.project || act.last_project;
-  if (project) { state.project = project; $("#project-name").textContent = project; }
+  if (project) setProject(project);
 
   if (act.conversation_id && await openChat(act.conversation_id)) return;
   const fallback = project && act.by_project ? act.by_project[project] : null;
@@ -508,9 +509,17 @@ let projectsCache = [], canCreate = false, canBrowse = false;
 async function loadProjects(selectName) {
   const data = await (await api("/api/projects")).json();
   projectsCache = data.projects; canCreate = data.can_create; canBrowse = data.can_browse;
+  // Проект по умолчанию НЕ выбираем: новый чат начинается без привязки к проекту.
+  // Проект подставляем только когда он явно задан (после создания/выбора).
   const wanted = selectName && projectsCache.find((p) => p.name === selectName);
-  const first = wanted || projectsCache.find((p) => p.available);
-  if (first) { state.project = first.name; $("#project-name").textContent = first.name; }
+  if (wanted) setProject(wanted.name);
+}
+
+// Подпись проекта в шапке: без проекта — приглашение выбрать.
+function setProject(name) {
+  state.project = name || null;
+  $("#project-name").textContent = state.project || "Выбрать проект";
+  $("#btn-project").classList.toggle("no-project", !state.project);
 }
 function renderProjectsSheet() {
   const list = $("#projects-list"); list.innerHTML = "";
@@ -544,8 +553,18 @@ function renderProjectsSheet() {
   }
 }
 function selectProject(name) {
-  state.project = name; $("#project-name").textContent = name;
-  closeSheet("projects"); newChat();
+  closeSheet("projects");
+  const emptyChat = !state.conversationId && !$("#chat").querySelector(".msg");
+  setProject(name);
+  if (emptyChat) {
+    // Просто выбрали проект в пустом чате — остаёмся здесь, ничего не теряем.
+    $("#chat").innerHTML = "";
+    addHint(`Новый чат · проект «${name}». Опишите, что сделать.`);
+    rememberCurrent(null);
+    saveActive(null, name);
+  } else {
+    newChat();          // в идущем разговоре смена проекта = новый чат
+  }
 }
 async function createProject() {
   const name = prompt("Имя нового проекта (латиница, цифры, дефис):", "");
@@ -560,7 +579,7 @@ async function deleteProject(name) {
   if (!confirm(`Убрать проект «${name}» из списка? Папка и файлы на сервере останутся.`)) return;
   const r = await api("/api/projects/" + encodeURIComponent(name), { method: "DELETE" });
   if (!r.ok) { const d = await r.json().catch(() => ({})); alert("Не удалось: " + (d.detail || r.status)); return; }
-  if (state.project === name) { state.project = null; $("#project-name").textContent = "—"; }
+  if (state.project === name) setProject(null);
   await loadProjects(state.project); renderProjectsSheet();
 }
 
@@ -815,7 +834,8 @@ function renderChatRow(list, c) {
   const row = el("div", "chat-row");
   const main = el("div", "list-item pressable chat-main");
   main.appendChild(el("div", "title", c.title || "Без названия"));
-  main.appendChild(el("div", "when", `${c.project} · ${new Date(c.updated_at).toLocaleString()}`));
+  const where = c.project || "без проекта";
+  main.appendChild(el("div", "when", `${where} · ${new Date(c.updated_at).toLocaleString()}`));
   main.addEventListener("click", () => openChat(c.id));
   const mv = el("button", "chat-edit", "📁"); mv.title = "В папку";
   mv.addEventListener("click", (e) => { e.stopPropagation(); moveChat(c); });
@@ -879,8 +899,8 @@ async function deleteChat(c) {
 async function openChat(id) {
   const r = await api("/api/chat/" + id); if (!r.ok) return false;
   const conv = await r.json();
-  state.conversationId = conv.id; state.project = conv.project;
-  $("#project-name").textContent = conv.project;
+  state.conversationId = conv.id;
+  setProject(conv.project);
   $("#chat").innerHTML = ""; state.currentAssistant = null;
   conv.messages.forEach((m) => {
     if (m.role === "user") addUser(m.content);
@@ -898,10 +918,12 @@ function newChat(opts = {}) {
   state.conversationId = null; $("#chat").innerHTML = "";
   state.lastSeq = 0; state.finished = false;
   rememberCurrent(null);
-  addNote(`Новый чат · проект «${state.project || "—"}». Опишите, что сделать.`);
+  addHint(state.project
+    ? `Новый чат · проект «${state.project}». Опишите, что сделать.`
+    : "Новый чат. Опишите, что сделать — проект можно выбрать сверху.");
   // Запоминаем проект, а чат — новый. При автоматическом новом чате на старте
   // (remember: false) память не трогаем: чтобы «Продолжить последний» работал.
-  if (state.project && opts.remember !== false) saveActive(null, state.project);
+  if (opts.remember !== false) saveActive(null, state.project || null);
 }
 
 // ============================================================================
@@ -917,6 +939,7 @@ function appendAssistant(d) {
   scrollDown();
 }
 function addNote(t) { $("#chat").appendChild(el("div", "msg system-note", t)); scrollDown(); }
+function addHint(t) { $("#chat").appendChild(el("div", "msg system-note hint", t)); scrollDown(); }
 function addLimitNote(msg) {
   const box = el("div", "msg system-note");
   box.appendChild(el("div", null, "⏸ Достигнут лимит шагов за один запуск. Прогресс сохранён."));
@@ -1119,9 +1142,11 @@ function clearAttachments() { attachments = []; $("#attach-chips").innerHTML = "
 
 async function send() {
   if (state.running) return;
-  const text = input.value.trim(); if ((!text && !attachments.length) || !state.project) return;
+  const text = input.value.trim(); if (!text && !attachments.length) return;
   const atts = attachments.slice();
   input.value = ""; input.style.height = "auto";
+  // Подсказка «Новый чат…» нужна только пока чат пуст.
+  $("#chat").querySelectorAll(".system-note.hint").forEach((n) => n.remove());
   addUser(text + (atts.length ? "\n📎 " + atts.map((a) => a.name).join(", ") : ""));
   clearAttachments();
   setRunning(true); state.currentAssistant = null; state.lastSeq = 0; state.finished = false;
@@ -1202,7 +1227,8 @@ function handleEvent(ev) {
   switch (ev.type) {
     case "session":
       state.conversationId = ev.conversation_id;
-      saveActive(ev.conversation_id, ev.project || state.project);  // запомним для следующего входа
+      rememberCurrent(ev.conversation_id);   // обновление страницы вернёт в этот чат
+      saveActive(ev.conversation_id, ev.project || state.project);
       break;
     case "text": hideThinking(); appendAssistant(ev.delta); break;
     case "assistant_message": state.currentAssistant = null; if (state.running) showThinking("думаю…"); break;
@@ -1256,7 +1282,7 @@ $("#confirm-cancel").addEventListener("click", () => resolveConfirm(false));
 //  Git
 // ============================================================================
 $("#btn-git").addEventListener("click", () => {
-  if (!state.project) return;
+  if (!state.project) { alert("Сначала выберите проект — кнопка «Выбрать проект» вверху."); return; }
   $("#git-project").textContent = state.project;
   $("#sheet-git").querySelectorAll(".tabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === "status"));
   renderGitTab("status"); openSheet("git");
