@@ -78,7 +78,15 @@ class LLMConfig(BaseModel):
     models: list[dict] = []
     temperature: float = 0.2
     max_tokens: int = 4096
+    # request_timeout — таймаут ожидания данных от модели (между чанками), сек.
+    # На большом контексте и включённом thinking первый токен может идти долго.
     request_timeout: int = 120
+    # connect_timeout — таймаут установки соединения, сек (короткий: мёртвую сеть
+    # видно быстро).
+    connect_timeout: int = 15
+    # Сколько раз повторить запрос при обрыве/таймауте, если модель ещё ничего
+    # не ответила (0 — не повторять).
+    retries: int = 2
 
 
 class ImageConfig(BaseModel):

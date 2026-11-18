@@ -31,6 +31,8 @@ def get_provider() -> LLMProvider:
         temperature=cfg.llm.temperature,
         max_tokens=cfg.llm.max_tokens,
         request_timeout=cfg.llm.request_timeout,
+        connect_timeout=cfg.llm.connect_timeout,
+        retries=cfg.llm.retries,
         extra_headers=conn.get("headers"),
     )
 

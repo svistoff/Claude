@@ -808,6 +808,7 @@ function handleEvent(ev) {
     case "blocked": addNote("⛔ Заблокировано: " + ev.reason + "\n" + (ev.preview || "")); break;
     case "usage": showUsage(ev); break;
     case "stopped": hideThinking(); addNote("⏹ Агент остановлен."); break;
+    case "retry": showThinking("сеть подвела — повторяю запрос (" + ev.attempt + "/" + ev.of + ")…"); break;
     case "limit": hideThinking(); addLimitNote(ev.message); break;
     case "error": hideThinking(); addNote("Ошибка: " + ev.message); break;
     case "end": hideThinking(); break;
