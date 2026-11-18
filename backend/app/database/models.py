@@ -133,6 +133,25 @@ class Task(Base):
     done_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
+class WorkLog(Base):
+    """Журнал выполненной работы — основа отчёта для шефа.
+
+    Пишется, когда владелец говорит «записал: сделал …», когда закрывается
+    задача (Task done) и когда агент сам фиксирует результат. Не задача:
+    задача — «надо сделать», запись — «сделано, тогда-то».
+    """
+
+    __tablename__ = "work_log"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    text: Mapped[str] = mapped_column(Text)
+    # Проект, к которому относится работа (None — общая/личная).
+    project: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # Откуда запись: owner (сказал владелец), task (закрыта задача), agent.
+    source: Mapped[str] = mapped_column(String(16), default="owner")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
 class ToolCallLog(Base):
     __tablename__ = "tool_calls"
 

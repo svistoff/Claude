@@ -27,6 +27,15 @@ def _make_url() -> str:
     return url
 
 
+def db_path() -> Path | None:
+    """Путь к файлу SQLite (для бэкапов и служебных скриптов). None — не SQLite."""
+    url = get_settings().database_url
+    if not url.startswith("sqlite:///"):
+        return None
+    path = Path(url[len("sqlite:///"):])
+    return path if path.is_absolute() else BACKEND_DIR / path
+
+
 def init_db() -> None:
     global _engine, _SessionLocal
     connect_args = {"check_same_thread": False} if "sqlite" in _make_url() else {}

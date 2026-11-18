@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from .. import auth, projects_store, uploads_store
+from ..agent.jobs import Job, jobs
 from ..agent.loop import run_agent
 from ..agent.prompts import SYSTEM_PROMPT
 from ..agent.runtime import registry
@@ -20,6 +23,8 @@ from ..llm import get_provider
 from ..tools.base import ToolContext
 
 router = APIRouter(prefix="/api", tags=["chat"])
+
+log = logging.getLogger(__name__)
 
 
 class ChatBody(BaseModel):
@@ -44,47 +49,22 @@ def _sse(event: dict[str, Any]) -> str:
     return f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
 
 
-@router.post("/chat")
-def chat(body: ChatBody, user: str = Depends(auth.require_csrf)) -> StreamingResponse:
-    project_root = projects_store.project_root(body.project)
-    if project_root is None:
-        raise HTTPException(400, f"Неизвестный проект: {body.project}")
-    if not project_root.is_dir():
-        raise HTTPException(400, f"Директория проекта не найдена: {project_root}")
+def _sse_response(job: Job, from_seq: int = 0) -> StreamingResponse:
+    """SSE-поток по задаче: сначала пропущенные события, затем живые.
 
-    config = get_app_config()
-
-    # Conversation (= сессия задачи).
-    conv_id = body.conversation_id or repo.create_conversation(body.project, body.message[:60])
-    # Содержимое приложенных файлов добавляем к сообщению, чтобы агент их «видел».
-    attach_ctx = uploads_store.build_attachments_context(body.attachments or [])
-    repo.add_message(conv_id, "user", body.message + attach_ctx)
-
-    # История для LLM (уже включает только что добавленное сообщение пользователя).
-    prior = repo.get_history_for_llm(conv_id)
-    messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}, *prior]
-    preloaded = len(messages)
-
-    run = registry.create(conv_id)
-    ctx = ToolContext(project_name=body.project, project_root=project_root,
-                      config=config, run=run)
-    provider = get_provider()
-
+    Обрыв этого потока (закрыли вкладку) НЕ останавливает задачу: клиент лишь
+    отписывается. Вернувшись, браузер запросит поток с `from=<последний seq>`.
+    """
     async def generator():
-        tool_meta: dict[str, dict] = {}
-        # conversation_id сразу — фронт запомнит сессию.
-        yield _sse({"type": "session", "conversation_id": conv_id, "project": body.project})
         try:
-            async for ev in run_agent(run=run, provider=provider, ctx=ctx,
-                                      history=messages, config=config):
-                if ev.get("type") == "tool_result":
-                    tool_meta[ev["id"]] = {"ok": ev["ok"], "summary": ev["summary"],
-                                           "name": ev["name"]}
-                yield _sse(ev)
-        finally:
-            persist_delta(conv_id, messages, preloaded, tool_meta)
-            registry.finish(conv_id, run)
-            yield _sse({"type": "end"})
+            async for ev in job.stream(from_seq=from_seq):
+                if ev.get("type") == "ping":
+                    yield ": ping\n\n"          # комментарий SSE — клиенту не событие
+                else:
+                    yield _sse(ev)
+        except asyncio.CancelledError:
+            # Клиент отключился — это нормально, работа продолжается.
+            raise
 
     return StreamingResponse(
         generator(),
@@ -94,10 +74,105 @@ def chat(body: ChatBody, user: str = Depends(auth.require_csrf)) -> StreamingRes
     )
 
 
+def _notify_if_unwatched(job: Job) -> None:
+    """Если задачу никто не смотрел (вкладка закрыта) — пришлём итог в Telegram."""
+    if job.watching:
+        return
+    text = (job.final_text or "").strip()
+    if not text:
+        if job.error:
+            text = "Задача завершилась с ошибкой: " + job.error[:400]
+        else:
+            return
+    from ..mentor import telegram as tg
+    if not tg.configured():
+        return
+    ok, err = tg.send_message("✅ Готово, пока ты был не у экрана:\n\n" + text, markdown=True)
+    if not ok:
+        log.warning("не удалось переслать итог в Telegram: %s", err)
+
+
+@router.post("/chat")
+async def chat(body: ChatBody, user: str = Depends(auth.require_csrf)) -> StreamingResponse:
+    project_root = projects_store.project_root(body.project)
+    if project_root is None:
+        raise HTTPException(400, f"Неизвестный проект: {body.project}")
+    if not project_root.is_dir():
+        raise HTTPException(400, f"Директория проекта не найдена: {project_root}")
+
+    config = get_app_config()
+
+    # Подготовка (SQLite, чтение вложений) — в отдельном потоке, чтобы не
+    # блокировать event loop: эндпоинт асинхронный ради создания фоновой задачи.
+    def _prepare() -> tuple[str, list[dict[str, Any]], int]:
+        conv_id = body.conversation_id or repo.create_conversation(body.project, body.message[:60])
+        # Содержимое приложенных файлов добавляем к сообщению, чтобы агент их «видел».
+        attach_ctx = uploads_store.build_attachments_context(body.attachments or [])
+        repo.add_message(conv_id, "user", body.message + attach_ctx)
+        # История для LLM (уже включает только что добавленное сообщение пользователя).
+        prior = repo.get_history_for_llm(conv_id)
+        msgs: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}, *prior]
+        return conv_id, msgs, len(msgs)
+
+    conv_id, messages, preloaded = await asyncio.to_thread(_prepare)
+
+    run = registry.create(conv_id)
+    ctx = ToolContext(project_name=body.project, project_root=project_root,
+                      config=config, run=run)
+    provider = get_provider()
+    tool_meta: dict[str, dict] = {}
+
+    async def runner(job: Job):
+        """Тело задачи: живёт в отдельной asyncio-задаче, не в HTTP-запросе."""
+        job.emit({"type": "session", "conversation_id": conv_id, "project": body.project})
+        try:
+            async for ev in run_agent(run=run, provider=provider, ctx=ctx,
+                                      history=messages, config=config):
+                if ev.get("type") == "tool_result":
+                    tool_meta[ev["id"]] = {"ok": ev["ok"], "summary": ev["summary"],
+                                           "name": ev["name"]}
+                yield ev
+        finally:
+            # История сохраняется даже при обрыве связи и при отмене.
+            await asyncio.to_thread(persist_delta, conv_id, messages, preloaded, tool_meta)
+            registry.finish(conv_id, run)
+
+    job = jobs.start(conv_id, body.project, runner, on_finish=_notify_if_unwatched)
+    return _sse_response(job, from_seq=0)
+
+
 @router.post("/agent/stop")
 def stop_agent(body: StopBody, user: str = Depends(auth.require_csrf)) -> dict:
+    """Остановить работу. Останавливает и фоновую задачу, и её процессы."""
     stopped = registry.stop(body.conversation_id)
+    stopped = jobs.cancel(body.conversation_id) or stopped
     return {"ok": stopped}
+
+
+@router.get("/chat/{conv_id}/job")
+def job_status(conv_id: str, user: str = Depends(auth.require_user)) -> dict:
+    """Идёт ли сейчас работа по этому чату (для переподключения после закрытия вкладки)."""
+    job = jobs.get(conv_id)
+    if job is None:
+        return {"running": False, "done": True, "seq": 0, "exists": False}
+    return {**job.status(), "exists": True}
+
+
+@router.get("/chat/{conv_id}/stream")
+def attach_stream(
+    conv_id: str,
+    from_seq: int = Query(0, alias="from", ge=0),
+    user: str = Depends(auth.require_user),
+) -> StreamingResponse:
+    """Подключиться к уже идущей задаче и получить пропущенные события.
+
+    Так работа продолжается, даже если вкладку закрыли: вернувшись, клиент
+    вызывает этот адрес с номером последнего полученного события.
+    """
+    job = jobs.get(conv_id)
+    if job is None:
+        raise HTTPException(404, "По этому чату нет активной задачи.")
+    return _sse_response(job, from_seq=from_seq)
 
 
 @router.post("/chat/confirm")

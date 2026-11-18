@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from . import browser, filesystem, git, github, image, tasks, terminal, web
+from . import browser, filesystem, git, github, image, tasks, terminal, web, worklog
 from .base import ToolContext, ToolResult
 
 # --- Схемы инструментов (function calling) ----------------------------------
@@ -213,6 +213,29 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "worklog",
+            "description": ("Журнал выполненной работы — из него делается отчёт шефу. "
+                            "action: add (записать, что сделано — text, при необходимости project), "
+                            "list (что записано за последние days дней), "
+                            "report (материал для отчёта за days дней). "
+                            "Используй add, когда просят «запиши, что я сделал», «зафиксируй работу»; "
+                            "report — когда просят «отчёт о проделанной работе», «что я сделал за неделю». "
+                            "Это не задачи: tasks — что НАДО сделать, worklog — что УЖЕ сделано."),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["add", "list", "report"]},
+                    "text": {"type": "string", "description": "Что сделано (для add)"},
+                    "days": {"type": "integer", "description": "Период в днях (по умолчанию 7)"},
+                    "project": {"type": "string", "description": "Проект (для add; по умолчанию текущий)"},
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "github",
             "description": ("Операции с GitHub через API: info (remote/ветка), branches (список веток), "
                             "ci_status (статус проверок CI по HEAD), create_pr (создать Pull Request — "
@@ -313,6 +336,11 @@ def _dispatch_web_fetch(ctx: ToolContext, a: dict) -> ToolResult:
     return web.web_fetch(ctx, a["url"], a.get("max_chars"))
 
 
+def _dispatch_worklog(ctx: ToolContext, a: dict) -> ToolResult:
+    return worklog.worklog_tool(ctx, a.get("action", "list"), a.get("text", ""),
+                                a.get("days"), a.get("project"))
+
+
 _DISPATCH: dict[str, Callable[[ToolContext, dict], ToolResult]] = {
     "read_file": _dispatch_read,
     "list_files": _dispatch_list,
@@ -327,6 +355,7 @@ _DISPATCH: dict[str, Callable[[ToolContext, dict], ToolResult]] = {
     "web_search": _dispatch_web_search,
     "web_fetch": _dispatch_web_fetch,
     "tasks": _dispatch_tasks,
+    "worklog": _dispatch_worklog,
 }
 
 

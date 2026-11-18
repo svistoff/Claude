@@ -11,7 +11,8 @@ const el = (t, c, txt) => { const e = document.createElement(t); if (c) e.classN
 const reduceMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 const state = { csrf: null, project: null, conversationId: null, running: false,
-                currentAssistant: null, toolEls: {}, models: [], model: null };
+                currentAssistant: null, toolEls: {}, models: [], model: null,
+                lastSeq: 0, finished: false };
 
 // ---------- API ----------
 async function api(path, opts = {}) {
@@ -557,6 +558,8 @@ async function openChat(id) {
     else if (m.role === "assistant" && m.content) { const a = startAssistant(); a.innerHTML = mdToHtml(m.content); state.currentAssistant = null; }
   });
   closeSheet("chats"); scrollDown();
+  // Если по этому чату работа ещё идёт — подключимся к ней.
+  resumeIfRunning();
 }
 function newChat() {
   state.conversationId = null; $("#chat").innerHTML = "";
@@ -772,29 +775,81 @@ async function send() {
   input.value = ""; input.style.height = "auto";
   addUser(text + (atts.length ? "\n📎 " + atts.map((a) => a.name).join(", ") : ""));
   clearAttachments();
-  setRunning(true); state.currentAssistant = null;
+  setRunning(true); state.currentAssistant = null; state.lastSeq = 0; state.finished = false;
   try {
     const r = await api("/api/chat", { method: "POST", body: JSON.stringify({
       project: state.project, message: text, conversation_id: state.conversationId, attachments: atts }) });
     if (!r.ok) { addNote("Ошибка запроса: " + r.status); setRunning(false); return; }
     await consume(r);
-  } catch (err) { addNote("Сбой соединения: " + err.message); }
-  finally { setRunning(false); }
+    if (!state.finished) await reconnect();
+  } catch (err) {
+    // Связь оборвалась — работа на сервере продолжается. Переподключаемся.
+    await reconnect();
+  }
+  finally { if (state.finished) setRunning(false); }
 }
 async function consume(resp) {
+  if (!resp.ok || !resp.body) {
+    // 404 на переподключении = задача уже завершена, догоняем историю из БД.
+    throw new Error("нет потока");
+  }
   const reader = resp.body.getReader(), dec = new TextDecoder(); let buf = "";
-  for (;;) {
-    const { done, value } = await reader.read(); if (done) break;
-    buf += dec.decode(value, { stream: true });
-    let i;
-    while ((i = buf.indexOf("\n\n")) >= 0) {
-      const block = buf.slice(0, i); buf = buf.slice(i + 2);
-      for (const line of block.split("\n"))
-        if (line.startsWith("data:")) { const j = line.slice(5).trim(); if (j) handleEvent(JSON.parse(j)); }
+  try {
+    for (;;) {
+      const { done, value } = await reader.read(); if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let i;
+      while ((i = buf.indexOf("\n\n")) >= 0) {
+        const block = buf.slice(0, i); buf = buf.slice(i + 2);
+        for (const line of block.split("\n"))
+          if (line.startsWith("data:")) { const j = line.slice(5).trim(); if (j) handleEvent(JSON.parse(j)); }
+      }
     }
+  } finally {
+    try { reader.cancel(); } catch (e) { /* уже закрыт */ }
   }
 }
+// Переподключение к уже идущей задаче: забираем пропущенные события по seq.
+async function reconnect(tries) {
+  tries = tries || 0;
+  if (!state.conversationId) { setRunning(false); return; }
+  try {
+    const r = await api(`/api/chat/${state.conversationId}/stream?from=${state.lastSeq}`);
+    if (r.status === 404) {
+      // Задачи в памяти нет: либо всё закончилось, либо сервис перезапускался.
+      addNote("Работа на сервере уже завершилась — обновляю чат.");
+      const id = state.conversationId; await openChat(id); setRunning(false); return;
+    }
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    await consume(r);
+    if (!state.finished && tries < 5) return reconnect(tries + 1);
+    setRunning(false);
+  } catch (err) {
+    if (tries < 5) {
+      addNote("Связь пропала, пробую снова…");
+      await new Promise((res) => setTimeout(res, 1000 * Math.min(tries + 1, 5)));
+      return reconnect(tries + 1);
+    }
+    addNote("Не удалось восстановить связь. Работа продолжается на сервере — открой чат заново.");
+    setRunning(false);
+  }
+}
+// При открытии страницы: если по текущему чату идёт работа — подключиться к ней.
+async function resumeIfRunning() {
+  if (!state.conversationId) return;
+  try {
+    const r = await api(`/api/chat/${state.conversationId}/job`);
+    if (!r.ok) return;
+    const data = await r.json();
+    if (data.running) {
+      setRunning(true); state.currentAssistant = null; state.lastSeq = 0; state.finished = false;
+      addNote("Подключаюсь к работе, которая уже идёт…");
+      await reconnect();
+    }
+  } catch (err) { /* тихо: это лишь удобство */ }
+}
 function handleEvent(ev) {
+  if (typeof ev.seq === "number") state.lastSeq = ev.seq;
   switch (ev.type) {
     case "session": state.conversationId = ev.conversation_id; break;
     case "text": hideThinking(); appendAssistant(ev.delta); break;
@@ -811,7 +866,8 @@ function handleEvent(ev) {
     case "retry": showThinking("сеть подвела — повторяю запрос (" + ev.attempt + "/" + ev.of + ")…"); break;
     case "limit": hideThinking(); addLimitNote(ev.message); break;
     case "error": hideThinking(); addNote("Ошибка: " + ev.message); break;
-    case "end": hideThinking(); break;
+    case "ping": break;
+    case "end": state.finished = true; hideThinking(); setRunning(false); break;
   }
 }
 function setRunning(v) {

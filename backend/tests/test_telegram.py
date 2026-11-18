@@ -144,7 +144,7 @@ def test_task_commands(gw):
     run(gw.handle_message(msg("/tasks")))
     assert f"#{t['id']} купить билеты" in gw.tg.texts()[-1]
     run(gw.handle_message(msg(f"/done {t['id']}")))
-    assert "Сделано: купить билеты" in gw.tg.texts()[-1]
+    assert "Сделал: купить билеты" in gw.tg.texts()[-1]
 
 
 def test_plain_text_goes_to_agent_and_history(gw, monkeypatch):

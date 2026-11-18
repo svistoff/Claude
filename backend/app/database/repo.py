@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import select
 
 from . import get_session
 from .models import (AppSetting, Conversation, Folder, Message, Project,
-                     Reminder, ReminderLog, Task, ToolCallLog)
+                     Reminder, ReminderLog, Task, ToolCallLog, WorkLog)
 
 
 # --- Папки чатов ------------------------------------------------------------
@@ -351,16 +352,48 @@ def done_tasks_since(since) -> list[dict]:
         return [_task_dict(t) for t in rows]
 
 
-def complete_task(task_id: int) -> dict | None:
-    from datetime import datetime, timezone
+def complete_task(task_id: int, log_work: bool = True) -> dict | None:
     with get_session() as db:
         t = db.get(Task, task_id)
         if t is None or t.done:
             return None
         t.done = True
         t.done_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        if log_work:
+            # Закрытая задача = выполненная работа: сразу в журнал для отчёта.
+            db.add(WorkLog(text=t.text, project=None, source="task"))
         db.commit()
         return _task_dict(t)
+
+
+# --- Журнал выполненной работы (отчёт для шефа) ------------------------------
+
+def _work_dict(w: WorkLog) -> dict[str, Any]:
+    return {"id": w.id, "text": w.text, "project": w.project,
+            "source": w.source, "created_at": w.created_at.isoformat()}
+
+
+def add_work(text: str, project: str | None = None, source: str = "owner") -> dict:
+    with get_session() as db:
+        w = WorkLog(text=text.strip()[:4000], project=project or None, source=source)
+        db.add(w)
+        db.commit()
+        return _work_dict(w)
+
+
+def work_since(since: datetime) -> list[dict]:
+    """Записи журнала начиная с момента `since` (по возрастанию времени)."""
+    with get_session() as db:
+        rows = db.execute(select(WorkLog).where(WorkLog.created_at >= since)
+                          .order_by(WorkLog.created_at)).scalars().all()
+        return [_work_dict(w) for w in rows]
+
+
+def recent_work(limit: int = 20) -> list[dict]:
+    with get_session() as db:
+        rows = db.execute(select(WorkLog).order_by(WorkLog.created_at.desc())
+                          .limit(limit)).scalars().all()
+        return [_work_dict(w) for w in rows]
 
 
 def delete_task(task_id: int) -> dict | None:

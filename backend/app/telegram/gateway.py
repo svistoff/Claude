@@ -33,24 +33,46 @@ KEY_CONVERSATION = "tg_conversation"
 
 TELEGRAM_NOTE = """
 
-Сейчас пользователь пишет тебе через Telegram с телефона:
-- отвечай коротко и по делу, без длинных таблиц;
-- если вопрос не про текущий проект (личные задачи, поиск, советы) — всё равно помогай;
-- личные задачи веди инструментом tasks («запиши задачу» → tasks add)."""
+Сейчас пользователь пишет тебе через Telegram с телефона. Он не программист.
+
+КАК ОТВЕЧАТЬ:
+- как живой человек, простым языком. Не «выполнил инструмент read_file», а
+  «посмотрел файл». Никакого технического жаргона: не «endpoint», «регрессия»,
+  «коммит», «метод», «инстанс» — говори по-человечески.
+- сначала ответ по делу, 1–3 коротких абзаца. Не рапорт о процессе, а результат:
+  что выяснил, что сделал, что предлагаешь. Что именно ты делал внутри — не
+  пересказывай, если не спросили.
+- без таблиц, без длинных списков, без заголовков. Пиши как в мессенджере другу.
+- не извиняйся по три раза и не расписывай, как ты старался. Один раз признал —
+  и дальше по делу.
+- не придумывай номера задач и не выдумывай данные: если чего-то нет в базе,
+  так и скажи прямо.
+
+ЛИЧНЫЕ ЗАДАЧИ И ОТЧЁТЫ (инструменты tasks и worklog):
+- «запиши задачу …» → tasks add. «что в задачах» → tasks list. «сделал #3» → tasks done.
+- «запиши, что я сделал …» / «зафиксируй работу» → worklog add.
+- «что я сделал за неделю/месяц» / «отчёт шефу» → worklog report (days=7 или 30),
+  затем сформулируй отчёт человеческим языком: что сделано, какой результат,
+  что мешает. Без технических деталей.
+- tasks — это «надо сделать». worklog — «уже сделано» (из него отчёт).
+  Закрытие задачи само попадает в журнал, дублировать запись не нужно."""
 
 HELP = """\
-Я твой ИИ-помощник — тот же агент, что на ai.svistoff.ru.
-Просто пиши, что сделать: «почему не работает бот», «запиши задачу позвонить бухгалтеру», «что в проекте нового».
+Я твой помощник — тот же агент, что на ai.svistoff.ru.
+Просто пиши, что нужно: «что я сделал за неделю», «запиши: позвонил бухгалтеру»,
+«почему не работает бот».
 
 Работа:
 /projects — выбрать проект · /project имя
 /new — начать новый разговор
-/stop — остановить текущую работу
+/stop — остановить работу
 /model — сменить модель ИИ
 
-Задачи:
+Задачи и отчёты:
 /tasks — открытые задачи · /done N · /drop N
 /plan — план дня
+/report — что сделано за неделю
+/wlog — журнал выполненной работы
 
 /id — показать chat_id"""
 
@@ -169,9 +191,15 @@ class Gateway:
             await self.cmd_model(chat_id)
         elif cmd == "/tasks":
             tasks = repo.open_tasks()
-            await self.tg.send(chat_id, ("📋 Открытые задачи:\n" + "\n".join(
+            await self.tg.send(chat_id, ("Открытые задачи:\n" + "\n".join(
                 f"#{t['id']} {t['text']}" for t in tasks) + "\n\nСделал — /done N · план — /plan")
-                if tasks else "📭 Открытых задач нет. Просто напиши: «запиши задачу …»")
+                if tasks else "Открытых задач нет. Просто напиши: «запиши задачу …»")
+        elif cmd == "/report":
+            await self.cmd_report(chat_id, rest)
+        elif cmd == "/wlog":
+            days = rest.strip() or "7"
+            n = int(days) if days.isdigit() else 7
+            await self.cmd_wlog(chat_id, n)
         elif cmd in ("/done", "/drop"):
             await self.cmd_close_task(chat_id, rest, cmd == "/done")
         elif cmd == "/plan":
@@ -194,8 +222,73 @@ class Gateway:
         if t is None:
             await self.tg.send(chat_id, f"Открытой задачи #{num} нет. /tasks — список.")
             return
-        mark = "✅ Сделано" if done else "🗑 Убрал"
+        mark = "Сделал" if done else "Убрал"
         await self.tg.send(chat_id, f"{mark}: {t['text']}\nОсталось открытых: {len(repo.open_tasks())}")
+
+    # --- Отчёты о работе ---------------------------------------------------
+    async def cmd_wlog(self, chat_id: str, days: int) -> None:
+        """Список записей журнала за период — «что уже сделано»."""
+        from datetime import datetime, timedelta, timezone
+        since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
+        entries = repo.work_since(since)
+        if not entries:
+            await self.tg.send(chat_id, f"За последние {days} дн. записей о работе нет. "
+                                        f"Скажи «запиши: сделал …» — запишу.")
+            return
+        by_day: dict[str, list[str]] = {}
+        for e in entries:
+            by_day.setdefault(e["created_at"][:10], []).append(e["text"])
+        lines = [f"Записал за {days} дн. ({len(entries)} шт.):"]
+        for day in sorted(by_day):
+            lines.append(f"\n{day}")
+            lines.extend(f"— {t}" for t in by_day[day])
+        await self.send_markdown(chat_id, "\n".join(lines))
+
+    async def cmd_report(self, chat_id: str, rest: str) -> None:
+        """Отчёт о проделанной работе: /report [дней] — по умолчанию 7."""
+        arg = rest.strip()
+        days = int(arg) if arg.isdigit() else 7
+        from datetime import datetime, timedelta, timezone
+        since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
+        entries = repo.work_since(since)
+        if not entries:
+            await self.tg.send(chat_id, f"За последние {days} дн. в журнале пусто — "
+                                        f"отчёт собрать не из чего. Скажи «запиши: сделал …», "
+                                        f"я добавлю.")
+            return
+
+        await self.tg.typing(chat_id)
+        material = "\n".join(f"- {e['created_at'][:10]}: {e['text']}" for e in entries)
+        open_tasks = repo.open_tasks()
+        pending = "\n".join(f"- #{t['id']} {t['text']}" for t in open_tasks[:12])
+        prompt = (
+            f"Составь отчёт о работе за {days} дней для шефа.\n"
+            f"Пиши простым человеческим языком, как будто рассказываешь коллеге. "
+            f"Никакого технического жаргона, без таблиц и заголовков.\n"
+            f"Структура: сначала 2–4 главных результата обычными фразами; затем "
+            f"остальное короткими пунктами по дням; в конце — что в работе сейчас "
+            f"и что мешает. Не выдумывай того, чего нет в списке.\n\n"
+            f"Что сделано:\n{material}\n"
+            + (f"\nЧто ещё в работе:\n{pending}\n" if pending else "")
+        )
+        try:
+            provider = get_provider()
+            chunks: list[str] = []
+            async for ev in provider.stream([
+                {"role": "system", "content": "Ты помощник, который пишет короткие отчёты о работе простым языком."},
+                {"role": "user", "content": prompt},
+            ], tools=None):
+                if ev.get("type") == "text":
+                    chunks.append(ev.get("delta", ""))
+                elif ev.get("type") == "error":
+                    raise RuntimeError(ev.get("message", "LLM error"))
+            text = "".join(chunks).strip()
+        except Exception as exc:  # noqa: BLE001
+            log.exception("не смог собрать отчёт")
+            text = ""
+            await self.tg.send(chat_id, f"Не смог сформулировать отчёт: {redact(exc)}")
+        if text:
+            await self.send_markdown(chat_id, text)
 
     # --- Проекты и модель --------------------------------------------------
     def current_project(self) -> str | None:
@@ -298,22 +391,23 @@ class Gateway:
         run = registry.create(conv_id)
         ctx = ToolContext(project_name=project, project_root=root, config=config, run=run)
 
-        status_id = await self.tg.send(chat_id, "⏳ Думаю…")
-        last_edit = 0.0
-        steps = 0
+        # Никаких сообщений «Думаю… / Шаг N» — пользователь просил просто ответ.
+        # Пока агент работает, Telegram показывает нативный индикатор «печатает…».
+        last_typing = 0.0
         final = ""
         tool_meta: dict[str, dict] = {}
+        status_id = None
         try:
             await self.tg.typing(chat_id)
+            last_typing = time.monotonic()
             async for ev in run_agent(run=run, provider=get_provider(), ctx=ctx,
                                       history=messages, config=config):
                 t = ev.get("type")
-                if t == "tool_start":
-                    steps += 1
-                    if status_id and time.monotonic() - last_edit > 2:
-                        last_edit = time.monotonic()
-                        await self.tg.edit(chat_id, status_id,
-                                           f"⏳ Шаг {steps}: {_tool_label(ev['name'], ev.get('args', {}))}")
+                # Индикатор «печатает…» живёт в Telegram ~5 с — обновляем его,
+                # пока идёт работа. Это не сообщение в чате, а статус у имени бота.
+                if time.monotonic() - last_typing > 4:
+                    last_typing = time.monotonic()
+                    await self.tg.typing(chat_id)
                 elif t == "tool_result":
                     tool_meta[ev["id"]] = {"ok": ev["ok"], "summary": ev["summary"], "name": ev["name"]}
                     url = (ev.get("extra") or {}).get("screenshot_url")
@@ -324,24 +418,22 @@ class Gateway:
                     short = uuid.uuid4().hex[:10]
                     self.pending[short] = (conv_id, ev["id"])
                     await self.tg.send(
-                        chat_id, f"⚠ Нужно подтверждение\n{ev.get('reason', '')}\n\n{ev.get('preview', '')}",
+                        chat_id, f"Тут нужно твоё разрешение.\n\n{ev.get('reason', '')}\n{ev.get('preview', '')}".strip(),
                         buttons=[[("✅ Разрешить", f"c:{short}:1"), ("✖ Отменить", f"c:{short}:0")]])
                 elif t == "final":
                     final = ev.get("content", "")
                 elif t == "error":
-                    await self.tg.send(chat_id, "❌ " + ev.get("message", "ошибка"))
+                    await self.tg.send(chat_id, "Не получилось: " + ev.get("message", "ошибка"))
                 elif t == "limit":
-                    await self.tg.send(chat_id, "⚠ Дошёл до лимита шагов. Напиши «продолжай» — продолжу.")
+                    await self.tg.send(chat_id, "Пока остановился — напиши «продолжай», и я продолжу.")
                 elif t == "stopped":
-                    await self.tg.send(chat_id, "⏹ Остановлено.")
+                    await self.tg.send(chat_id, "Остановил.")
         except Exception as exc:  # noqa: BLE001
             log.exception("ошибка запуска агента")
-            await self.tg.send(chat_id, f"❌ Ошибка: {exc}")
+            await self.tg.send(chat_id, f"Сломалось: {redact(exc)}")
         finally:
             persist_delta(conv_id, messages, preloaded, tool_meta)
             registry.finish(conv_id, run)
-            if status_id:
-                await self.tg.edit(chat_id, status_id, f"✅ Готово · шагов: {steps}" if steps else "✅ Готово")
         if final.strip():
             await self.send_markdown(chat_id, final)
 
