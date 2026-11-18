@@ -38,6 +38,21 @@ image:
   model: fal-ai/flux/schnell
   base_url: https://fal.run
 
+# --- Поиск в интернете и чтение страниц (DeepSeek Search & Fetch API) --------
+# Инструменты web_search / web_fetch. Ключ — DEEPSEEK_API_KEY из .env.
+# Тариф: $0.75 за 1000 успешных запросов (Search и Fetch отдельно);
+# неуспешные запросы и пустые результаты не тарифицируются.
+web:
+  enabled: true
+  base_url: https://api.deepseek.com
+  timeout: 40
+  # Сколько результатов отдавать модели, если count не указан (1..max_count).
+  default_count: 8
+  max_count: 50
+  # Лимит текста страницы в ответе модели (защита контекста), символов.
+  max_content_chars: 20000
+  price_per_1k: 0.75
+
 # --- Наставник: ежедневные советы в Telegram (раздел 30) --------------------
 # Шлёт по расписанию один конкретный шаг к первой выручке по проекту.
 # Токены Telegram — в .env (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID).

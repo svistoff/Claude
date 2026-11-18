@@ -86,6 +86,9 @@ POST /api/chat {project, message, conversation_id?}
 ## Точки расширения (Фазы 2–3)
 - **GitHub** (`tools/github.py`): fine-grained PAT / GitHub App, PR, CI.
 - **Browser** (`tools/browser.py`): Playwright, отдельный профиль, скриншоты модели.
+- **Интернет** (`tools/web.py`): `web_search` / `web_fetch` на DeepSeek Search & Fetch API
+  ($0.75 за 1000 успешных запросов, ключ — `DEEPSEEK_API_KEY`, настройки — `web:` в
+  `config.yaml`). Чтение сайтов с логином/JS — по-прежнему через `browser`.
 - **Archive/upload**: расширить `api/files.py`, добавить `uploaded_files`.
 - **Scheduler**: recurring tasks поверх существующих conversations/sessions.
 - **Docker-изоляция терминала**: сменить runner в `tools/terminal.py`.

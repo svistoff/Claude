@@ -87,6 +87,22 @@ class ImageConfig(BaseModel):
     base_url: str = "https://fal.run"
 
 
+class WebConfig(BaseModel):
+    """Поиск в интернете и чтение страниц (DeepSeek Search & Fetch API)."""
+
+    enabled: bool = True
+    base_url: str = "https://api.deepseek.com"
+    # Таймаут одного запроса, сек.
+    timeout: int = 40
+    # Сколько результатов возвращать, если модель не указала count (1..max_count).
+    default_count: int = 8
+    max_count: int = 50
+    # Максимум символов текста страницы в ответе модели (защита контекста).
+    max_content_chars: int = 20000
+    # Цена за 1000 успешных запросов, USD (для учёта; см. прайс DeepSeek).
+    price_per_1k: float = 0.75
+
+
 class MentorConfig(BaseModel):
     # Наставник-планировщик: ежедневные советы в Telegram (раздел 30 ТЗ).
     enabled: bool = True
@@ -152,6 +168,7 @@ class AppConfig(BaseModel):
     uploads: UploadConfig = UploadConfig()
     browser: BrowserConfig = BrowserConfig()
     image: ImageConfig = ImageConfig()
+    web: WebConfig = WebConfig()
     mentor: MentorConfig = MentorConfig()
     projects: list[ProjectConfig] = []
     # Родительская папка, внутри которой агент может создавать новые проекты

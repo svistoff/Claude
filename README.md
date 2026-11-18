@@ -97,4 +97,5 @@ reverse-proxy для `ai.svistoff.ru`, Let's Encrypt (HTTP→HTTPS), sandbox-п�
 | ✅ | Реальные тарифы DeepSeek (пер-модельно + пиковые часы) |
 | ✅ | **Фаза 2:** GitHub — ветки/PR/CI (fine-grained токен, кнопки в панели Git) |
 | ✅ | **Фаза 3:** браузер-агент (Playwright) — open/click/type/get_text/screenshot; скриншоты в чат + OCR |
+| ✅ | Интернет: `web_search` + `web_fetch` (DeepSeek Search & Fetch API, $0.75/1000) |
 | 🔜 | Playwright browser agent (Фаза 3) |

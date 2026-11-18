@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from . import browser, filesystem, git, github, image, tasks, terminal
+from . import browser, filesystem, git, github, image, tasks, terminal, web
 from .base import ToolContext, ToolResult
 
 # --- Схемы инструментов (function calling) ----------------------------------
@@ -127,6 +127,48 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                     "full_page": {"type": "boolean"},
                 },
                 "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "web_search",
+            "description": ("Поиск в интернете (DeepSeek Search API). Возвращает заголовки, URL, "
+                            "даты и краткое содержание страниц. Поддерживает операторы: "
+                            "'site:example.com', '-site:example.com', '\"точная фраза\"', "
+                            "'lang:ru,en', 'after:2026-01-01', 'before:2026'. Используй, когда нужны "
+                            "свежие факты, цены, новости, документация — вместо догадок. "
+                            "Чтобы прочитать страницу целиком — затем web_fetch(url)."),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Поисковый запрос (до 128 символов)"},
+                    "count": {"type": "integer", "description": "Сколько результатов, 1–50 (по умолчанию 8)"},
+                    "need_content": {"type": "boolean",
+                                     "description": "Вернуть и текст страниц (дороже по контексту)"},
+                    "ori_question": {"type": "string",
+                                     "description": "Исходный вопрос пользователя — улучшает поиск"},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "web_fetch",
+            "description": ("Прочитать веб-страницу и получить её содержимое в Markdown "
+                            "(DeepSeek Fetch API). Используй после web_search или когда "
+                            "пользователь дал ссылку. Для сайтов с логином/JS — инструмент browser."),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "Полный URL, http:// или https://"},
+                    "max_chars": {"type": "integer",
+                                  "description": "Лимит символов текста (по умолчанию из конфига)"},
+                },
+                "required": ["url"],
             },
         },
     },
@@ -262,6 +304,15 @@ def _dispatch_generate_image(ctx: ToolContext, a: dict) -> ToolResult:
     return image.generate_image(ctx, a["prompt"], a.get("image_size", "landscape_4_3"))
 
 
+def _dispatch_web_search(ctx: ToolContext, a: dict) -> ToolResult:
+    return web.web_search(ctx, a["query"], a.get("count"), bool(a.get("need_content", False)),
+                          a.get("ori_question"))
+
+
+def _dispatch_web_fetch(ctx: ToolContext, a: dict) -> ToolResult:
+    return web.web_fetch(ctx, a["url"], a.get("max_chars"))
+
+
 _DISPATCH: dict[str, Callable[[ToolContext, dict], ToolResult]] = {
     "read_file": _dispatch_read,
     "list_files": _dispatch_list,
@@ -273,6 +324,8 @@ _DISPATCH: dict[str, Callable[[ToolContext, dict], ToolResult]] = {
     "github": _dispatch_github,
     "browser": _dispatch_browser,
     "generate_image": _dispatch_generate_image,
+    "web_search": _dispatch_web_search,
+    "web_fetch": _dispatch_web_fetch,
     "tasks": _dispatch_tasks,
 }
 

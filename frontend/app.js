@@ -590,7 +590,7 @@ function addLimitNote(msg) {
   $("#chat").appendChild(box); scrollDown();
 }
 
-const ICON = { read_file: "📄", list_files: "📁", search_files: "🔎", write_file: "✏️", edit_file: "✏️", terminal: "▶", git: "🔀", github: "🐙", browser: "🌐" };
+const ICON = { read_file: "📄", list_files: "📁", search_files: "🔎", write_file: "✏️", edit_file: "✏️", terminal: "▶", git: "🔀", github: "🐙", browser: "🌐", web_search: "🌍", web_fetch: "📰", generate_image: "🎨", tasks: "✅" };
 const VERB = { read_file: "Читаю", list_files: "Смотрю папку", search_files: "Ищу", write_file: "Пишу", edit_file: "Правлю", terminal: "Терминал", git: "Git" };
 // Человекочитаемая подпись действия из имени и аргументов инструмента.
 function toolLabel(name, args, preview) {
@@ -602,6 +602,10 @@ function toolLabel(name, args, preview) {
   if (name === "git") return preview || ("git " + (Array.isArray(args.args) ? args.args.join(" ") : ""));
   if (name === "browser") { const act = args.action || "browser"; return "Браузер: " + act + (args.url ? " " + args.url : args.text ? " «" + args.text + "»" : args.selector ? " " + args.selector : ""); }
   if (name === "github") return "GitHub: " + (args.action || "");
+  if (name === "web_search") return "Поиск в интернете «" + (args.query || "") + "»";
+  if (name === "web_fetch") return "Читаю страницу: " + (args.url || "");
+  if (name === "generate_image") return "Рисую: " + (args.prompt || "").slice(0, 60);
+  if (name === "tasks") return "Задачи: " + (args.action || "list");
   return preview || name || "Инструмент";
 }
 function addTool(id, name, preview, args) {
