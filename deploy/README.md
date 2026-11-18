@@ -168,6 +168,28 @@ systemctl status ai-agent
 
 Приложение слушает `127.0.0.1:8770` — **наружу не открыто**.
 
+### Права на лог и его ротация
+
+Лог `/var/log/ai-agent/agent.log` создаётся systemd и по умолчанию получает права
+`0644` — то есть читать его может **любой пользователь на сервере**. В логе бывают
+URL с токенами (httpx пишет полный URL в текст ошибки, например
+`api.telegram.org/bot<ID>:<TOKEN>/getUpdates`). Поэтому:
+
+```bash
+sudo chmod 640 /var/log/ai-agent/agent.log
+sudo chgrp adm /var/log/ai-agent/agent.log
+sudo cp /opt/ai-agent/deploy/logrotate.d/ai-agent /etc/logrotate.d/ai-agent
+sudo logrotate -d /etc/logrotate.d/ai-agent      # dry-run, проверка конфига
+```
+
+Код дополнительно вырезает токен из текста ошибок Telegram (`app/telegram/client.py`,
+`redact()`), но права на файл всё равно нужны: агент выполняет команды в шелле и его
+вывод тоже попадает в лог.
+
+**Если токен уже попал в лог или в историю чатов — смените его у @BotFather**
+(`/revoke`), впишите новый в `.env` и перезапустите сервис. Удаление строк из лога
+не помогает: файл мог быть скопирован, а токен остаётся действующим.
+
 ## 5. nginx + HTTPS
 
 Убедитесь, что DNS `ai.svistoff.ru` указывает на `77.110.125.73`, затем:

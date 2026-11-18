@@ -5,6 +5,7 @@ from __future__ import annotations
 import httpx
 
 from ..config import get_settings
+from ..telegram.client import redact
 
 
 def configured() -> bool:
@@ -33,7 +34,7 @@ def send_message(text: str, markdown: bool = False) -> tuple[bool, str]:
                 payload["text"] = text[:4000]
                 r = c.post(url, json=payload)
         if r.status_code != 200:
-            return False, f"Telegram API {r.status_code}: {r.text[:300]}"
+            return False, redact(f"Telegram API {r.status_code}: {r.text[:300]}")
         return True, ""
     except httpx.HTTPError as exc:
-        return False, f"Сетевая ошибка Telegram: {exc}"
+        return False, redact(f"Сетевая ошибка Telegram: {exc}")

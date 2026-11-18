@@ -1,0 +1,24 @@
+# Ротация лога ai-agent.
+#
+# Установка:
+#   sudo cp deploy/logrotate.d/ai-agent /etc/logrotate.d/ai-agent
+#   sudo chown root:root /etc/logrotate.d/ai-agent && sudo chmod 644 /etc/logrotate.d/ai-agent
+#   sudo chmod 640 /var/log/ai-agent/agent.log          # закрыть чтение остальным
+#   sudo logrotate -d /etc/logrotate.d/ai-agent         # проверка (dry-run)
+#
+# Почему mode 0640 и группа adm: в логе бывают URL с токенами сторонних сервисов
+# (httpx пишет полный URL в текст ошибки). Читать его должны только владелец и
+# администраторы, а не любой пользователь на сервере.
+
+/var/log/ai-agent/agent.log {
+    weekly
+    rotate 8
+    delaycompress
+    compress
+    missingok
+    notifempty
+    create 0640 root adm
+    # uvicorn (процесс ai-agent) держит файл открытым на запись через systemd
+    # StandardOutput=append: — копируем и переоткрываем без перезапуска сервиса.
+    copytruncate
+}

@@ -2,9 +2,24 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import httpx
+
+# Токен бота в URL имеет вид /bot<id>:<secret>. Он попадает в текст исключений
+# httpx («Client error '409 Conflict' for url 'https://api.telegram.org/bot123:AA…'»),
+# поэтому всё, что уходит в лог или в UI, проходит через redact().
+_TOKEN_RE = re.compile(r"bot\d+:[A-Za-z0-9_-]+")
+
+
+def redact(text: object) -> str:
+    """Убрать токен бота из произвольного текста (URL, тело ошибки, трейсбек)."""
+    return _TOKEN_RE.sub("bot<TOKEN>", str(text))
+
+
+class TelegramError(RuntimeError):
+    """Ошибка Bot API с уже вычищенным токеном в сообщении."""
 
 
 class TelegramClient:
@@ -13,7 +28,10 @@ class TelegramClient:
         self.http = httpx.AsyncClient(timeout=60)
 
     async def _call(self, method: str, **payload) -> dict | None:
-        r = await self.http.post(f"{self.base}/{method}", json=payload)
+        try:
+            r = await self.http.post(f"{self.base}/{method}", json=payload)
+        except httpx.HTTPError as exc:
+            raise TelegramError(redact(exc)) from None
         if r.status_code != 200:
             return None
         return r.json().get("result")
@@ -22,8 +40,12 @@ class TelegramClient:
         params: dict = {"timeout": timeout, "allowed_updates": '["message","callback_query"]'}
         if offset is not None:
             params["offset"] = offset
-        r = await self.http.get(f"{self.base}/getUpdates", params=params, timeout=timeout + 10)
-        r.raise_for_status()
+        try:
+            r = await self.http.get(f"{self.base}/getUpdates", params=params, timeout=timeout + 10)
+            r.raise_for_status()
+        except httpx.HTTPError as exc:
+            # Сообщение httpx содержит полный URL — токен уже вырезан.
+            raise TelegramError(redact(exc)) from None
         return r.json().get("result", [])
 
     async def send(self, chat_id: int | str, text: str, html: bool = False,

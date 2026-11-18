@@ -35,6 +35,10 @@ RestrictSUIDSGID=true
 ReadWritePaths=/opt/ai-agent/backend/data /var/www
 
 # Журналирование в файл (опционально; по умолчанию идёт в journald).
+# Права на лог: файл должен быть 0640 root:adm (см. deploy/logrotate.d/ai-agent).
+# Если файла ещё нет — создайте его заранее, иначе systemd создаст 0644 и лог
+# сможет читать любой пользователь на сервере (в нём бывают URL с токенами):
+#   sudo install -m 640 -o root -g adm /dev/null /var/log/ai-agent/agent.log
 StandardOutput=append:/var/log/ai-agent/agent.log
 StandardError=append:/var/log/ai-agent/agent.log
 

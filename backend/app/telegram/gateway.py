@@ -23,7 +23,7 @@ from ..config import get_app_config, get_settings
 from ..database import repo
 from ..llm import get_provider
 from ..tools.base import ToolContext
-from .client import TelegramClient
+from .client import TelegramClient, redact
 from .format import md_to_html, split_markdown
 
 log = logging.getLogger("telegram")
@@ -110,7 +110,8 @@ class Gateway:
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001 — сеть: просто повторяем
-                log.warning("getUpdates: %s", exc)
+                # redact() — защита в глубину: в тексте ошибки не должно быть токена.
+                log.warning("getUpdates: %s", redact(exc))
                 await asyncio.sleep(5)
                 continue
             for upd in updates:
