@@ -197,14 +197,25 @@ async function saveActive(convId, project) {
 }
 async function restoreChat() {
   let act = null;
-  try { act = await (await api("/api/chats/active")).json(); } catch (e) { act = null; }
+  try {
+    const r = await api("/api/chats/active");
+    if (r.ok) act = await r.json();
+  } catch (e) { act = null; }
 
-  // Сервер недоступен — пробуем вспомнить хотя бы локально.
-  if (!act || (!act.conversation_id && !act.last_project)) {
+  const nothing = !act || (!act.conversation_id && !act.last_project);
+  if (nothing) {
+    // Сервер не помнит (или старый бэкенд без этого роута) — сначала пробуем
+    // подсказку из localStorage, затем самый свежий чат из общего списка.
     try {
       const cached = JSON.parse(localStorage.getItem(LS_LAST) || "null");
       if (cached && cached.id && await openChat(cached.id)) return;
     } catch (e) { /* нет кэша */ }
+    try {
+      if (!act) {
+        const list = await (await api("/api/chats")).json();
+        if (list.chats && list.chats.length && await openChat(list.chats[0].id)) return;
+      }
+    } catch (e) { /* список недоступен */ }
   }
   if (!act) { newChat(); return; }
 
