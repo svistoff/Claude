@@ -13,6 +13,20 @@ from .models import (AppSetting, Conversation, Folder, Message, Project,
                      Reminder, ReminderLog, Task, ToolCallLog, WorkLog)
 
 
+def latest_conversation_for_project(project: str) -> dict[str, Any] | None:
+    """Самый свежий чат проекта — чтобы вернуть пользователя в знакомое место."""
+    with get_session() as db:
+        conv = db.execute(
+            select(Conversation).where(Conversation.project == project)
+            .order_by(Conversation.updated_at.desc()).limit(1)
+        ).scalars().first()
+        if conv is None:
+            return None
+        return {"id": conv.id, "project": conv.project, "title": conv.title,
+                "folder_id": conv.folder_id,
+                "updated_at": conv.updated_at.isoformat()}
+
+
 # --- Папки чатов ------------------------------------------------------------
 
 def create_folder(name: str) -> str:
@@ -97,6 +111,17 @@ def get_conversation(conv_id: str) -> dict[str, Any] | None:
             "updated_at": conv.updated_at.isoformat(),
             "messages": [_msg_dict(m) for m in conv.messages],
         }
+
+
+def get_conversation_meta(conv_id: str) -> dict[str, Any] | None:
+    """Чат без сообщений — когда нужны только id/проект (без чтения истории)."""
+    with get_session() as db:
+        conv = db.get(Conversation, conv_id)
+        if conv is None:
+            return None
+        return {"id": conv.id, "project": conv.project, "title": conv.title,
+                "folder_id": conv.folder_id,
+                "updated_at": conv.updated_at.isoformat()}
 
 
 def list_conversations(limit: int = 50) -> list[dict[str, Any]]:

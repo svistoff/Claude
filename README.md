@@ -100,4 +100,5 @@ reverse-proxy для `ai.svistoff.ru`, Let's Encrypt (HTTP→HTTPS), sandbox-п�
 | ✅ | Интернет: `web_search` + `web_fetch` (DeepSeek Search & Fetch API, $0.75/1000) |
 | ✅ | Задачи (`tasks`) и журнал работы (`worklog`) → отчёт шефу за неделю/месяц |
 | ✅ | Работа не прерывается при закрытии вкладки (фоновые задачи + переподключение) |
+| ✅ | Контекст чатов сохраняется: при входе открывается последний чат (сервер + localStorage) |
 | 🔜 | Playwright browser agent (Фаза 3) |

@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from .. import auth, projects_store, uploads_store
+from .. import auth, chat_state, projects_store, uploads_store
 from ..agent.jobs import Job, jobs
 from ..agent.loop import run_agent
 from ..agent.prompts import SYSTEM_PROMPT
@@ -196,6 +196,23 @@ class MoveBody(BaseModel):
 @router.get("/chats")
 def list_chats(user: str = Depends(auth.require_user)) -> dict:
     return {"chats": repo.list_conversations(), "folders": repo.list_folders()}
+
+
+class ActiveChatBody(BaseModel):
+    # Какой чат считать активным (см. chat_state.set_active).
+    conversation_id: str | None = None
+    project: str | None = None
+
+
+@router.get("/chats/active")
+def get_active_chat(user: str = Depends(auth.require_user)) -> dict:
+    """Какой чат открывать при входе — чтобы контекст не терялся между сессиями."""
+    return chat_state.current()
+
+
+@router.post("/chats/active")
+def set_active_chat(body: ActiveChatBody, user: str = Depends(auth.require_csrf)) -> dict:
+    return chat_state.set_active(body.conversation_id, body.project)
 
 
 @router.get("/folders")

@@ -180,7 +180,41 @@ async function showApp() {
   };
   await loadProjects();
   await loadSettings();
-  if (state.project) newChat();
+  await restoreChat();
+}
+
+// ============================================================================
+//  Где я остановился: активный чат запоминается на сервере (/api/chats/active)
+//  и восстанавливается при входе — с телефона, с компьютера, из любого браузера.
+// ============================================================================
+const LS_LAST = "ai.lastChat";
+async function saveActive(convId, project) {
+  try { localStorage.setItem(LS_LAST, JSON.stringify({ id: convId || null, project: project || null })); } catch (e) {}
+  try {
+    await api("/api/chats/active", { method: "POST",
+      body: JSON.stringify({ conversation_id: convId || null, project: project || null }) });
+  } catch (e) { /* не критично: в следующий раз просто откроется список чатов */ }
+}
+async function restoreChat() {
+  let act = null;
+  try { act = await (await api("/api/chats/active")).json(); } catch (e) { act = null; }
+
+  // Сервер недоступен — пробуем вспомнить хотя бы локально.
+  if (!act || (!act.conversation_id && !act.last_project)) {
+    try {
+      const cached = JSON.parse(localStorage.getItem(LS_LAST) || "null");
+      if (cached && cached.id && await openChat(cached.id)) return;
+    } catch (e) { /* нет кэша */ }
+  }
+  if (!act) { newChat(); return; }
+
+  const project = act.project || act.last_project;
+  if (project) { state.project = project; $("#project-name").textContent = project; }
+
+  if (act.conversation_id && await openChat(act.conversation_id)) return;
+  const fallback = project && act.by_project ? act.by_project[project] : null;
+  if (fallback && await openChat(fallback)) return;
+  newChat();
 }
 
 // ============================================================================
@@ -548,7 +582,7 @@ async function deleteChat(c) {
   }
 }
 async function openChat(id) {
-  const r = await api("/api/chat/" + id); if (!r.ok) return;
+  const r = await api("/api/chat/" + id); if (!r.ok) return false;
   const conv = await r.json();
   state.conversationId = conv.id; state.project = conv.project;
   $("#project-name").textContent = conv.project;
@@ -558,12 +592,17 @@ async function openChat(id) {
     else if (m.role === "assistant" && m.content) { const a = startAssistant(); a.innerHTML = mdToHtml(m.content); state.currentAssistant = null; }
   });
   closeSheet("chats"); scrollDown();
+  state.lastSeq = 0; state.finished = false;
+  saveActive(conv.id, conv.project);      // запомним: сюда вернёмся при следующем входе
   // Если по этому чату работа ещё идёт — подключимся к ней.
   resumeIfRunning();
+  return true;
 }
 function newChat() {
   state.conversationId = null; $("#chat").innerHTML = "";
+  state.lastSeq = 0; state.finished = false;
   addNote(`Новая задача в проекте «${state.project || "—"}». Опишите, что сделать.`);
+  if (state.project) saveActive(null, state.project);   // проект запоминаем, чат — новый
 }
 
 // ============================================================================
@@ -851,7 +890,10 @@ async function resumeIfRunning() {
 function handleEvent(ev) {
   if (typeof ev.seq === "number") state.lastSeq = ev.seq;
   switch (ev.type) {
-    case "session": state.conversationId = ev.conversation_id; break;
+    case "session":
+      state.conversationId = ev.conversation_id;
+      saveActive(ev.conversation_id, ev.project || state.project);  // запомним для следующего входа
+      break;
     case "text": hideThinking(); appendAssistant(ev.delta); break;
     case "assistant_message": state.currentAssistant = null; if (state.running) showThinking("думаю…"); break;
     case "final": state.currentAssistant = null; hideThinking(); break;
