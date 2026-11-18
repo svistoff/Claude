@@ -429,6 +429,26 @@ async function fetchActive() {
   return null;
 }
 
+// Тип перехода: "navigate" — приложение только что открыли (иконка, ярлык, новая
+// вкладка), "reload" — обновили страницу, "back_forward" — вернулись кнопкой.
+function navigationType() {
+  try {
+    const entry = performance.getEntriesByType && performance.getEntriesByType("navigation")[0];
+    if (entry && entry.type) return entry.type;
+  } catch (e) { /* старый браузер */ }
+  return null;
+}
+
+// Что открыто на экране прямо сейчас: "" — пустой чат, id — конкретный чат.
+// Нужно для обновления страницы: возвращаем ровно то, что человек видел.
+const CURRENT_KEY = "ai.current";
+function rememberCurrent(convId) {
+  try { sessionStorage.setItem(CURRENT_KEY, convId || ""); } catch (e) { /* приватный режим */ }
+}
+function currentOnScreen() {
+  try { return sessionStorage.getItem(CURRENT_KEY); } catch (e) { return null; }
+}
+
 // Что показать при запуске: новый чат (как Claude) или продолжение последнего.
 async function startScreen() {
   const params = new URLSearchParams(location.search);
@@ -438,14 +458,28 @@ async function startScreen() {
   const project = act && (act.project || act.last_project);
   if (project) { state.project = project; $("#project-name").textContent = project; }
 
-  // «Запуск приложения» = первое открытие за сессию; перезагрузка страницы — не запуск.
+  // «Запуск» — это открытие приложения. Обновление страницы (F5, потянуть вниз)
+  // запуском НЕ считается: оно возвращает то, что было на экране.
+  // Раньше запуск определялся по sessionStorage, но в установленном приложении он
+  // переживает возврат из фона — и вместо пустого чата открывался прошлый.
+  const nav = navigationType();
   const firstOpen = !sessionStorage.getItem(SESSION_KEY);
   sessionStorage.setItem(SESSION_KEY, "1");
-  const mode = localStorage.getItem(STARTUP_KEY) || "new";
-  const wantNew = params.get("new") === "1" || (mode === "new" && firstOpen);
+  const isLaunch = nav ? (nav === "navigate") : firstOpen;
 
-  if (wantNew) { newChat({ remember: false }); return; }
-  await restoreActiveChat(act);
+  const mode = localStorage.getItem(STARTUP_KEY) || "new";
+  let shown = false;
+
+  if (params.get("new") === "1" || (mode === "new" && isLaunch)) {
+    newChat({ remember: false });          // иконка/ярлык → пустой чат, как в Claude
+    shown = true;
+  } else if (!isLaunch) {
+    const onScreen = currentOnScreen();     // обновление страницы
+    if (onScreen === "") { newChat({ remember: false }); shown = true; }
+    else if (onScreen && await openChat(onScreen)) shown = true;
+  }
+
+  if (!shown) await restoreActiveChat(act);
   if (params.get("settings") === "1") openSheet("settings");
 }
 
@@ -854,6 +888,7 @@ async function openChat(id) {
   });
   closeSheet("chats"); scrollDown();
   state.lastSeq = 0; state.finished = false;
+  rememberCurrent(conv.id);
   saveActive(conv.id, conv.project);      // запомним: сюда вернёмся при следующем входе
   // Если по этому чату работа ещё идёт — подключимся к ней.
   resumeIfRunning();
@@ -862,6 +897,7 @@ async function openChat(id) {
 function newChat(opts = {}) {
   state.conversationId = null; $("#chat").innerHTML = "";
   state.lastSeq = 0; state.finished = false;
+  rememberCurrent(null);
   addNote(`Новая задача в проекте «${state.project || "—"}». Опишите, что сделать.`);
   // Запоминаем проект, а чат — новый. При автоматическом новом чате на старте
   // (remember: false) память не трогаем: чтобы «Продолжить последний» работал.
