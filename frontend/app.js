@@ -12,16 +12,68 @@ const reduceMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matche
 
 const state = { csrf: null, project: null, conversationId: null, running: false,
                 currentAssistant: null, toolEls: {}, models: [], model: null,
+                server: null,               // {origin, token} — работа с другим сервером
                 lastSeq: 0, finished: false };
 
+// ---------- Где работает агент: этот сервер или другой (VPS ↔ компьютер) ------
+const SERVER_KEY = "ai.server";        // JSON {origin, token} — «беру API с другого адреса»
+const STARTUP_KEY = "ai.startup";      // "new" | "resume" — что открывать при запуске
+const SESSION_KEY = "ai.session";      // признак «это перезагрузка, а не запуск»
+
+function loadServer() {
+  try {
+    const s = JSON.parse(localStorage.getItem(SERVER_KEY) || "null");
+    if (s && s.origin) return { origin: String(s.origin).replace(/\/$/, ""), token: s.token || null };
+  } catch (e) { /* испорченное значение — считаем, что работаем со своего сервера */ }
+  return null;
+}
+function saveServer(server) {
+  if (server) localStorage.setItem(SERVER_KEY, JSON.stringify(server));
+  else localStorage.removeItem(SERVER_KEY);
+}
+state.server = loadServer();   // читаем до первого запроса
+
 // ---------- API ----------
+function apiUrl(path) { return (state.server ? state.server.origin : "") + path; }
+
 async function api(path, opts = {}) {
   opts.headers = opts.headers || {};
   if (opts.method && opts.method !== "GET") {
     opts.headers["Content-Type"] = "application/json";
     if (state.csrf) opts.headers["x-csrf-token"] = state.csrf;
   }
-  return fetch(path, opts);
+  if (state.server) {
+    // Между сайтами cookie не передаётся — авторизуемся токеном. Тогда и CSRF
+    // не нужен: чужой сайт такой заголовок сам не добавит.
+    opts.credentials = "omit";
+    if (state.server.token) opts.headers["Authorization"] = "Bearer " + state.server.token;
+  }
+  return fetch(apiUrl(path), opts);
+}
+
+// Проверка, что по адресу действительно отвечает агент.
+async function pingServer(origin) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 5000);
+  try {
+    const r = await fetch(origin + "/api/health", { signal: ctrl.signal, credentials: "omit" });
+    if (!r.ok) return { ok: false, error: "HTTP " + r.status };
+    const data = await r.json();
+    return { ok: data.ok === true, service: data.service };
+  } catch (e) {
+    return { ok: false, error: "нет ответа" };
+  } finally { clearTimeout(timer); }
+}
+
+// Картинки с защищённого адреса: между сайтами тег <img> не умеет слать токен,
+// поэтому забираем через fetch и показываем из памяти.
+async function loadImage(img, path) {
+  if (!state.server) { img.src = apiUrl(path); return; }
+  try {
+    const r = await api(path);
+    if (!r.ok) return;
+    img.src = URL.createObjectURL(await r.blob());
+  } catch (e) { /* не смогли — просто не покажем */ }
 }
 
 // ============================================================================
@@ -155,9 +207,29 @@ function closeDialog() {
 //  Boot / auth
 // ============================================================================
 async function boot() {
-  const data = await (await fetch("/api/me")).json();
-  if (data.authenticated) { state.csrf = data.csrf; showApp(); }
-  else $("#login-view").hidden = false;
+  let data = null;
+  try {
+    data = await (await fetch(apiUrl("/api/me"), {
+      credentials: state.server ? "omit" : "same-origin",
+      headers: state.server && state.server.token
+        ? { Authorization: "Bearer " + state.server.token } : {},
+    })).json();
+  } catch (e) {
+    data = null;   // нет связи или чужой сервер не отвечает
+  }
+  if (data && data.authenticated) {
+    state.csrf = data.csrf;
+    try {
+      await showApp();
+    } catch (e) {
+      // Ошибку приложения не выдаём за «нет доступа»: показываем вход, а причину — в консоль.
+      console.error("Не удалось открыть приложение:", e);
+      $("#login-view").hidden = false;
+    }
+    return;
+  }
+  $("#login-view").hidden = false;
+  renderLoginTarget();
 }
 $("#login-form").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -165,9 +237,29 @@ $("#login-form").addEventListener("submit", async (e) => {
   const r = await api("/api/login", { method: "POST", body: JSON.stringify({
     username: $("#login-user").value.trim(), password: $("#login-pass").value }) });
   const data = await r.json();
-  if (data.ok) { state.csrf = data.csrf; $("#login-view").hidden = true; showApp(); }
+  if (data.ok) {
+    state.csrf = data.csrf;
+    // В режиме «другой сервер» cookie не доедет — запомним токен для заголовка.
+    if (state.server && data.token) { state.server = { ...state.server, token: data.token }; saveServer(state.server); }
+    $("#login-view").hidden = true; showApp();
+  }
   else { errBox.textContent = data.error || "Ошибка входа."; errBox.hidden = false; }
 });
+
+// На экране входа подсказываем, к какому серверу подключаемся (важно в локальном режиме).
+function renderLoginTarget() {
+  const box = $("#login-server");
+  const btn = $("#btn-login-server");
+  if (!box) return;
+  box.textContent = state.server ? "Сервер: " + state.server.origin : "Сервер: этот адрес";
+  box.hidden = false;
+  if (btn) {
+    // Если выбран другой сервер, а он не отвечает — даём вернуться на этот.
+    btn.hidden = !state.server;
+    btn.textContent = "← Вернуться на этот сервер";
+    btn.onclick = () => { saveServer(null); location.reload(); };
+  }
+}
 
 async function showApp() {
   $("#app-view").hidden = false;
@@ -180,8 +272,142 @@ async function showApp() {
   };
   await loadProjects();
   await loadSettings();
-  await restoreChat();
+  renderServerSettings();
+  renderStartupSettings();
+  setupInstall();
+  await startScreen();
 }
+
+// ============================================================================
+//  Настройки: где работает агент + что открывать при запуске + установка
+// ============================================================================
+function serverChoices() {
+  return [
+    { id: "here", label: "Этот сервер (VPS)", note: location.origin, origin: "" },
+    { id: "local", label: "На моём компьютере", note: "http://localhost:8770 — агент запущен локально", origin: "http://localhost:8770" },
+    { id: "custom", label: "Другой адрес…", note: "Например, другой сервер с агентом", origin: null },
+  ];
+}
+
+function renderServerSettings() {
+  const box = $("#server-list"); if (!box) return;
+  box.textContent = "";
+  const current = state.server ? state.server.origin : "";
+  const known = serverChoices().filter((c) => c.origin !== null).map((c) => c.origin);
+  serverChoices().forEach((c) => {
+    // «Другой адрес…» отмечаем галочкой, если выбран нестандартный адрес.
+    const chosen = c.origin === null
+      ? Boolean(current) && !known.includes(current)
+      : (c.origin === current) || (c.id === "here" && !current);
+    const b = el("button", "model-row pressable");
+    b.setAttribute("aria-selected", String(chosen));
+    const name = el("span", "name", c.label);
+    const tick = el("span", "tick", "✓");
+    b.appendChild(name); b.appendChild(tick);
+    b.title = c.note;
+    b.addEventListener("click", () => chooseServer(c));
+    box.appendChild(b);
+  });
+  const note = $("#server-note");
+  if (note) note.textContent = state.server
+    ? "Сейчас агент работает на " + state.server.origin + " (файлы и терминал — того компьютера)."
+    : "Сейчас агент работает на этом сервере. «На моём компьютере» — если запустили его локально.";
+
+  // В шапке видно, что работаем не на VPS — иначе легко перепутать.
+  const badge = $("#btn-server");
+  if (badge) {
+    badge.hidden = !state.server;
+    badge.textContent = "💻 " + (state.server ? state.server.origin.replace(/^https?:\/\//, "") : "");
+    badge.title = "Агент работает на " + (state.server ? state.server.origin : "этом сервере") + ". Нажмите, чтобы сменить.";
+    badge.onclick = () => openSheet("settings");
+  }
+}
+
+async function chooseServer(choice) {
+  let target = choice.origin;
+  if (target === null) {          // «Другой адрес…»
+    const entered = prompt("Адрес агента (например http://192.168.1.10:8770):",
+                           state.server ? state.server.origin : "http://");
+    if (entered === null) return;
+    target = entered.trim().replace(/\/+$/, "");
+    if (!/^https?:\/\/[^\s]+$/i.test(target)) { alert("Нужен адрес вида http://хост:порт"); return; }
+  }
+  if (target === (state.server ? state.server.origin : "")) return;
+  if (!target) {   // вернуться на этот сервер
+    saveServer(null); location.reload(); return;
+  }
+  const ping = await pingServer(target);
+  if (!ping.ok) {
+    alert(`По адресу ${target} агент не отвечает (${ping.error || "нет связи"}).\n\n` +
+          "Запустите его на компьютере и попробуйте снова.\n" +
+          "Если это другой сервер — проверьте, что там разрешён этот адрес (CORS_ORIGINS в .env).");
+    return;
+  }
+  saveServer({ origin: target, token: null });
+  location.reload();
+}
+
+function renderStartupSettings() {
+  const box = $("#startup-list"); if (!box) return;
+  const mode = localStorage.getItem(STARTUP_KEY) || "new";
+  box.textContent = "";
+  [{ id: "new", label: "Новый чат (как в Claude)" },
+   { id: "resume", label: "Продолжить последний чат" }].forEach((o) => {
+    const b = el("button", "model-row pressable");
+    b.setAttribute("aria-selected", String(mode === o.id));
+    b.appendChild(el("span", "name", o.label));
+    b.appendChild(el("span", "tick", "✓"));
+    b.addEventListener("click", () => {
+      localStorage.setItem(STARTUP_KEY, o.id);
+      renderStartupSettings();
+    });
+    box.appendChild(b);
+  });
+}
+
+// ---------- Установка на рабочий стол (PWA) ----------
+let installPrompt = null;
+const isStandalone = () =>
+  matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+
+function setupInstall() {
+  const btn = $("#btn-install"), note = $("#install-note");
+  if (!btn || !note) return;
+
+  if (isStandalone()) {
+    btn.hidden = true;
+    note.textContent = "Приложение уже установлено — вы открыли его с рабочего стола.";
+    return;
+  }
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  if (installPrompt) {
+    btn.hidden = false;
+    btn.onclick = async () => {
+      btn.hidden = true;
+      installPrompt.prompt();
+      try { await installPrompt.userChoice; } catch (e) { /* отменили */ }
+      installPrompt = null;
+      setupInstall();
+    };
+    note.textContent = "Добавит иконку на рабочий стол и откроет без адресной строки.";
+  } else if (isIOS) {
+    btn.hidden = true;
+    note.textContent = "iPhone/iPad: «Поделиться» → «На экран „Домой“».";
+  } else {
+    btn.hidden = true;
+    note.textContent = "В меню браузера выберите «Установить приложение» или «Добавить на главный экран».";
+  }
+}
+
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  installPrompt = e;
+  setupInstall();
+});
+window.addEventListener("appinstalled", () => {
+  installPrompt = null;
+  setupInstall();
+});
 
 // ============================================================================
 //  Где я остановился: активный чат запоминается на сервере (/api/chats/active)
@@ -195,29 +421,42 @@ async function saveActive(convId, project) {
       body: JSON.stringify({ conversation_id: convId || null, project: project || null }) });
   } catch (e) { /* не критично: в следующий раз просто откроется список чатов */ }
 }
-async function restoreChat() {
-  let act = null;
+async function fetchActive() {
   try {
     const r = await api("/api/chats/active");
-    if (r.ok) act = await r.json();
-  } catch (e) { act = null; }
+    if (r.ok) return await r.json();
+  } catch (e) { /* сервер недоступен */ }
+  return null;
+}
 
-  const nothing = !act || (!act.conversation_id && !act.last_project);
-  if (nothing) {
-    // Сервер не помнит (или старый бэкенд без этого роута) — сначала пробуем
-    // подсказку из localStorage, затем самый свежий чат из общего списка.
+// Что показать при запуске: новый чат (как Claude) или продолжение последнего.
+async function startScreen() {
+  const params = new URLSearchParams(location.search);
+  const act = await fetchActive();
+
+  // Проект помним всегда — даже если начинаем новый чат.
+  const project = act && (act.project || act.last_project);
+  if (project) { state.project = project; $("#project-name").textContent = project; }
+
+  // «Запуск приложения» = первое открытие за сессию; перезагрузка страницы — не запуск.
+  const firstOpen = !sessionStorage.getItem(SESSION_KEY);
+  sessionStorage.setItem(SESSION_KEY, "1");
+  const mode = localStorage.getItem(STARTUP_KEY) || "new";
+  const wantNew = params.get("new") === "1" || (mode === "new" && firstOpen);
+
+  if (wantNew) { newChat({ remember: false }); return; }
+  await restoreActiveChat(act);
+  if (params.get("settings") === "1") openSheet("settings");
+}
+
+async function restoreActiveChat(act) {
+  if (!act) {                      // сервер не ответил — пробуем локальную подсказку
     try {
       const cached = JSON.parse(localStorage.getItem(LS_LAST) || "null");
       if (cached && cached.id && await openChat(cached.id)) return;
     } catch (e) { /* нет кэша */ }
-    try {
-      if (!act) {
-        const list = await (await api("/api/chats")).json();
-        if (list.chats && list.chats.length && await openChat(list.chats[0].id)) return;
-      }
-    } catch (e) { /* список недоступен */ }
+    newChat({ remember: false }); return;
   }
-  if (!act) { newChat(); return; }
 
   const project = act.project || act.last_project;
   if (project) { state.project = project; $("#project-name").textContent = project; }
@@ -225,7 +464,7 @@ async function restoreChat() {
   if (act.conversation_id && await openChat(act.conversation_id)) return;
   const fallback = project && act.by_project ? act.by_project[project] : null;
   if (fallback && await openChat(fallback)) return;
-  newChat();
+  newChat({ remember: false });
 }
 
 // ============================================================================
@@ -395,8 +634,19 @@ async function switchModel(id) {
 }
 $("#btn-settings").addEventListener("click", () => openSheet("settings"));
 $("#btn-logout").addEventListener("click", async () => {
-  await api("/api/logout", { method: "POST" }); location.reload();
+  await api("/api/logout", { method: "POST" });
+  // В режиме другого сервера забываем ещё и токен — иначе вход останется активным.
+  if (state.server) saveServer({ ...state.server, token: null });
+  location.reload();
 });
+
+// ---------- Установка как приложение: service worker ----------
+if ("serviceWorker" in navigator &&
+    (location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1")) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(() => { /* без SW просто нет офлайна */ });
+  });
+}
 
 // ============================================================================
 //  Наставник — напоминания в Telegram (планировщик)
@@ -609,11 +859,13 @@ async function openChat(id) {
   resumeIfRunning();
   return true;
 }
-function newChat() {
+function newChat(opts = {}) {
   state.conversationId = null; $("#chat").innerHTML = "";
   state.lastSeq = 0; state.finished = false;
   addNote(`Новая задача в проекте «${state.project || "—"}». Опишите, что сделать.`);
-  if (state.project) saveActive(null, state.project);   // проект запоминаем, чат — новый
+  // Запоминаем проект, а чат — новый. При автоматическом новом чате на старте
+  // (remember: false) память не трогаем: чтобы «Продолжить последний» работал.
+  if (state.project && opts.remember !== false) saveActive(null, state.project);
 }
 
 // ============================================================================
@@ -679,8 +931,9 @@ function setToolResult(id, ok, summary, content, extra) {
   else { d._pre.hidden = true; }                                    // пустой вывод — не показываем
   // Скриншот браузера — показываем картинку пользователю.
   if (extra && extra.screenshot_url && !d._shot) {
-    const img = el("img", "tool-shot"); img.src = extra.screenshot_url; img.loading = "lazy";
-    img.addEventListener("click", () => window.open(extra.screenshot_url, "_blank"));
+    const img = el("img", "tool-shot"); img.loading = "lazy";
+    img.addEventListener("click", () => window.open(img.src, "_blank"));
+    loadImage(img, extra.screenshot_url);
     d.appendChild(img); d._shot = true; d.open = true;
   }
   scrollDown();
@@ -794,11 +1047,21 @@ input.addEventListener("paste", async (e) => {
     }
   }
 });
+// Загрузка файла: FormData с CSRF (свой сервер) или с токеном (другой сервер).
+function uploadOpts(fd) {
+  if (state.server) {
+    const headers = {};
+    if (state.server.token) headers.Authorization = "Bearer " + state.server.token;
+    return { method: "POST", headers, body: fd, credentials: "omit" };
+  }
+  return { method: "POST", headers: { "x-csrf-token": state.csrf }, body: fd };
+}
+
 async function uploadFile(file) {
   const chip = renderChip(file.name, true);
   const fd = new FormData(); fd.append("file", file);
   try {
-    const r = await fetch("/api/upload", { method: "POST", headers: { "x-csrf-token": state.csrf }, body: fd });
+    const r = await fetch(apiUrl("/api/upload"), uploadOpts(fd));
     const data = await r.json();
     if (!r.ok) { alert("Не удалось загрузить " + file.name + ": " + (data.detail || r.status)); chip.remove(); return; }
     attachments.push({ token: data.token, name: data.name, size: data.size });

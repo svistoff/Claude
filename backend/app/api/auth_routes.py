@@ -26,7 +26,10 @@ def login(body: LoginBody, request: Request, response: Response) -> dict:
         response.status_code = 401
         return {"ok": False, "error": "Неверный логин или пароль."}
     csrf = auth.issue_session(response, body.username)
-    return {"ok": True, "user": body.username, "csrf": csrf}
+    # Тот же доступ, но заголовком — для приложения, установленного с другого сервера
+    # (там cookie между сайтами не передаётся).
+    token, _ = auth.issue_token(body.username)
+    return {"ok": True, "user": body.username, "csrf": csrf, "token": token}
 
 
 @router.post("/logout")
@@ -36,8 +39,10 @@ def logout(response: Response, user: str = Depends(auth.require_user)) -> dict:
 
 
 @router.get("/me")
-def me(session: str | None = Cookie(default=None, alias=auth.COOKIE_NAME)) -> dict:
-    csrf = auth.get_csrf(session)
-    if csrf is None:
+def me(request: Request,
+       session: str | None = Cookie(default=None, alias=auth.COOKIE_NAME)) -> dict:
+    data = auth.session_data(request, session)
+    if data is None:
         return {"authenticated": False}
-    return {"authenticated": True, "user": get_settings().admin_user, "csrf": csrf}
+    return {"authenticated": True, "user": get_settings().admin_user,
+            "csrf": data.get("csrf")}

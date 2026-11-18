@@ -18,6 +18,11 @@ from .config import get_settings
 
 COOKIE_NAME = "session"
 CSRF_HEADER = "x-csrf-token"
+# Приложение может быть установлено с одного сервера (VPS), а работать с другим
+# (локальный запуск). Между сайтами cookie с SameSite=Lax не передаётся, поэтому
+# во втором режиме клиент шлёт тот же подписанный сессионный токен заголовком.
+AUTH_HEADER = "authorization"
+BEARER_PREFIX = "bearer "
 
 
 def _serializer() -> URLSafeTimedSerializer:
@@ -58,6 +63,16 @@ def issue_session(response: Response, user: str) -> str:
     return csrf
 
 
+def issue_token(user: str) -> tuple[str, str]:
+    """Сессионный токен для режима «приложение с одного сервера — API с другого».
+
+    Возвращает (token, csrf). Токен подписан тем же ключом и живёт столько же,
+    сколько cookie, — это не отдельный вид доступа.
+    """
+    csrf = secrets.token_urlsafe(24)
+    return _serializer().dumps({"user": user, "csrf": csrf}), csrf
+
+
 def clear_session(response: Response) -> None:
     response.delete_cookie(COOKIE_NAME, path="/")
 
@@ -72,22 +87,47 @@ def _load(token: str | None) -> dict | None:
         return None
 
 
-def require_user(session: str | None = Cookie(default=None, alias=COOKIE_NAME)) -> str:
+def _bearer(request: Request | None) -> str | None:
+    """Токен из заголовка Authorization: Bearer … (режим «другой сервер»)."""
+    if request is None:
+        return None
+    header = request.headers.get(AUTH_HEADER, "")
+    if header.lower().startswith(BEARER_PREFIX):
+        return header[len(BEARER_PREFIX):].strip() or None
+    return None
+
+
+def session_data(request: Request, session: str | None) -> dict | None:
+    """Данные сессии: cookie (обычный режим) или Bearer-токен (кросс-сервер)."""
+    return _load(_bearer(request) or session)
+
+
+def require_user(
+    request: Request,
+    session: str | None = Cookie(default=None, alias=COOKIE_NAME),
+) -> str:
     """Зависимость: требует валидную сессию, возвращает имя пользователя."""
-    data = _load(session)
+    data = session_data(request, session)
     if data is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Требуется вход.")
     return data["user"]
 
 
 def require_csrf(
+    request: Request,
     session: str | None = Cookie(default=None, alias=COOKIE_NAME),
     x_csrf_token: str | None = Header(default=None, alias=CSRF_HEADER),
 ) -> str:
-    """Зависимость для мутирующих запросов: сверяет CSRF-токен."""
-    data = _load(session)
+    """Зависимость для мутирующих запросов: сверяет CSRF-токен.
+
+    В режиме Bearer-токена CSRF не нужен: такой заголовок браузер не добавляет
+    автоматически, поэтому чужой сайт подделать запрос не может.
+    """
+    data = session_data(request, session)
     if data is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Требуется вход.")
+    if _bearer(request):
+        return data["user"]
     if not x_csrf_token or not secrets.compare_digest(x_csrf_token, data.get("csrf", "")):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "CSRF-токен неверный.")
     return data["user"]

@@ -21,3 +21,14 @@ os.environ.setdefault("DATABASE_URL", f"sqlite:///{tempfile.mkdtemp()}/test.db")
 # Ключ DeepSeek-провайдера, чтобы его модели были доступны в переключателе
 # (available_models фильтрует по наличию ключа). Остальные провайдеры — без ключа.
 os.environ.setdefault("DEEPSEEK_API_KEY", "test-deepseek-key")
+
+import pytest  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _reset_login_rate_limit():
+    """Тесты логинятся часто; сбрасываем счётчик попыток, иначе получим 429."""
+    from app import auth as auth_mod
+    auth_mod._LOGIN_ATTEMPTS.clear()
+    yield
+    auth_mod._LOGIN_ATTEMPTS.clear()

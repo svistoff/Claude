@@ -57,6 +57,10 @@ class Settings(BaseSettings):
     secret_key: str = ""
     session_max_age: int = 43200
     cookie_secure: bool = True
+    # Адреса, с которых приложению разрешено обращаться к API другого сервера
+    # (установлено с VPS — работаем с локальным запуском, и наоборот).
+    # Через запятую: CORS_ORIGINS="https://ai.svistoff.ru,http://localhost:8770"
+    cors_origins: str = ""
 
     # Пути
     database_url: str = "sqlite:///./data/agent.db"

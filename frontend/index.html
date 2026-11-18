@@ -5,6 +5,19 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
   <meta name="theme-color" content="#f0eee6" />
   <title>AI Coder</title>
+
+  <!-- Иконка на рабочем столе / установка как приложение -->
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="icon" href="/static/icons/favicon-32.png" sizes="32x32" type="image/png" />
+  <link rel="icon" href="/static/icons/favicon.ico" sizes="any" />
+  <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon-180.png" />
+  <meta name="application-name" content="AI Coder" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="AI Coder" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="description" content="Агент-программист: правит код, запускает терминал и git — с телефона или компьютера." />
+
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&display=swap" rel="stylesheet" />
@@ -19,6 +32,8 @@
       <input id="login-user" name="username" placeholder="Логин" autocomplete="username" />
       <input id="login-pass" name="password" type="password" placeholder="Пароль" autocomplete="current-password" />
       <button type="submit" class="btn-primary pressable">Войти</button>
+      <div id="login-server" class="muted" hidden></div>
+      <button id="btn-login-server" type="button" class="btn-ghost pressable" hidden></button>
       <div id="login-error" class="error" hidden></div>
     </form>
   </section>
@@ -28,6 +43,7 @@
     <header class="topbar">
       <button id="btn-menu" class="icon-btn" aria-label="Чаты">☰</button>
       <div class="brand">AI&nbsp;CODER</div>
+      <button id="btn-server" class="pill pressable" hidden></button>
       <div class="grow"></div>
       <button id="btn-project" class="pill pressable"><span id="project-name">—</span><span class="chev">▼</span></button>
       <button id="btn-git" class="icon-btn" aria-label="Git">⑂</button>
@@ -82,6 +98,18 @@
       <!-- модели вставляются из JS, сгруппированы по провайдеру -->
     </div>
     <div class="seg-note" id="model-note">Доступны модели, у которых задан API-ключ провайдера.</div>
+
+    <div class="field-label">Где работает агент</div>
+    <div id="server-list" class="model-list"></div>
+    <div class="seg-note" id="server-note">VPS — всегда под рукой. «На этом компьютере» — если агент запущен локально: файлы и терминал будут вашего компьютера, а не сервера.</div>
+
+    <div class="field-label">При запуске приложения</div>
+    <div id="startup-list" class="model-list"></div>
+    <div class="seg-note">«Новый чат» — как в Claude: открывается пустой чат, история в меню слева.</div>
+
+    <div class="field-label">Приложение</div>
+    <button id="btn-install" class="btn-accent pressable" hidden>Установить на рабочий стол</button>
+    <div class="seg-note" id="install-note"></div>
 
     <div class="sheet-actions">
       <button id="btn-logout" class="btn-ghost pressable">Выйти</button>
